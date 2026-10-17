@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+node_modules/
+.test-out/
+.claude/settings.local.json
+# private development instructions and local permission rules are not tracked
+/CLAUDE.md
+/.claude/
+# the client's generated API declarations are not tracked
+.claude-plugin/types/

@@ -1,0 +1,67 @@
+{
+  "name": "model-mod",
+  "version": "0.1.0",
+  "description": "Use models from your own Messages-compatible API next to the client's built-in models.",
+  "author": {
+    "name": "Chin"
+  },
+  "license": "MIT",
+  "keywords": [
+    "model",
+    "upstream",
+    "cliproxyapi",
+    "mod"
+  ],
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "baseUrl": {
+      "type": "string",
+      "title": "Upstream base URL",
+      "description": "Base URL of your Messages-compatible upstream, without /v1. CLIProxyAPI with your own Codex login is the tested upstream.",
+      "default": "http://127.0.0.1:8317"
+    },
+    "apiKey": {
+      "type": "string",
+      "title": "Upstream API key",
+      "description": "API key for your own upstream server. Do not use a subscription account key.",
+      "sensitive": true
+    },
+    "models": {
+      "type": "string",
+      "title": "Model allowlist (optional)",
+      "description": "Comma-separated model IDs to use through the upstream. Empty: every chat model the upstream lists."
+    },
+    "imageModel": {
+      "type": "string",
+      "title": "Image model (optional)",
+      "description": "Model for the generate_image tool. Empty: gpt-image-2 or the first gpt-image* the upstream lists; none: no image tool."
+    },
+    "contextWindow": {
+      "type": "number",
+      "title": "Context window",
+      "description": "Input tokens assumed for a model whose context window is unknown.",
+      "default": 272000
+    },
+    "fallbackModel": {
+      "type": "string",
+      "title": "Fallback model (optional)",
+      "description": "One of your models to switch to when the subscription usage limit is reached; switches back after the limit resets. Empty: no automatic switch. Choose it from the models /model-mod:setup offers."
+    },
+    "fallbackPercent": {
+      "type": "number",
+      "title": "Fallback threshold (%)",
+      "description": "Used share of a rate-limit window (50-100) at which to switch to the fallback model. Only used when a fallback model is set.",
+      "default": 100
+    },
+    "workerModel": {
+      "type": "string",
+      "title": "Local worker model (optional)",
+      "description": "Model for the model-mod:local-worker agent type, which any model can hand a task to with the Agent tool. Empty: the fallback model; if that is empty too, there is no worker agent type."
+    },
+    "promptsDir": {
+      "type": "string",
+      "title": "Prompts directory (optional)",
+      "description": "Absolute path of a directory with your own compact.md, title.md, subagent-note.md and worker.md. Empty: use the plugin's prompts. A missing or unusable file is not replaced by a built-in prompt."
+    }
+  }
+}

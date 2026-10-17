@@ -1,0 +1,14 @@
+{
+  "name": "model-mod",
+  "description": "Plugins for a mod-capable coding client, including one that adds models from your own Messages-compatible API.",
+  "owner": {
+    "name": "Chin"
+  },
+  "plugins": [
+    {
+      "name": "model-mod",
+      "source": "./",
+      "description": "Use models from your own Messages-compatible API next to the client's built-in models."
+    }
+  ]
+}
