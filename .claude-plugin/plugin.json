@@ -1,7 +1,7 @@
 {
   "name": "model-mod",
   "version": "0.1.0",
-  "description": "Use models from your own Messages-compatible API next to the client's built-in models.",
+  "description": "Use models from your own Messages-compatible API next to Claude Code's built-in models.",
   "author": {
     "name": "Chin"
   },

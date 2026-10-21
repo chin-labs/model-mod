@@ -1,6 +1,6 @@
 {
   "name": "model-mod",
-  "description": "Plugins for a mod-capable coding client, including one that adds models from your own Messages-compatible API.",
+  "description": "A plugin marketplace for Claude Code with one plugin, model-mod, which adds models from your own Messages-compatible API. It does not modify Claude Code.",
   "owner": {
     "name": "Chin"
   },
@@ -8,7 +8,7 @@
     {
       "name": "model-mod",
       "source": "./",
-      "description": "Use models from your own Messages-compatible API next to the client's built-in models."
+      "description": "Use models from your own Messages-compatible API next to Claude Code's built-in models."
     }
   ]
 }
