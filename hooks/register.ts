@@ -983,7 +983,7 @@ async function admin($: EngineInterface, e: { origin: { kind: string } }, arg: '
     const known = new Set(captured.map(tool => tool.name))
     open = (await $.tool.list()).filter(tool => tool.mcp && !tool.name.startsWith('mcp__model-mod__') && !known.has(tool.name)).length
   }
-  return { text: `model-mod 0.1.0: picker=active; host=${new URL(c.baseUrl).hostname}; config=${c.source}; models=${c.models.length}; tools=${captured ? (c.toolsFile ? 'captured' : 'listed') : 'missing'}` +
+  return { text: `model-mod 0.1.1: picker=active; host=${new URL(c.baseUrl).hostname}; config=${c.source}; models=${c.models.length}; tools=${captured ? (c.toolsFile ? 'captured' : 'listed') : 'missing'}` +
     `; ${promptStatus(c.prompts)}; tool search=${c.toolSearch ?? 'auto'}; MCP tools without a captured schema=${open}${open && c.refresh ? ' (/model-mod:refresh captures them)' : ''}` }
 }
 

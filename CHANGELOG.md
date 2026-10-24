@@ -2,6 +2,21 @@
 
 All notable changes to this project are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Every release that changes plugin code or manifest files raises the `version` in `.claude-plugin/plugin.json`; installed clients only pick up a release whose version differs from the one they have.
 
+## 0.1.1 - 2026-10-24
+
+### Fixed
+- A tool call that the upstream stream cut off before the end of its block is no longer handed to the client as a partial call. Tool chunks are now held until the block stops, so an interrupted tool call ends the turn cleanly or is retried instead of making the client resend the request on every turn.
+- `generate_image` works with the BSD `sed` that macOS ships.
+
+### Changed
+- `generate_image` refuses a path that resolves outside the working directory (including through a symbolic link) and does not overwrite an existing file. The permission prompt shows the path.
+- The four `/model-mod:*` commands can no longer be invoked by the model through the Skill tool; they remain available to you.
+- A tool block whose `content_block_stop` is missing is emitted when `message_stop` arrives. Events after `message_stop` are ignored.
+
+### Documentation
+- Traditional Chinese limitations and features pages brought in line with the English pages.
+- Documented that SDK and `-p` callers must check for a result starting with `model-mod:`, when the four tool definitions are registered, and that Claude Code 2.1.310 was tested.
+
 ## 0.1.0 - 2026-10-17 — first public release
 
 ### Added
