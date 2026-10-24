@@ -164,6 +164,29 @@ test('a model the bridge does not own goes down the chain and nothing is spawned
   expect(w.ran).toEqual([])
 })
 
+test('generate_image: the prompt names the path and pipeline refusals reach the caller without a saved result', async ($, on) => {
+  const replies: RunReply[] = [
+    { exitCode: 1, stdout: 'path resolves outside the working directory\n' },
+    { exitCode: 1, stdout: 'file already exists\n' },
+    { exitCode: 0, stdout: '67\n' },
+  ]
+  const w = world(on, { ...baseConfig, imageModel: 'gpt-image-2' }, LOCAL, { stdout: '', code: 0 }, () => replies.shift()!)
+  on('tool.check', { tool: 'mcp__model-mod__generate_image' }, async () => ({ decision: 'ask' as const }))
+  w.answers = ['Yes', 'Yes', 'Yes']
+  const paths = ['linkdir/new/image.png', 'existing.png', 'generated-images/new.png']
+  const outcomes: string[] = []
+  for (const path of paths) {
+    outcomes.push(await $.tool.call({ tool: 'mcp__model-mod__generate_image', prompt: 'A small tree', path } as never).then(
+      value => JSON.stringify(value), error => String(error instanceof Error ? error.message : error)))
+  }
+  expect(w.questions.map(q => q.question)).toEqual(paths.map(path => `Generate an image and save it to ${path}: "A small tree"?`))
+  expect(w.ran.map(argv => argv.slice(-2))).toEqual(paths.map(path => ['/work/' + path, '/work']))
+  expect(outcomes[0]).toContain('Image request failed (path resolves outside the working directory).')
+  expect(outcomes[1]).toContain('Image request failed (file already exists).')
+  expect(outcomes.slice(0, 2).every(outcome => !outcome.includes('Saved image'))).toBe(true)
+  expect(outcomes[2]).toContain('Saved image to /work/generated-images/new.png (67 bytes, 1024x1024).')
+})
+
 test('a bridge model is answered by the upstream and never reaches the chain', async ($, on) => {
   const w = world(on, baseConfig, LOCAL, { stdout: SSE_OK, code: 0 })
   const { chunks, result } = await drain($.turn.step(STEP(LOCAL)))

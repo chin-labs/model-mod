@@ -516,7 +516,7 @@ const IMAGE_SPEC = {
     prompt: { type: 'string', description: 'What the image should show.' },
     size: { type: 'string', enum: ['1024x1024', '1536x1024', '1024x1536', 'auto'], description: 'Default 1024x1024.' },
     quality: { type: 'string', enum: ['low', 'medium', 'high', 'auto'], description: 'Default medium.' },
-    path: { type: 'string', description: 'Relative .png path inside the working directory; default generated-images/<time>.png.' },
+    path: { type: 'string', description: 'Relative .png path inside the working directory; default generated-images/<time>.png. Existing files are not overwritten.' },
   } },
   isDeferred: false,
 }
@@ -741,6 +741,12 @@ async function applyWindowNow($: EngineInterface, c: Config, model: string): Pro
 const IMAGE_PIPELINE = [
   'set -o pipefail',
   'out=$3; dir=$(dirname -- "$out") || exit 1',
+  'root=$(cd -P -- "$4" && pwd -P) || exit 1',
+  'ancestor=$dir',
+  'while [ ! -e "$ancestor" ] && [ ! -L "$ancestor" ]; do ancestor=$(dirname -- "$ancestor") || exit 1; done',
+  'resolved=$(cd -P -- "$ancestor" && pwd -P) || exit 1',
+  'case "$resolved" in "$root"|"${root%/}/"*) ;; *) echo "path resolves outside the working directory"; exit 1 ;; esac',
+  'if [ -e "$out" ] || [ -L "$out" ]; then echo "file already exists"; exit 1; fi',
   'mkdir -p -- "$dir" || exit 1',
   'tmp=$(mktemp -- "$dir/.model-mod-image.XXXXXX") || exit 1',
   'trap \'rm -f -- "$tmp"\' EXIT',
@@ -758,7 +764,8 @@ const IMAGE_PIPELINE = [
     ' base64 -d > "$tmp"',
   'status=$?',
   'if [ "$status" -ne 0 ] || [ ! -s "$tmp" ]; then echo "no image in the response"; exit 1; fi',
-  'chmod "$(printf \'%03o\' $(( 0666 & ~0$(umask) )))" "$tmp" && mv -f -- "$tmp" "$out" || exit 1',
+  'chmod "$(printf \'%03o\' $(( 0666 & ~0$(umask) )))" "$tmp" && mv -n -- "$tmp" "$out" || exit 1',
+  'if [ -e "$tmp" ]; then echo "file already exists"; exit 1; fi',
   'wc -c < "$out"',
 ].join('\n')
 
@@ -1016,21 +1023,21 @@ export const register: Register = (on, options) => {
       const input = e as unknown as Record<string, unknown>
       const prompt = typeof input.prompt === 'string' ? input.prompt.trim() : ''
       if (!prompt || prompt.length > 4000) return answer('prompt must be 1-4000 characters.', true)
-      const refused = await permitted($, e, IMAGE_TOOL, `Generate an image and save it in the working directory: "${prompt.slice(0, 200)}"?`)
-      if (refused) return answer(refused, true)
       const size = input.size ?? '1024x1024'
       const quality = input.quality ?? 'medium'
       if (!['1024x1024', '1536x1024', '1024x1536', 'auto'].includes(String(size)) ||
           !['low', 'medium', 'high', 'auto'].includes(String(quality))) return answer('size or quality is not supported.', true)
-      const cwd = (await $.session.cwd()).replace(/\/+$/, '')
+      const cwd = (await $.session.cwd()).replace(/\/+$/, '') || '/'
       const given = typeof input.path === 'string' ? input.path : `generated-images/image-${Date.now()}.png`
       if (!/^[A-Za-z0-9._\/-]{1,200}\.png$/.test(given) || given.startsWith('/') || given.split('/').some(part => part === '..' || part === '')) {
         return answer('path must be a relative .png path inside the working directory.', true)
       }
       const out = `${cwd}/${given}`
+      const refused = await permitted($, e, IMAGE_TOOL, `Generate an image and save it to ${given}: "${prompt.slice(0, 200)}"?`)
+      if (refused) return answer(refused, true)
       const body = JSON.stringify({ model: c.imageModel, prompt, size, quality, n: 1 })
       const run = await $.process.run(['bash', '-c', IMAGE_PIPELINE, 'bash', c.headerFile ?? '',
-        c.baseUrl + '/v1/images/generations', out], { stdin: body, timeoutMs: 300_000, ...(c.key !== undefined ? { env: { MODEL_MOD_KEY: c.key } } : {}) })
+        c.baseUrl + '/v1/images/generations', out, cwd], { stdin: body, timeoutMs: 300_000, ...(c.key !== undefined ? { env: { MODEL_MOD_KEY: c.key } } : {}) })
       if (run.exitCode !== 0) return answer(`Image request failed (${run.stdout.trim().slice(0, 100) || 'no output'}).`, true)
       return answer(`Saved image to ${out} (${run.stdout.trim()} bytes, ${size}). Open it with the Read tool to look at it.`)
     } catch (err) {
