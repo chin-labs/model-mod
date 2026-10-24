@@ -19,7 +19,7 @@ export class MessagesStream {
   }
 
   push(piece: string): TurnStepChunk[] {
-    if (this.error) return []
+    if (this.error || this.complete) return []
     this.buffer += piece
     const chunks: TurnStepChunk[] = []
     for (;;) {
@@ -85,7 +85,15 @@ export class MessagesStream {
         this.complete = true
         // Validate all inputs before emitting the final stop.
         for (const tool of this.tools.values()) if (tool.json) tool.input = JSON.parse(tool.json)
+        for (const index of [...this.pendingTools].sort((a, b) => a - b)) {
+          const tool = this.tools.get(index)!
+          chunks.push({ kind: 'tool', index, id: tool.id, name: tool.name })
+          chunks.push({ kind: 'input', index, json: tool.json || JSON.stringify(tool.input) })
+        }
+        this.pendingTools.clear()
         chunks.push({ kind: 'stop', stopReason: this.stopReason, usage: { ...this.usage } })
+        this.buffer = ''
+        break
       }
     }
     return chunks
