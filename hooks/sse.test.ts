@@ -1,6 +1,46 @@
 import { test, expect } from 'claude-code/testing'
 import { MessagesStream } from './sse.ts'
 
+test('Messages SSE emits tool chunks only after the block stops without delaying text', () => {
+  const parser = new MessagesStream('gpt-6-sol')
+  const frame = (event: string, data: unknown) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
+  expect(parser.push(frame('message_start', { message: { usage: { input_tokens: 1 } } }) +
+    frame('content_block_start', { index: 0, content_block: { type: 'text', text: 'Reading.' } })))
+    .toEqual([{ kind: 'text', index: 0, text: 'Reading.' }])
+  expect(parser.push(frame('content_block_start', {
+    index: 1, content_block: { type: 'tool_use', id: 't1', name: 'Read', input: {} },
+  }) + frame('content_block_delta', {
+    index: 1, delta: { type: 'input_json_delta', partial_json: '{"file_path":' },
+  }))).toEqual([])
+  expect(parser.push('')).toEqual([])
+  expect(parser.complete).toBe(false)
+  expect(parser.push(frame('content_block_delta', {
+    index: 1, delta: { type: 'input_json_delta', partial_json: '"/tmp/note"}' },
+  }))).toEqual([])
+  expect(parser.push(frame('content_block_stop', { index: 1 }))).toEqual([
+    { kind: 'tool', index: 1, id: 't1', name: 'Read' },
+    { kind: 'input', index: 1, json: '{"file_path":"/tmp/note"}' },
+  ])
+  expect(parser.push(frame('content_block_start', {
+    index: 1, content_block: { type: 'text', text: 'Next.' },
+  }) + frame('content_block_stop', { index: 1 }))).toEqual([{ kind: 'text', index: 1, text: 'Next.' }])
+  expect(parser.push(frame('content_block_start', {
+    index: 1, content_block: { type: 'tool_use', id: 't2', name: 'Read', input: { file_path: '/tmp/other' } },
+  }))).toEqual([])
+  expect(parser.push(frame('content_block_stop', { index: 1 }))).toEqual([
+    { kind: 'tool', index: 1, id: 't2', name: 'Read' },
+    { kind: 'input', index: 1, json: '{"file_path":"/tmp/other"}' },
+  ])
+  expect(parser.push(frame('content_block_start', {
+    index: 2, content_block: { type: 'tool_use', id: 't3', name: 'Read', input: {} },
+  }) + frame('content_block_delta', {
+    index: 2, delta: { type: 'input_json_delta', partial_json: '{"file_path":' },
+  }))).toEqual([])
+  expect(parser.complete).toBe(false)
+  expect(parser.nextIndex).toBe(3)
+  expect(parser.firstToolId()).toBe('t2')
+})
+
 test('Messages SSE maps text, tool input and usage to turn chunks', () => {
   const events = [
     ['message_start', { message: { usage: { input_tokens: 7 } } }],
@@ -26,8 +66,7 @@ test('Messages SSE maps text, tool input and usage to turn chunks', () => {
   expect(chunks).toEqual([
     { kind: 'text', index: 0, text: 'Reading.' },
     { kind: 'tool', index: 1, id: 't1', name: 'Read' },
-    { kind: 'input', index: 1, json: '{"file_path":' },
-    { kind: 'input', index: 1, json: '"/tmp/note"}' },
+    { kind: 'input', index: 1, json: '{"file_path":"/tmp/note"}' },
     { kind: 'stop', stopReason: 'tool_use', usage },
   ])
   expect(parser.complete).toBe(true)

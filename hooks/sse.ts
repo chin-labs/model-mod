@@ -4,6 +4,7 @@ import type { TurnStepChunk, TurnStepInput, TurnStepResult, TurnUsage } from 'cl
 export class MessagesStream {
   private buffer = ''
   private tools = new Map<number, { id: string; name: string; json: string; input: unknown }>()
+  private pendingTools = new Set<number>()
   private reasoning = new Map<number, { thinking: string; signature: string }>()
   answer = ''
   complete = false
@@ -47,12 +48,13 @@ export class MessagesStream {
       const index: number = value.index ?? 0
       if (event.startsWith('content_block_')) this.nextIndex = Math.max(this.nextIndex, index + 1)
       if (event === 'content_block_start') {
+        this.pendingTools.delete(index)
         const block = value.content_block
         if (block?.type === 'thinking') {
           this.reasoning.set(index, { thinking: '', signature: typeof block.signature === 'string' ? block.signature : '' })
         } else if (block?.type === 'tool_use') {
           this.tools.set(index, { id: block.id, name: block.name, json: '', input: block.input ?? {} })
-          chunks.push({ kind: 'tool', index, id: block.id, name: block.name })
+          this.pendingTools.add(index)
         } else if (block?.type === 'text' && block.text) {
           this.answer += block.text
           chunks.push({ kind: 'text', index, text: block.text })
@@ -69,14 +71,14 @@ export class MessagesStream {
           this.reasoning.get(index)!.thinking += delta.thinking
         } else if (delta?.type === 'input_json_delta' && this.tools.has(index)) {
           this.tools.get(index)!.json += delta.partial_json
-          chunks.push({ kind: 'input', index, json: delta.partial_json })
         }
       }
       if (event === 'content_block_stop') {
         const tool = this.tools.get(index)
-        if (tool) {
+        if (tool && this.pendingTools.delete(index)) {
           if (tool.json) tool.input = JSON.parse(tool.json)
-          else chunks.push({ kind: 'input', index, json: JSON.stringify(tool.input) })
+          chunks.push({ kind: 'tool', index, id: tool.id, name: tool.name })
+          chunks.push({ kind: 'input', index, json: tool.json || JSON.stringify(tool.input) })
         }
       }
       if (event === 'message_stop') {

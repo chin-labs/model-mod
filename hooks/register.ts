@@ -754,7 +754,7 @@ const IMAGE_PIPELINE = [
   '  fi',
   '}',
   'fetch "$1" "$2" |' +
-    ' tr -d \' \\t\\r\\n\' | grep -o \'"b64_json":"[^"]*"\' | sed -n \'1{s/^"b64_json":"//;s/"$//;s|\\\\/|/|g;p}\' |' +
+    ' tr -d \' \\t\\r\\n\' | grep -o \'"b64_json":"[^"]*"\' | sed -n \'1{s/^"b64_json":"//;s/"$//;s|\\\\/|/|g;p;}\' |' +
     ' base64 -d > "$tmp"',
   'status=$?',
   'if [ "$status" -ne 0 ] || [ ! -s "$tmp" ]; then echo "no image in the response"; exit 1; fi',
