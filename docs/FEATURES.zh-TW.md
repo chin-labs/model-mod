@@ -14,4 +14,4 @@
 - **Prompt cache。** 上游回報的快取用量會原樣帶回。
 - **自動切換（預設關閉）。** 設定 `fallbackModel` 後，當某回合結束時訂閱用量已達 `fallbackPercent` 且重置時間在未來，工作階段會切到該模型並顯示通知，重置後再切回。它不會重送觸發上限的那一回合、不會重置任何限制，也不會在工具迴圈中或對子代理執行。手動換模型會取消切回。切換期間，你的對話會送往你的上游。
 
-`web_search`、`web_fetch`、`generate_image`、`tool_search` 只提供給你的模型；選了訂閱模型時請改用 Claude Code 內建工具。它們遵循 Claude Code 的權限規則。模型的實際表現取決於模型本身；本插件不會讓它等同訂閱模型。
+`web_search`、`web_fetch`、`generate_image`、`tool_search` 在 model-mod 啟用期間註冊（`generate_image` 需設定圖片模型，關閉工具搜尋時不註冊 `tool_search`），最多讓訂閱模型的請求多約 3 KB 的工具定義；訂閱模型呼叫時會被拒絕，請改用 Claude Code 內建工具。它們遵循 Claude Code 的權限規則。模型的實際表現取決於模型本身；本插件不會讓它等同訂閱模型。
