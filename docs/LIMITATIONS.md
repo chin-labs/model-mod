@@ -6,7 +6,7 @@ This page lists where your models differ from a subscription model, what has not
 
 ## Tested versions
 
-model-mod was tested on **Claude Code 2.1.299 to 2.1.301**. Other versions have not been tested, so do not assume they work. These checks used a test configuration rather than the normal secret-option flow, so they say nothing about how your key is stored (see [Not verified](#not-verified)).
+model-mod was tested on **Claude Code 2.1.299 to 2.1.310**. On 2.1.310, plugin loading, unit tests, turns and the update path were checked. Other versions have not been tested, so do not assume they work. These checks used a test configuration rather than the normal secret-option flow, so they say nothing about how your key is stored (see [Not verified](#not-verified)).
 
 Marketplace installs were tested from a local clone and from a Git server over the standard HTTP protocol. Claude Code does not support installing from a plain ("dumb") HTTP Git server, and it leaves the plugin cache behind after an uninstall.
 
@@ -27,6 +27,8 @@ Marketplace installs were tested from a local clone and from a Git server over t
 | Saved default model | Claude Code saves interactive model choices as its default. Uninstalling with a local model saved leaves an unusable default. | Select a subscription model first, or remove the saved `model` setting. |
 | Model picker | `/model-mod:model` lists your models. Claude Code's own `/model` panel and `/config` Model do not, and `--model <id>` at startup bypasses the picker (it works with one of your IDs). | Use `/model-mod:model`, or type `/model <id>`. |
 | Organization-managed Claude Code | Title, model-switch and compaction hooks skip personally installed plugins unless the organization lists them. This setup has not been tested. | Ask your administrator to list the plugin. |
+
+SDK and `-p` callers must check whether the result text starts with `model-mod:`: failed turns deliberately end with a text message and `end_turn`, with `is_error` set to `false`, because throwing an exception would make the engine use the subscription endpoint.
 
 ## Not verified
 

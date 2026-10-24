@@ -12,7 +12,7 @@ model-mod 是供 Claude Code 使用的插件（mod），讓你把自己的 Messa
 
 ## 需求
 
-- 支援 mod 的 Claude Code，已在 **Claude Code 2.1.299 至 2.1.301** 測試；其他版本未測。
+- 支援 mod 的 Claude Code，已在 **Claude Code 2.1.299 至 2.1.310** 測試；其他版本未測。
 - 你自己已啟動的 Messages 相容上游及其 API 金鑰。已測試的上游是 CLIProxyAPI；model-mod 不會安裝或啟動它。
 - `curl` 與 `bash`；網頁擷取與圖片生成另需[設定說明](docs/CONFIGURATION.zh-TW.md#先準備好你的上游)列出的系統工具。
 

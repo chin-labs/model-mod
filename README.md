@@ -12,7 +12,7 @@ model-mod is a plugin (a "mod") for Claude Code that puts models from your own M
 
 ## Requirements
 
-- Claude Code with mod support, tested on **Claude Code 2.1.299 to 2.1.301**; other versions are untested.
+- Claude Code with mod support, tested on **Claude Code 2.1.299 to 2.1.310**; other versions are untested.
 - Your own running Messages-compatible upstream and its API key. CLIProxyAPI is the tested upstream; model-mod does not install or run it.
 - `curl` and `bash`; web fetch and image generation need additional system tools listed in [Configuration](docs/CONFIGURATION.md#set-up-your-upstream-first).
 
@@ -40,7 +40,7 @@ claude plugin configure model-mod@model-mod
 
 The last shell command lists options and which are unset; use `/plugin configure model-mod@model-mod` in Claude Code to edit them, or [configure from a private file](docs/CONFIGURATION.md#installation-alternatives). To install from a local clone, use its path instead of `chin-labs/model-mod`.
 
-Run `/model-mod:status` to check activation, then select your model and send a short message. An upstream failure ends the turn with an error; it is never retried through your subscription.
+Run `/model-mod:status` to check activation, then select your model and send a short message. An upstream failure ends the turn with an error message; it is never retried through your subscription.
 
 ## Features
 
