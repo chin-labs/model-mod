@@ -233,15 +233,27 @@ test('502/503/504 retry without a known error type and can eventually succeed', 
   expect(w.reached).toEqual([])
 })
 
-test('503 with an unknown error type stops after three retries with a visible error', async ($, on) => {
-  const w = world(on, baseConfig, LOCAL, {
+test('HTTP failures stop after three retries and respect bounded Retry-After seconds', async ($, on) => {
+  const reply: SpawnReply = {
     stdout: '{"error":{"type":"unknown_error","message":"untrusted message"}}',
     stderr: '\nmodel-mod-http:503\n', code: 22,
-  })
+  }
+  const w = world(on, baseConfig, LOCAL, reply)
   const { chunks, result } = await drain($.turn.step(STEP(LOCAL)))
   expect(w.spawned.length).toBe(4)
   expect(result.answer).toBe('model-mod: HTTP error.')
   expect(chunks.filter(c => c.kind === 'text').map(c => c.text).join('')).toBe(result.answer)
+  for (const seconds of [1, 4, 120]) {
+    reply.stderr = ['HTTP/1.1 429 Too Many Requests\r\nRetry-Af', `ter: ${seconds}\r\n\r\n`, '\nmodel-mod-ht', 'tp:429\n']
+    w.spawned.length = 0
+    w.ran.length = 0
+    const limited = await drain($.turn.step(STEP(LOCAL)))
+    expect(w.spawned.length).toBe(seconds > 15 ? 1 : 4)
+    const waits = w.ran.filter(argv => argv[0] === 'sleep').map(argv => Number(argv[1]))
+    expect(waits.reduce((sum, delay) => sum + delay, 0)).toBe(seconds > 15 ? 0 : Math.max(2, seconds) + 6 + 15)
+    expect(limited.result.answer).toBe('model-mod: upstream rate limited (HTTP 429)' + (seconds > 15 ? `, retry after ${seconds}s.` : '.'))
+    expect(w.spawned[0]!.argv).toContain('/dev/stderr')
+  }
   expect(w.reached).toEqual([])
 })
 

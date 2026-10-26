@@ -994,7 +994,10 @@ export const register: Register = (on, options) => {
     const c = await load($)
     if (c) {
       // Models the upstream serves now; a failure keeps the cached and configured ones.
-      if (c.source === 'options') await refreshModels($, c)
+      if (c.source === 'options') {
+        const refresh = refreshModels($, c)
+        if (!c.models.length) await Promise.race([refresh, $.clock.sleep(2000)])
+      }
       for (const spec of c.toolSearch === 'off' ? [WEB_SEARCH_SPEC, WEB_FETCH_SPEC] : [WEB_SEARCH_SPEC, WEB_FETCH_SPEC, TOOL_SEARCH_SPEC]) {
         try { await $.tool.register(spec) } catch { /* the bridge works without the web tools */ }
       }
@@ -1501,7 +1504,7 @@ export const register: Register = (on, options) => {
       for (let attempt = 0; ; attempt++) {
         if (next.signal.aborted) return yield* failure(e, 'cancelled')
         parser = new MessagesStream(e.model)
-        const call = curlCall(c, ['-sN', '--fail-with-body', '--max-time', '900',
+        const call = curlCall(c, ['-sN', '--fail-with-body', '--max-time', '900', '-D', '/dev/stderr',
           '--write-out', '%{stderr}\nmodel-mod-http:%{http_code}\n', '-H', 'content-type: application/json',
           '-H', 'anthropic-version: 2023-06-01', '--data-binary', '@-', c.baseUrl + '/v1/messages'])
         const child = $.process.spawn({ argv: call.argv, ...(call.env ? { env: call.env } : {}),
@@ -1510,14 +1513,23 @@ export const register: Register = (on, options) => {
         let rawError = ''
         let statusTail = ''
         let httpStatus = 0
+        let retryAfter: number | undefined
         let streamed = false
         try {
           for await (const piece of child) {
             if (next.signal.aborted) return yield* failure(e, 'cancelled', parser.nextIndex)
             if (piece.stream !== 'stdout') {
-              statusTail = (statusTail + piece.text).slice(-64)
-              const status = /\nmodel-mod-http:(\d{3})\n/.exec(statusTail)
-              if (status) httpStatus = Number(status[1])
+              const lines = (statusTail + piece.text).split('\n')
+              statusTail = lines.pop()!.slice(-64)
+              for (const line of lines) {
+                if (/^HTTP\/\S+\s+\d{3}\b/.test(line)) retryAfter = undefined
+                const status = /^model-mod-http:(\d{3})\r?$/.exec(line)
+                if (status) httpStatus = Number(status[1])
+                if (/^retry-after:/i.test(line)) {
+                  const seconds = /^retry-after:[ \t]*(\d+)[ \t]*\r?$/i.exec(line)
+                  retryAfter = seconds && Number.isSafeInteger(Number(seconds[1])) ? Number(seconds[1]) : undefined
+                }
+              }
               continue
             }
             // Preserve a small error JSON prefix without ever displaying its message.
@@ -1531,7 +1543,8 @@ export const register: Register = (on, options) => {
           }
           finished = true
           if (parser.error || exit.code !== 0 || !parser.complete) {
-            let reason = parser.error || exit.code === 22 ? 'HTTP error' : exit.code !== 0 ? 'curl failed' : 'incomplete upstream response'
+            let reason = httpStatus === 429 ? 'upstream rate limited (HTTP 429)' :
+              parser.error || exit.code === 22 ? 'HTTP error' : exit.code !== 0 ? 'curl failed' : 'incomplete upstream response'
             let type: unknown = parser.error?.type
             if (!parser.error) {
               try { type = JSON.parse(rawError).error?.type } catch { /* SSE, not JSON */ }
@@ -1541,6 +1554,9 @@ export const register: Register = (on, options) => {
             const transient = parser.error || exit.code === 22
               ? [429, 502, 503, 504, 529].includes(httpStatus) || ['rate_limit_error', 'overloaded_error', 'api_error'].includes(type as string)
               : exit.code === 0 || (exit.code !== null && [6, 7, 18, 28, 35, 52, 55, 56].includes(exit.code))
+            if (!streamed && transient && retryAfter !== undefined && retryAfter > 15) {
+              return yield* failure(e, `${reason}${httpStatus && httpStatus !== 429 ? ` (HTTP ${httpStatus})` : ''}, retry after ${retryAfter}s`, parser.nextIndex)
+            }
             if (!streamed && sendThinking && type === 'invalid_request_error') {
               // The API did not accept the remembered reasoning (another credential, a changed format): go without it.
               sendThinking = false
@@ -1550,7 +1566,7 @@ export const register: Register = (on, options) => {
             if (!streamed && transient && attempt < RETRY_DELAYS.length) {
               $.ui.status(`model-mod: ${reason}; retrying (${attempt + 1}/${RETRY_DELAYS.length})`)
               // $.clock.sleep is paid out of the hook's own time budget (about 10 s); a process wait is not.
-              for (let left = RETRY_DELAYS[attempt]!; left > 0 && !next.signal.aborted; left -= 3000) {
+              for (let left = Math.max(RETRY_DELAYS[attempt]!, (retryAfter ?? 0) * 1000); left > 0 && !next.signal.aborted; left -= 3000) {
                 await $.process.run(['sleep', String(Math.min(left, 3000) / 1000)])
               }
               continue
