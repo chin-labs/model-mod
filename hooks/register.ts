@@ -959,10 +959,20 @@ async function menuPick($: EngineInterface, models: readonly string[], current: 
   try { return await pickModel($, models, current) } catch { return undefined }
 }
 
+async function configHint($: EngineInterface): Promise<string> {
+  return optionsCandidate(pluginOptions) === undefined && await $.env.get('MODEL_MOD_CONFIG')
+    ? 'Check the JSON file named by MODEL_MOD_CONFIG (baseUrl, headerFile, models and maxTokens), then reload the plugin.'
+    : 'Configure apiKey through /plugin → model-mod configure.'
+}
+
+function commandText(reply: { text: string }): { text: string } {
+  return { text: reply.text.replace(/^model-mod(?:: ?| )/, '') }
+}
+
 async function admin($: EngineInterface, e: { origin: { kind: string } }, arg: 'setup' | 'status' | 'refresh') {
   const c = await load($)
   if (arg === 'setup') return { text: await configurePicker($, c ?? { baseUrl: typeof pluginOptions.baseUrl === 'string' ? pluginOptions.baseUrl : DEFAULT_BASE_URL, models: [] }, true, e.origin.kind === 'composer' || e.origin.kind === 'bridge', `picker=${c ? 'active' : 'inactive'}; models=${c?.models.length ?? 0}`) }
-  if (!c) return { text: `model-mod: inactive; picker=inactive; models=0. Configure apiKey through /plugin → model-mod configure.` }
+  if (!c) return { text: `model-mod: inactive; picker=inactive; models=0. ${await configHint($)}` }
   if (arg === 'refresh') {
     c.prompts = await loadPrompts($, c.promptsDir)
     await registerWorker($, c)
@@ -983,7 +993,12 @@ async function admin($: EngineInterface, e: { origin: { kind: string } }, arg: '
     const known = new Set(captured.map(tool => tool.name))
     open = (await $.tool.list()).filter(tool => tool.mcp && !tool.name.startsWith('mcp__model-mod__') && !known.has(tool.name)).length
   }
-  return { text: `model-mod 0.1.1: picker=active; host=${new URL(c.baseUrl).hostname}; config=${c.source}; models=${c.models.length}; tools=${captured ? (c.toolsFile ? 'captured' : 'listed') : 'missing'}` +
+  const url = new URL(c.baseUrl)
+  const loopback = ['127.0.0.1', '[::1]', 'localhost'].includes(url.hostname.toLowerCase().replace(/\.$/, ''))
+  const warnings: string[] = []
+  if (c.headerFile !== undefined && !await $.fs.exists(c.headerFile)) warnings.push('headerFile not found')
+  if (!loopback && url.protocol === 'http:') warnings.push('plain http to a non-loopback host sends the API key unencrypted')
+  return { text: `model-mod 0.1.1: picker=active${warnings.map(w => `; warning: ${w}`).join('')}; host=${loopback ? url.hostname : 'remote'}; config=${c.source}; models=${c.models.length}; tools=${captured ? (c.toolsFile ? 'captured' : 'listed') : 'missing'}` +
     `; ${promptStatus(c.prompts)}; tool search=${c.toolSearch ?? 'auto'}; MCP tools without a captured schema=${open}${open && c.refresh ? ' (/model-mod:refresh captures them)' : ''}` }
 }
 
@@ -1323,7 +1338,7 @@ export const register: Register = (on, options) => {
   // or the paged menu where the pane cannot be shown.
   on('command.run', { command: 'model-mod:model' }, async ($, e) => {
     const c = await load($)
-    if (!c) return { text: 'model-mod: inactive; models=0. Configure apiKey through /plugin → model-mod configure.' }
+    if (!c) return { text: `model-mod: inactive; models=0. ${await configHint($)}` }
     if (e.origin.kind !== 'composer' && e.origin.kind !== 'bridge') return { text: 'model-mod: /model-mod:model needs an interactive session.' }
     if (!c.models.length) return { text: 'model-mod: no local models. Run /model-mod:setup to add them.' }
     let current = ''
@@ -1355,9 +1370,9 @@ export const register: Register = (on, options) => {
   })
 
   // The names stay literal: the engine reads them statically.
-  on('command.run', { command: 'model-mod:setup' }, ($, e) => admin($, e, 'setup'))
-  on('command.run', { command: 'model-mod:status' }, ($, e) => admin($, e, 'status'))
-  on('command.run', { command: 'model-mod:refresh' }, ($, e) => admin($, e, 'refresh'))
+  on('command.run', { command: 'model-mod:setup' }, ($, e) => admin($, e, 'setup').then(commandText))
+  on('command.run', { command: 'model-mod:status' }, ($, e) => admin($, e, 'status').then(commandText))
+  on('command.run', { command: 'model-mod:refresh' }, ($, e) => admin($, e, 'refresh').then(commandText))
 
   on('agent.spawn', async ($, e, next) => {
     const started = await next(e)
@@ -1543,8 +1558,10 @@ export const register: Register = (on, options) => {
           }
           finished = true
           if (parser.error || exit.code !== 0 || !parser.complete) {
+            const curlError = [6, 7].includes(exit.code ?? 0) ? `could not connect (curl ${exit.code})` :
+              exit.code === 28 ? 'request timed out (curl 28)' : [35, 60, 51, 58, 59].includes(exit.code ?? 0) ? `TLS error (curl ${exit.code})` : 'curl failed'
             let reason = httpStatus === 429 ? 'upstream rate limited (HTTP 429)' :
-              parser.error || exit.code === 22 ? 'HTTP error' : exit.code !== 0 ? 'curl failed' : 'incomplete upstream response'
+              parser.error || exit.code === 22 ? 'HTTP error' : exit.code !== 0 ? curlError : 'incomplete upstream response'
             let type: unknown = parser.error?.type
             if (!parser.error) {
               try { type = JSON.parse(rawError).error?.type } catch { /* SSE, not JSON */ }

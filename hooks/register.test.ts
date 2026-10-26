@@ -296,6 +296,18 @@ test('SSE errors after output never retry even when content and error arrive in 
   expect(w.reached).toEqual([])
 })
 
+test('status hides remote hosts, warns about plain HTTP and reports a missing header file', async ($, on) => {
+  const w = world(on, { ...baseConfig, baseUrl: 'http://upstream.example:9999' }, LOCAL, { stdout: '', code: 0 })
+  const status = () => $.command.run({ command: 'model-mod:status', args: '', origin: { kind: 'composer' } } as never)
+  const missing = await status()
+  expect(missing.text).toContain('picker=active; warning: headerFile not found;')
+  expect(missing.text).toContain('host=remote;')
+  expect(missing.text).not.toContain('upstream.example')
+  expect(missing.text).toContain('warning: plain http to a non-loopback host sends the API key unencrypted')
+  w.files[baseConfig.headerFile] = ''
+  expect((await status()).text).not.toContain('headerFile not found')
+})
+
 test('a config that lists a Claude model ID leaves the mod inert', async ($, on) => {
   const w = world(on, { ...baseConfig, models: ['claude-sonnet-5-5'] }, 'claude-sonnet-5-5', { stdout: SSE_OK, code: 0 })
   const stream = $.turn.step(STEP('claude-sonnet-5-5'))
