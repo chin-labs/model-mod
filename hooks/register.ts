@@ -737,19 +737,20 @@ async function applyWindowNow($: EngineInterface, c: Config, model: string): Pro
 // size. The response never passes through the engine, whose process output is capped at 4 MiB (a large PNG as base64
 // is not). The JSON is read with tr/grep/sed/base64 (whitespace removed, the first "b64_json" string taken, `\/`
 // unescaped): enough for the response of an images endpoint. Any failing stage fails the whole call; the image is
-// written to a private temporary file next to the target and only a complete one is renamed into place.
+// decoded to a private temporary file next to the target, then copied to an exclusively created file.
 const IMAGE_PIPELINE = [
   'set -o pipefail',
   'out=$3; dir=$(dirname -- "$out") || exit 1',
-  'root=$(cd -P -- "$4" && pwd -P) || exit 1',
+  'root=$(cd -P -- "$4" && pwd -P) || { echo "cannot resolve the target directory"; exit 1; }',
   'ancestor=$dir',
   'while [ ! -e "$ancestor" ] && [ ! -L "$ancestor" ]; do ancestor=$(dirname -- "$ancestor") || exit 1; done',
-  'resolved=$(cd -P -- "$ancestor" && pwd -P) || exit 1',
+  'resolved=$(cd -P -- "$ancestor" && pwd -P) || { echo "cannot resolve the target directory"; exit 1; }',
   'case "$resolved" in "$root"|"${root%/}/"*) ;; *) echo "path resolves outside the working directory"; exit 1 ;; esac',
   'if [ -e "$out" ] || [ -L "$out" ]; then echo "file already exists"; exit 1; fi',
   'mkdir -p -- "$dir" || exit 1',
   'tmp=$(mktemp -- "$dir/.model-mod-image.XXXXXX") || exit 1',
   'trap \'rm -f -- "$tmp"\' EXIT',
+  'trap \'exit 1\' HUP INT TERM',
   // The key (options mode, `$1` empty) is given to curl as a configuration line from a process substitution, which
   // must be an argument of curl's own command line: an array assignment would close it before curl starts.
   'fetch() {',
@@ -764,8 +765,14 @@ const IMAGE_PIPELINE = [
     ' base64 -d > "$tmp"',
   'status=$?',
   'if [ "$status" -ne 0 ] || [ ! -s "$tmp" ]; then echo "no image in the response"; exit 1; fi',
-  'chmod "$(printf \'%03o\' $(( 0666 & ~0$(umask) )))" "$tmp" && mv -n -- "$tmp" "$out" || exit 1',
-  'if [ -e "$tmp" ]; then echo "file already exists"; exit 1; fi',
+  'set -C',
+  'if ! exec 3> "$out"; then echo "file already exists"; exit 1; fi',
+  'set +C',
+  'trap \'rm -f -- "$tmp" "$out"\' EXIT',
+  'if ! cat "$tmp" >&3; then echo "cannot write image"; exit 1; fi',
+  'exec 3>&-',
+  'trap \'rm -f -- "$tmp"\' EXIT',
+  'rm -f -- "$tmp" || exit 1',
   'wc -c < "$out"',
 ].join('\n')
 
