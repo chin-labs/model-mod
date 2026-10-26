@@ -2,7 +2,7 @@
 
 [繁體中文](FEATURES.zh-TW.md) · [README](../README.md)
 
-- **Streaming and tools.** Text and tool calls stream. Before any output has arrived, HTTP 429, 502, 503, 504 and 529 and other transient errors are retried after 2, 6 and 15 seconds (three retries at most). Once output has started, a broken stream ends the turn without replaying it.
+- **Streaming and tools.** Text and tool calls stream. Before any output has arrived, HTTP 429, 502, 503, 504 and 529 and other transient errors are retried after 2, 6 and 15 seconds (three retries at most). An integer `Retry-After` of 0–15 seconds raises the next wait to at least that value; a larger value ends the turn immediately with the HTTP status and requested wait. Invalid values and HTTP dates are ignored. Once output has started, a broken stream ends the turn without replaying it.
 - **Built-in tools, Skills and MCP.** They work as usual. Tool input schemas are not passed on, so Claude Code validates arguments itself.
 - **Subagents and Workflow.** From a subscription session, hand a task to one of your models with the `model-mod:local-worker` agent type (needs `workerModel` or `fallbackModel`), or give a Workflow agent `model: "<your-model-id>"`. A session on one of your models can still delegate to a subscription model; that request uses the subscription.
 - **Web search and fetch.** `web_search` runs through your upstream. `web_fetch` downloads public HTTP(S) pages itself and checks every DNS answer at each hop, refusing private and special-use addresses (five redirects at most).

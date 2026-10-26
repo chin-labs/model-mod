@@ -18,7 +18,7 @@ Marketplace 安裝已用本機 clone 與使用標準 HTTP 協定的 Git 伺服�
 | 請求內容 | 對話請求帶 `model`、`max_tokens`、`stream`、`messages`、`system` 及選用的 `tools`；客戶端的其他請求欄位不會送出。 | 無需處理。 |
 | 推理 | 只在工具迴圈內交回 Codex 形式的加密推理簽章；其他 thinking 與 server-tool 區塊會移除。簽章被拒時，去除後重試一次。 | 上游拒絕簽章時，設 `keepThinking: false`。 |
 | Effort | 五個等級以模型後綴（如 `model(high)`）送出。這只確認名稱有送到上游，不代表推理強度會改變。Ultracode 是獨立開關，不改變等級；`/effort ultra` 由客戶端自己拒絕。 | 上游拒絕後綴時，設 `effortMode: none`。 |
-| 失敗處理 | 尚未有任何輸出前，HTTP 429、502、503、504、529 與可辨識的暫時性錯誤（含早期的 `overloaded_error` 事件）會在 2、6、15 秒後重試（最多三次）。輸出開始後串流中斷，該回合直接結束，不會重播。失敗的回合不會改用其他模型或訂閱重試。 | 重新送出訊息，或用 `/model` 換模型。 |
+| 失敗處理 | 尚未有任何輸出前，HTTP 429、502、503、504、529 與可辨識的暫時性錯誤（含早期的 `overloaded_error` 事件）會在 2、6、15 秒後重試（最多三次）。整數 `Retry-After` 為 0–15 秒時，下一次等待至少採用該值；超過 15 秒則立即以 HTTP 狀態與要求的等待秒數結束回合。無效值與 HTTP 日期一律忽略。輸出開始後串流中斷，該回合直接結束，不會重播。失敗的回合不會改用其他模型或訂閱重試。 | 重新送出訊息，或用 `/model` 換模型。 |
 | 壓縮 | 只使用 `prompts/` 內的提示檔；缺檔時略過本地壓縮。摘要品質取決於模型。送去摘要的逐字稿有上限（總計 600000 字元、每則 20000、每個工具結果 1500）。代理內的壓縮尚未驗證。 | 重要事項寫進專案指示，不要只留在對話裡。 |
 | 工具 | 工具 schema 為開放式（只有名稱與描述）。在你的模型上，`web_search`、`web_fetch` 取代原生 WebSearch、WebFetch，且 `web_fetch` 回傳頁面內容，不做模型摘要。四個 mod 工具（`web_search`、`web_fetch`、`generate_image`、`tool_search`）在訂閱模型下拒絕呼叫，請改用內建工具。`web_fetch` 會拒絕部分公開 IPv6 literal，特殊 IPv6 過渡形式也未完整涵蓋。 | 改用其他網址形式，或用其他工具擷取。 |
 | 子代理與 Workflow | 子代理取得工作階段系統提示加上委派備註。訂閱工作階段的 Agent 呼叫不能直接指定你的模型 ID；請用 `model-mod:local-worker` 代理類型或 Workflow agent。context 視窗覆寫跟隨主工作階段。 | 設定 `workerModel` 並使用 `model-mod:local-worker`。 |

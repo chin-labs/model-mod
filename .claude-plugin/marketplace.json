@@ -1,6 +1,6 @@
 {
   "name": "model-mod",
-  "description": "A plugin marketplace for Claude Code with one plugin, model-mod, which adds models from your own Messages-compatible API. It does not modify Claude Code.",
+  "description": "A plugin marketplace for Claude Code with one plugin, model-mod, which adds models from your own Messages-compatible API. The plugin does not modify the Claude Code binary.",
   "owner": {
     "name": "Chin"
   },

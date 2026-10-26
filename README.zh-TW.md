@@ -47,7 +47,7 @@ claude plugin configure model-mod@model-mod
 - 你的模型與訂閱模型並存，用 `/model-mod:model` 依工作階段切換。
 - 支援串流、工具呼叫、Skills、MCP 伺服器、子代理與 Workflow agent。
 - 提供給你的模型使用的網頁搜尋、網頁擷取、圖片生成與工具搜尋。
-- 暫時性上游錯誤自動重試，並支援 Claude Code 的五級 effort。
+- 暫時性上游錯誤自動重試，採用有上限的 `Retry-After` 處理，並支援 Claude Code 的五級 effort。
 - 以你選的模型壓縮上下文，也可選擇在訂閱用量達上限時自動切換模型。
 
 ## 指令
@@ -57,7 +57,7 @@ claude plugin configure model-mod@model-mod
 | `/model-mod:setup` | 確認上游網址並選擇要提供的模型。取消不會更動設定。 |
 | `/model-mod:model` | 列出你的模型並切換到所選的那個（↑↓ 移動、Enter 選取、Esc 關閉）。終端機太矮、或來自 Remote Control／手機時，改用分頁選單。 |
 | `/model-mod:refresh` | 重新讀取提示檔與上游的模型清單。 |
-| `/model-mod:status` | 顯示 mod 是否啟用、提供的模型數量及工具設定。 |
+| `/model-mod:status` | 顯示是否啟用、模型數量及工具設定。回送位址顯示主機名，其他主機顯示 `host=remote`；明文 HTTP 將 API 金鑰以未加密形式送至非回送主機時會提出警告。 |
 | `/model` | Claude Code 原本的指令，維持不變：訂閱模型。直接輸入你的模型 ID（`/model <id>`）也可以。 |
 | `/btw <question>` | 選了你的模型時，經你的上游以唯讀上下文回答，不使用工具。 |
 

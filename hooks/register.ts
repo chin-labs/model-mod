@@ -1015,9 +1015,15 @@ export const register: Register = (on, options) => {
   on('session.start', async ($, e, next) => {
     const c = await load($)
     if (c) {
+      let imageRegistered = false
+      const registerImage = async () => {
+        if (!c.imageModel || imageRegistered) return
+        imageRegistered = true
+        try { await $.tool.register(IMAGE_SPEC) } catch { /* the bridge works without the image tool */ }
+      }
       // Models the upstream serves now; a failure keeps the cached and configured ones.
       if (c.source === 'options') {
-        const refresh = refreshModels($, c)
+        const refresh = refreshModels($, c).then(registerImage)
         if (!c.models.length) await Promise.race([refresh, $.clock.sleep(2000)])
       }
       for (const spec of c.toolSearch === 'off' ? [WEB_SEARCH_SPEC, WEB_FETCH_SPEC] : [WEB_SEARCH_SPEC, WEB_FETCH_SPEC, TOOL_SEARCH_SPEC]) {
@@ -1027,9 +1033,7 @@ export const register: Register = (on, options) => {
       // An agent type that runs on a model of this mod, so a subscription model can hand work to it with the Agent tool
       // (whose own `model` parameter accepts only aliases). It appears in the Agent tool's listing only when configured.
       await registerWorker($, c)
-      if (c.imageModel) {
-        try { await $.tool.register(IMAGE_SPEC) } catch { /* the bridge works without the image tool */ }
-      }
+      await registerImage()
     }
     return next(e)
   })

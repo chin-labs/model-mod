@@ -47,7 +47,7 @@ Run `/model-mod:status` to check activation, then select your model and send a s
 - Your models alongside subscription models, switched per session with `/model-mod:model`.
 - Streaming, tool calls, Skills, MCP servers, subagents and Workflow agents.
 - Web search, web fetch, image generation and tool search for your models.
-- Automatic retry of transient upstream errors and Claude Code's five effort levels.
+- Automatic retry of transient upstream errors with bounded `Retry-After` handling, and Claude Code's five effort levels.
 - Compaction through your selected model and optional automatic switching at your subscription's usage limit.
 
 ## Commands
@@ -57,7 +57,7 @@ Run `/model-mod:status` to check activation, then select your model and send a s
 | `/model-mod:setup` | Confirm the upstream URL and choose the models to offer. Cancelling changes nothing. |
 | `/model-mod:model` | List your models and switch to the one you pick (↑↓ to move, Enter to select, Esc to close). On a short terminal, Remote Control or mobile, a paged menu is used instead. |
 | `/model-mod:refresh` | Re-read the prompts and the upstream's model list. |
-| `/model-mod:status` | Show whether the mod is active, how many models it offers and how its tools are set up. |
+| `/model-mod:status` | Show activation, model count and tool setup. Loopback hostnames are shown; other hosts appear as `host=remote`. Warns when plain HTTP sends the API key unencrypted to a non-loopback host. |
 | `/model` | Claude Code's own command, unchanged: subscription models. Typing one of your model IDs (`/model <id>`) also works. |
 | `/btw <question>` | With one of your models selected, answered through your upstream with read-only context and no tools. |
 
