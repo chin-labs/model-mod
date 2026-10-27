@@ -966,6 +966,15 @@ async function menuPick($: EngineInterface, models: readonly string[], current: 
   try { return await pickModel($, models, current) } catch { return undefined }
 }
 
+// URL canonicalises the host: IPv4 is dotted-quad and IPv4-mapped IPv6 is hex (::ffff:7f00:1); anything else is not loopback.
+export function loopbackHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/\.$/, '')
+  if (host === 'localhost' || host === '[::1]') return true
+  if (/^127(?:\.\d{1,3}){3}$/.test(host)) return true
+  const mapped = /^\[::ffff:([0-9a-f]{1,4}):[0-9a-f]{1,4}\]$/.exec(host)
+  return mapped !== null && parseInt(mapped[1]!, 16) >>> 8 === 127
+}
+
 async function configHint($: EngineInterface): Promise<string> {
   return optionsCandidate(pluginOptions) === undefined && await $.env.get('MODEL_MOD_CONFIG')
     ? 'Check the JSON file named by MODEL_MOD_CONFIG (baseUrl, headerFile, models and maxTokens), then reload the plugin.'
@@ -1001,7 +1010,7 @@ async function admin($: EngineInterface, e: { origin: { kind: string } }, arg: '
     open = (await $.tool.list()).filter(tool => tool.mcp && !tool.name.startsWith('mcp__model-mod__') && !known.has(tool.name)).length
   }
   const url = new URL(c.baseUrl)
-  const loopback = ['127.0.0.1', '[::1]', 'localhost'].includes(url.hostname.toLowerCase().replace(/\.$/, ''))
+  const loopback = loopbackHost(url.hostname)
   const warnings: string[] = []
   if (c.headerFile !== undefined && !await $.fs.exists(c.headerFile)) warnings.push('headerFile not found')
   if (!loopback && url.protocol === 'http:') warnings.push('plain http to a non-loopback host sends the API key unencrypted')

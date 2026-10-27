@@ -1,6 +1,7 @@
 import { test, expect, mock } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
+import { loopbackHost } from './register.ts'
 
 // What the compliance rules in docs/COMPLIANCE.md turn on: a model the bridge does not own always goes down the
 // chain (`next`), a bridge model never does, and the mod stays inert on a config that names a subscription host or a
@@ -306,6 +307,13 @@ test('status hides remote hosts, warns about plain HTTP and reports a missing he
   expect(missing.text).toContain('warning: plain http to a non-loopback host sends the API key unencrypted')
   w.files[baseConfig.headerFile] = ''
   expect((await status()).text).not.toContain('headerFile not found')
+  // `status` decides loopback by the URL-normalised host; the config is read once per test, so the forms are checked directly.
+  for (const url of ['http://127.0.0.2:9999', 'http://127.1', 'http://localhost.:9999', 'http://[::1]:9999', 'http://[::ffff:127.0.0.1]:9999']) {
+    expect(loopbackHost(new URL(url).hostname)).toBe(true)
+  }
+  for (const url of ['http://203.0.113.1:9999', 'http://[::ffff:203.0.113.1]:9999', 'http://128.0.0.1', 'http://[::ffff:128.0.0.1]', 'http://upstream.example']) {
+    expect(loopbackHost(new URL(url).hostname)).toBe(false)
+  }
 })
 
 test('a config that lists a Claude model ID leaves the mod inert', async ($, on) => {
