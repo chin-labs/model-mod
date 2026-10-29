@@ -638,6 +638,8 @@ function fetchResponse(stdout: string): { status: number; location?: string; bod
 // hooks), so the replacements for WebSearch/WebFetch and generate_image ask here with the engine's own verdict: an allow
 // rule or bypass mode lets the call through, a deny rule refuses, anything else asks the person. `-p` has nobody to ask.
 const RETRY_DELAYS = [2000, 6000, 15000]
+// How long curl may take to print its write-out (status, Retry-After) after an SSE error event, before it is closed.
+const WRITE_OUT_GRACE_MS = 2000
 const RETRYABLE_HTTP_STATUS = [429, 502, 503, 504, 529]
 // The engine's transcript does not keep the signed reasoning a bridge response carries (a mod cannot record a thinking
 // block), so it is remembered here by the first tool call it came with and handed back inside the tool loop, which lets the
@@ -1554,8 +1556,17 @@ export const register: Register = (on, options) => {
         let httpStatus = 0
         let retryAfter: number | undefined
         let streamed = false
+        // curl prints the write-out only when the transfer ends, so after an SSE error the loop keeps reading stderr (the rest of the
+        // body is dropped) until curl is done or this timer runs out. $.clock.after is cancellable: unlike $.clock.sleep it takes
+        // nothing from the hook's time budget, and unlike a sleep process it leaves no child behind when curl finishes first.
+        const grace: { lapsed?: Promise<undefined>; timer?: { cancel: () => void } } = {}
         try {
-          for await (const piece of child) {
+          for (;;) {
+            const pull = child.next()
+            pull.catch(() => { /* a pull still open when the wait ends may reject once the child is closed */ })
+            const step = await (grace.lapsed ? Promise.race([pull, grace.lapsed]) : pull)
+            if (!step || step.done) break
+            const piece = step.value
             if (next.signal.aborted) return yield* failure(e, 'cancelled', parser.nextIndex)
             if (piece.stream !== 'stdout') {
               const lines = (statusTail + piece.text).split('\n')
@@ -1570,10 +1581,11 @@ export const register: Register = (on, options) => {
               }
               continue
             }
+            if (parser.error) continue
             // Preserve a small error JSON prefix without ever displaying its message.
             if (rawError.length < 4096) rawError += piece.text.slice(0, 4096 - rawError.length)
             for (const chunk of parser.push(piece.text)) { streamed = true; yield chunk }
-            if (parser.error) break
+            if (parser.error) grace.lapsed = new Promise(resolve => { grace.timer = $.clock.after(WRITE_OUT_GRACE_MS, () => resolve(undefined)) })
           }
           const exit = parser.error ? { code: 0 } : await child.result
           if (parser.error) {
@@ -1623,6 +1635,7 @@ export const register: Register = (on, options) => {
           }
           return parser.result(e)
         } finally {
+          grace.timer?.cancel()
           // Closing the outer generator while it yields also closes/kills its child.
           if (!finished) {
             try { await child.return({ code: null, signal: 'SIGTERM' }) } catch { /* abort already killed it */ }

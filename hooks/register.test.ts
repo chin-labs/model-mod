@@ -15,7 +15,9 @@ const baseConfig = {
 }
 
 type RunReply = { exitCode: number; stdout: string; isStdoutTruncated?: boolean }
-type SpawnReply = { stdout: string | readonly string[]; stderr?: string | readonly string[]; code: number }
+// `wait`: mock-clock milliseconds between the last stdout piece and the first stderr piece (curl's write-out comes when the transfer ends);
+// `hang`: the child writes its pieces and then neither ends nor writes again until it is closed.
+type SpawnReply = { stdout: string | readonly string[]; stderr?: string | readonly string[]; code: number; wait?: number; hang?: boolean }
 type World = { system: string; spawned: { argv: readonly string[]; input?: string; env?: Record<string, string> }[]; ran: (readonly string[])[]
   ranEnv: (Record<string, string> | undefined)[]; reached: string[]; envSet: [string, string | undefined][]; messagesRead: number; failEnvSets: number; failEnvName?: string
   // The upstream's model list (null: unreachable), what the store holds, the picker rows of the settings, the requests
@@ -88,11 +90,15 @@ function world(on: On, config: Record<string, unknown> | null, model: string, sp
     return { value: undefined }
   })
   on('prompt.compose', async () => ({ sections: [{ id: 'intro', text: 'sys', scope: 'session' as const }] }))
-  on('process.spawn', async function* (_$, e) {
+  on('process.spawn', async function* (_$, e, next) {
     w.spawned.push({ argv: e.argv, input: e.input, env: e.env })
     const reply = Array.isArray(spawn) ? spawn[Math.min(w.spawned.length - 1, spawn.length - 1)]! : spawn
+    // Closing the stream kills the child: its waits end then.
+    const killed = new Promise<void>(resolve => { if (next.signal.aborted) resolve(); else next.signal.addEventListener('abort', () => resolve(), { once: true }) })
     for (const text of typeof reply.stdout === 'string' ? [reply.stdout] : reply.stdout) if (text) yield { stream: 'stdout' as const, text }
+    if (reply.wait) await Promise.race([w.clock.sleep(reply.wait), killed])
     for (const text of typeof reply.stderr === 'string' ? [reply.stderr] : reply.stderr ?? []) yield { stream: 'stderr' as const, text }
+    if (reply.hang) await killed
     return { value: { code: reply.code, signal: null } }
   })
   on('process.run', async (_$, e) => {
@@ -278,6 +284,35 @@ test('HTTP failures stop after three retries and respect bounded Retry-After sec
   expect(w.spawned.length).toBe(4)
   expect(waited()).toBe(2 + 6 + 15)
   expect(cut.result.answer).toBe('model-mod: curl failed.')
+  // curl prints its write-out only when the transfer ends, so an SSE error event can come first. The status and Retry-After
+  // behind it still count (the rest of the body is dropped); a curl that never prints them costs one bounded wait per attempt.
+  const sseError = 'event: error\ndata: {"type":"error","error":{"type":"rate_limit_error","message":"untrusted message"}}\n\n'
+  const stepped = async () => {
+    let done = false
+    const turn = drain($.turn.step(STEP(LOCAL))).finally(() => { done = true })
+    while (!done) await w.clock.advance(250)
+    return turn
+  }
+  Object.assign(reply, { stdout: [sseError, 'event: message_stop\ndata: {"type":"message_stop"}\n\n'],
+    stderr: ['\nmodel-mod-http:429\n', 'model-mod-retry-after:120\n'], code: 0, wait: 1000 })
+  w.spawned.length = 0
+  w.ran.length = 0
+  let started = w.clock.now()
+  const late = await stepped()
+  expect(w.spawned.length).toBe(1)
+  expect(waited()).toBe(0)
+  expect(w.clock.now() - started).toBeLessThan(2000)
+  expect(late.result.answer).toBe('model-mod: upstream rate limited (HTTP 429) (rate_limit_error), retry after 120s.')
+  delete reply.stderr
+  Object.assign(reply, { wait: undefined, hang: true })
+  w.spawned.length = 0
+  w.ran.length = 0
+  started = w.clock.now()
+  const silent = await stepped()
+  expect(w.spawned.length).toBe(4)
+  expect(waited()).toBe(2 + 6 + 15)
+  expect(w.clock.now() - started).toBeLessThan(10_000)
+  expect(silent.result.answer).toBe('model-mod: HTTP error (rate_limit_error).')
   expect(w.reached).toEqual([])
 })
 
