@@ -244,17 +244,40 @@ test('HTTP failures stop after three retries and respect bounded Retry-After sec
   expect(w.spawned.length).toBe(4)
   expect(result.answer).toBe('model-mod: HTTP error.')
   expect(chunks.filter(c => c.kind === 'text').map(c => c.text).join('')).toBe(result.answer)
+  const waited = () => w.ran.filter(argv => argv[0] === 'sleep').map(argv => Number(argv[1])).reduce((sum, delay) => sum + delay, 0)
   for (const seconds of [1, 4, 120]) {
-    reply.stderr = ['HTTP/1.1 429 Too Many Requests\r\nRetry-Af', `ter: ${seconds}\r\n\r\n`, '\nmodel-mod-ht', 'tp:429\n']
+    reply.stderr = ['\nmodel-mod-ht', 'tp:429\nmodel-mod-retry-af', `ter:${seconds}\n`]
     w.spawned.length = 0
     w.ran.length = 0
     const limited = await drain($.turn.step(STEP(LOCAL)))
     expect(w.spawned.length).toBe(seconds > 15 ? 1 : 4)
-    const waits = w.ran.filter(argv => argv[0] === 'sleep').map(argv => Number(argv[1]))
-    expect(waits.reduce((sum, delay) => sum + delay, 0)).toBe(seconds > 15 ? 0 : Math.max(2, seconds) + 6 + 15)
+    expect(waited()).toBe(seconds > 15 ? 0 : Math.max(2, seconds) + 6 + 15)
     expect(limited.result.answer).toBe('model-mod: upstream rate limited (HTTP 429)' + (seconds > 15 ? `, retry after ${seconds}s.` : '.'))
-    expect(w.spawned[0]!.argv).toContain('/dev/stderr')
+    // Retry-After is read from the write-out; no header file is opened.
+    const argv = w.spawned[0]!.argv
+    expect(argv).not.toContain('/dev/stderr')
+    expect(argv).not.toContain('-D')
+    expect(argv).toContain('%{stderr}\nmodel-mod-http:%{http_code}\nmodel-mod-retry-after:%header{retry-after}\n')
   }
+  // An empty value, an HTTP date or anything that is not a safe integer is no Retry-After: the plain backoff applies.
+  for (const value of ['', 'Wed, 21 Oct 2026 07:28:00 GMT', '1.5', '-1', '99999999999999999999']) {
+    reply.stderr = `\nmodel-mod-http:429\nmodel-mod-retry-after:${value}\n`
+    w.spawned.length = 0
+    w.ran.length = 0
+    const limited = await drain($.turn.step(STEP(LOCAL)))
+    expect(w.spawned.length).toBe(4)
+    expect(waited()).toBe(2 + 6 + 15)
+    expect(limited.result.answer).toBe('model-mod: upstream rate limited (HTTP 429).')
+  }
+  // A large Retry-After on a 200 whose stream broke before any output does not end the turn early.
+  reply.stderr = '\nmodel-mod-http:200\nmodel-mod-retry-after:999\n'
+  reply.code = 18
+  w.spawned.length = 0
+  w.ran.length = 0
+  const cut = await drain($.turn.step(STEP(LOCAL)))
+  expect(w.spawned.length).toBe(4)
+  expect(waited()).toBe(2 + 6 + 15)
+  expect(cut.result.answer).toBe('model-mod: curl failed.')
   expect(w.reached).toEqual([])
 })
 

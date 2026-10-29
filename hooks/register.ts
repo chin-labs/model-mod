@@ -638,6 +638,7 @@ function fetchResponse(stdout: string): { status: number; location?: string; bod
 // hooks), so the replacements for WebSearch/WebFetch and generate_image ask here with the engine's own verdict: an allow
 // rule or bypass mode lets the call through, a deny rule refuses, anything else asks the person. `-p` has nobody to ask.
 const RETRY_DELAYS = [2000, 6000, 15000]
+const RETRYABLE_HTTP_STATUS = [429, 502, 503, 504, 529]
 // The engine's transcript does not keep the signed reasoning a bridge response carries (a mod cannot record a thinking
 // block), so it is remembered here by the first tool call it came with and handed back inside the tool loop, which lets the
 // model continue its reasoning instead of starting over. Only blocks whose signature has the shape the API returns for
@@ -1539,8 +1540,11 @@ export const register: Register = (on, options) => {
       for (let attempt = 0; ; attempt++) {
         if (next.signal.aborted) return yield* failure(e, 'cancelled')
         parser = new MessagesStream(e.model)
-        const call = curlCall(c, ['-sN', '--fail-with-body', '--max-time', '900', '-D', '/dev/stderr',
-          '--write-out', '%{stderr}\nmodel-mod-http:%{http_code}\n', '-H', 'content-type: application/json',
+        // Retry-After comes back through --write-out, which curl writes to fd 2 itself: a header file opened on the stderr device
+        // fails when the client hands the child a socket there. %header{} needs curl 7.84; an older curl prints nothing and the plain backoff applies.
+        const call = curlCall(c, ['-sN', '--fail-with-body', '--max-time', '900',
+          '--write-out', '%{stderr}\nmodel-mod-http:%{http_code}\nmodel-mod-retry-after:%header{retry-after}\n',
+          '-H', 'content-type: application/json',
           '-H', 'anthropic-version: 2023-06-01', '--data-binary', '@-', c.baseUrl + '/v1/messages'])
         const child = $.process.spawn({ argv: call.argv, ...(call.env ? { env: call.env } : {}),
           input: JSON.stringify(sendThinking ? { ...body, messages: withThinking } : body) })
@@ -1557,11 +1561,10 @@ export const register: Register = (on, options) => {
               const lines = (statusTail + piece.text).split('\n')
               statusTail = lines.pop()!.slice(-64)
               for (const line of lines) {
-                if (/^HTTP\/\S+\s+\d{3}\b/.test(line)) retryAfter = undefined
                 const status = /^model-mod-http:(\d{3})\r?$/.exec(line)
                 if (status) httpStatus = Number(status[1])
-                if (/^retry-after:/i.test(line)) {
-                  const seconds = /^retry-after:[ \t]*(\d+)[ \t]*\r?$/i.exec(line)
+                if (line.startsWith('model-mod-retry-after:')) {
+                  const seconds = /^model-mod-retry-after:[ \t]*(\d+)[ \t]*\r?$/.exec(line)
                   retryAfter = seconds && Number.isSafeInteger(Number(seconds[1])) ? Number(seconds[1]) : undefined
                 }
               }
@@ -1589,8 +1592,10 @@ export const register: Register = (on, options) => {
             if (['api_error', 'authentication_error', 'permission_error', 'not_found_error',
               'invalid_request_error', 'rate_limit_error', 'overloaded_error'].includes(type as string)) reason += ` (${type})`
             const transient = parser.error || exit.code === 22
-              ? [429, 502, 503, 504, 529].includes(httpStatus) || ['rate_limit_error', 'overloaded_error', 'api_error'].includes(type as string)
+              ? RETRYABLE_HTTP_STATUS.includes(httpStatus) || ['rate_limit_error', 'overloaded_error', 'api_error'].includes(type as string)
               : exit.code === 0 || (exit.code !== null && [6, 7, 18, 28, 35, 52, 55, 56].includes(exit.code))
+            // Only an answer that is itself a rate limit or overload carries a meaningful Retry-After; on a 200 whose stream broke it is ignored.
+            if (!RETRYABLE_HTTP_STATUS.includes(httpStatus)) retryAfter = undefined
             if (!streamed && transient && retryAfter !== undefined && retryAfter > 15) {
               return yield* failure(e, `${reason}${httpStatus && httpStatus !== 429 ? ` (HTTP ${httpStatus})` : ''}, retry after ${retryAfter}s`, parser.nextIndex)
             }
