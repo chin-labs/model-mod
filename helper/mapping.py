@@ -102,14 +102,16 @@ def prepare(body, model_map):
                 if not isinstance(b.get('tool_use_id'), str): raise InvalidRequest('invalid tool result')
                 content = blocks(b.get('content', ''))
                 result = []
+                previous_reference = False
                 for part in content:
                     if part.get('type') == 'text' and isinstance(part.get('text'), str): result.append({'type': 'input_text', 'text': part['text']})
                     elif part.get('type') == 'image': result.append(image(part))
                     elif part.get('type') == 'tool_reference' and isinstance(part.get('tool_name'), str) and part['tool_name']:
-                        result.append({'type': 'input_text', 'text': 'Loaded tool: ' + part['tool_name']})
+                        result.append({'type': 'input_text', 'text': ('\n' if previous_reference else '') + 'Loaded tool: ' + part['tool_name']})
                     else:
                         part_type = ''.join(c for c in str(part.get('type')) if c.isprintable())[:64]
                         raise InvalidRequest('invalid tool result content (' + part_type + ')')
+                    previous_reference = part.get('type') == 'tool_reference'
                 if b.get('is_error'): result.insert(0, {'type': 'input_text', 'text': 'ERROR: '})
                 output = ''.join(p['text'] for p in result) if all(p['type'] == 'input_text' for p in result) else result
                 history.append({'type': 'function_call_output', 'call_id': b['tool_use_id'], 'output': output})
