@@ -1287,6 +1287,13 @@ test('Codex login: startup and unsupported behavior failures do not retry', { op
     expect(w.spawned.length - before).toBe(1)
   }
   reply.code = 1
+  reply.stdout = '{"error":{"type":"invalid_request_error","code":"codex_rejected_request","message":"untrusted details"}}'
+  reply.stderr = 'model-mod-http:400\n'
+  const rejectedBefore = w.spawned.length
+  const rejected = await drain($.turn.step(STEP(CODEX_MODEL)))
+  expect(rejected.result.answer).toContain('request rejected by Codex; update model-mod or report this')
+  expect(rejected.result.answer).not.toContain('untrusted details')
+  expect(w.spawned.length - rejectedBefore).toBe(1)
   reply.stdout = 'event: error\ndata: {"error":{"type":"api_error","code":"unsupported_item","message":"Codex login: unsupported codex behavior: commandExecution"}}\n\n'
   reply.stderr = 'model-mod-http:502\n'
   const before = w.spawned.length

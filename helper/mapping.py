@@ -15,7 +15,7 @@ def names(tools):
         name = tool.get('name')
         if not isinstance(name, str) or not name or name in forward:
             raise InvalidRequest('invalid or duplicate tool name')
-        encoded = name if re.fullmatch(r'[a-zA-Z0-9_-]{1,64}', name) else 'bridge_' + hashlib.sha256(name.encode()).hexdigest()[:57]
+        encoded = name if not name.startswith('mcp__') and re.fullmatch(r'[a-zA-Z0-9_-]{1,64}', name) else 'bridge_' + hashlib.sha256(name.encode()).hexdigest()[:57]
         if encoded in reverse:
             raise InvalidRequest('tool name mapping collision')
         forward[name], reverse[encoded] = encoded, name

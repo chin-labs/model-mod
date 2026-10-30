@@ -934,6 +934,7 @@ function codexRunError(c: Config, item: CodexAccount, run: { stdout: string; std
   let code = '', message = ''
   try { const error = JSON.parse(run.stdout).error; code = error?.code ?? ''; message = error?.message ?? '' } catch { /* no structured error */ }
   const prefix = `model-mod: Codex login (${item.account}): `
+  if (code === 'codex_rejected_request') return prefix + 'request rejected by Codex; update model-mod or report this'
   if (code === 'unsupported_item') return prefix + `unsupported codex behavior: ${/unsupported codex behavior: ([A-Za-z0-9_-]{1,64})/.exec(message)?.[1] ?? 'unknown'}; update or check Codex`
   if (code === 'protocol' || code === 'incompatible_protocol' || run.exitCode === 65) return prefix + 'incompatible app-server protocol; update or check Codex'
   if (code === 'codex_unavailable' || run.exitCode === 66) return prefix + 'codex unavailable; install Codex or configure codexBin'
@@ -1868,6 +1869,7 @@ export const register: Register = (on, options) => {
                 errorMessage = typeof value.error?.message === 'string' ? value.error.message : ''
               } catch { /* no structured error */ }
               const prefix = `Codex login (${codex.account}): `
+              if (errorCode === 'codex_rejected_request') return yield* failure(e, prefix + 'request rejected by Codex; update model-mod or report this', parser.nextIndex)
               if (errorCode === 'unsupported_item') {
                 const kind = /unsupported codex behavior: ([A-Za-z0-9_-]{1,64})/.exec(errorMessage)?.[1] ?? 'unknown'
                 return yield* failure(e, prefix + `unsupported codex behavior: ${kind}; update or check Codex`, parser.nextIndex)

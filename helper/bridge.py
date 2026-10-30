@@ -186,7 +186,8 @@ class App:
                 if 'error' in obj:
                     status, kind = classify(obj['error'])
                     if method == 'initialize': raise incompatible('experimentalApi')
-                    if method == 'thread/start' and isinstance(obj['error'], dict) and obj['error'].get('code') == -32602: raise incompatible('dynamicTools')
+                    if isinstance(obj['error'], dict) and obj['error'].get('code') in (-32600, -32602):
+                        raise BridgeError('Codex login: request rejected by Codex', 400, 'invalid_request_error', code='codex_rejected_request')
                     raise BridgeError('Codex login: app-server request failed', status, kind, retry_seconds(obj['error']))
                 return obj.get('result', {})
             self.pending.append(obj)

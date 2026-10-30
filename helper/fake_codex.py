@@ -47,7 +47,9 @@ for line in sys.stdin:
         if mode == 'bad_flag': features['shell_tool'] = True
         send({'id': ident, 'result': {'config': {'web_search': 'disabled', 'features': features}}})
     elif method == 'thread/start':
-        if mode in ('bad', 'rate'):
+        if mode in ('rejected_request', 'rejected_params'):
+            send({'id': ident, 'error': {'code': -32600 if mode == 'rejected_request' else -32602, 'message': 'untrusted details'}})
+        elif mode in ('bad', 'rate'):
             print('synthetic app-server failure ' + 'A' * 80, file=sys.stderr, flush=True)
             send({'id': ident, 'error': {'code': -32000 if mode == 'bad' else 429, 'message': 'invalid request' if mode == 'bad' else 'rate limit', 'retryAfter': 7}})
         else:

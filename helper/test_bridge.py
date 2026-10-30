@@ -65,12 +65,27 @@ class Contract(unittest.TestCase):
         forward, reverse = names([{'name': long_name}])
         self.assertLessEqual(len(forward[long_name]), 64)
         self.assertEqual(reverse[forward[long_name]], long_name)
+        reserved = 'mcp__model-mod__web_fetch'
+        forward, reverse = names([{'name': reserved}])
+        self.assertNotEqual(forward[reserved], reserved)
+        self.assertLessEqual(len(forward[reserved]), 64)
+        self.assertEqual(reverse[forward[reserved]], reserved)
+        with self.assertRaises(InvalidRequest): names([{'name': reserved}, {'name': forward[reserved]}])
+        history = prepare(dict(BASE, tools=[{'name': reserved, 'input_schema': {}}], messages=[{'role': 'assistant', 'content': [{'type': 'tool_use', 'name': reserved, 'id': 'u', 'input': {}}]}, {'role': 'user', 'content': [{'type': 'tool_result', 'tool_use_id': 'u', 'content': 'ok'}]}]), {'test': 'gpt-6.1-terra'})
+        self.assertEqual(history['history'][0]['name'], forward[reserved])
+        self.assertEqual(history['reverse'][history['history'][0]['name']], reserved)
+        self.assertEqual(history['history'][1]['call_id'], 'u')
         with self.assertRaises(InvalidRequest): names(tools + [{'name': encoded, 'input_schema': {}}])
 
     def test_errors_and_version(self):
         self.assertEqual(classify({'message': 'not a rate limit; 429 in user input'}), (500, 'api_error'))
         self.assertEqual(classify({'codexErrorInfo': 'usageLimit'}), (429, 'rate_limit_error'))
         self.assertEqual(classify({'code': -32602}), (500, 'api_error'))
+        for mode in ('rejected_request', 'rejected_params'):
+            r = self.run_bridge(mode=mode)
+            self.assertIn('model-mod-http:400', r.stderr)
+            self.assertEqual(json.loads(r.stdout)['error']['code'], 'codex_rejected_request')
+            self.assertNotIn('untrusted details', r.stdout)
         for mode, code, kind in [('bad', '400', 'invalid_request_error'), ('rate', '429', 'rate_limit_error'), ('version', '500', 'api_error')]:
             r = self.run_bridge(mode=mode)
             self.assertNotEqual(r.returncode, 0)
