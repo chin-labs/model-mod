@@ -41,7 +41,7 @@ class Contract(unittest.TestCase):
             home.mkdir()
             log = Path(tmp, 'log')
             (home / 'fake_config.json').write_text(json.dumps({'log': str(log)}))
-            proc = subprocess.Popen([sys.executable, str(BRIDGE), 'device-login', '--codex-home', str(home), '--codex-bin', str(FAKE)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            proc = subprocess.Popen([sys.executable, str(BRIDGE), 'device-login', '--codex-home', str(home), '--codex-bin', str(FAKE), '--accounts-dir', tmp, '--account', 'home'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             try:
                 data = json.loads(proc.stdout.readline())
                 self.assertEqual(data, {'url': 'https://example.test/device', 'code': 'ABCD-EFGHI'})
@@ -57,7 +57,7 @@ class Contract(unittest.TestCase):
             finally:
                 if proc.poll() is None: proc.kill(); proc.wait()
             (home / 'fake_config.json').write_text(json.dumps({'mode': 'no_device_url'}))
-            failed = subprocess.run([sys.executable, str(BRIDGE), 'device-login', '--codex-home', str(home), '--codex-bin', str(FAKE)], capture_output=True, text=True, timeout=10)
+            failed = subprocess.run([sys.executable, str(BRIDGE), 'device-login', '--codex-home', str(home), '--codex-bin', str(FAKE), '--accounts-dir', tmp, '--account', 'home'], capture_output=True, text=True, timeout=10)
             self.assertNotEqual(failed.returncode, 0)
             self.assertNotIn('https://', failed.stdout)
 

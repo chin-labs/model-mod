@@ -23,7 +23,7 @@ type World = { system: string; killed: number; toolsList?: string[]; spawned: { 
   // The upstream's model list (null: unreachable), what the store holds, the picker rows of the settings, the requests
   // `$.http.fetch` made (the authorization header is reduced to its first 6 characters).
   chooseUpstream?: boolean; answers: (string | null)[]; questions: { question: string; header: string; labels: string[]; multiSelect: boolean }[];
-  scopes: Record<string, Record<string, unknown>>; files: Record<string, string>; writes: string[]; saved: { key: string; value: unknown }[]; registered: string[];
+  scopes: Record<string, Record<string, unknown>>; files: Record<string, string>; writes: string[]; saved: { key: string; value: unknown }[]; registered: string[]; configValues: Record<string, string>;
   toolDescriptions: Record<string, string>; httpStatus?: number; httpStatuses?: number[]; httpBody?: string; configSet?: (key: string) => { deny: string } | undefined; switchEnv: (string | undefined)[];
   models: string[] | null; store: Record<string, unknown>; picker: unknown[]; fetched: { url: string; auth?: string }[]
   // The session's current model (`/model` runs change it), the `/model` arguments run, the rate-limit windows the last
@@ -35,7 +35,7 @@ type World = { system: string; killed: number; toolsList?: string[]; spawned: { 
 function world(on: On, config: Record<string, unknown> | null, model: string, spawn: SpawnReply | SpawnReply[],
   run?: RunReply | ((argv: readonly string[], stdin?: string) => RunReply), env: Record<string, string> = {}): World {
   const w: World = { system: 'Linux', killed: 0, spawned: [], ran: [], ranEnv: [], reached: [], envSet: [], messagesRead: 0, failEnvSets: 0,
-    switchEnv: [], toolDescriptions: {}, answers: ['Keep (recommended)', 'All (recommended)'], questions: [], scopes: {}, files: {}, writes: [], saved: [], registered: [], models: null, store: {}, picker: [], fetched: [], current: model, agents: [], modelRuns: [], limits: [], clock: undefined as never }
+    switchEnv: [], toolDescriptions: {}, answers: ['Keep (recommended)', 'All (recommended)'], questions: [], scopes: {}, files: {}, writes: [], saved: [], registered: [], configValues: {}, models: null, store: {}, picker: [], fetched: [], current: model, agents: [], modelRuns: [], limits: [], clock: undefined as never }
   // The test engine has no plugin.root; supply prompt files explicitly instead of built-in text.
   for (const name of ['compact', 'title', 'subagent-note', 'worker']) w.files[PROMPTS_DIR + '/' + name + '.md'] = 'TEST ' + name + ' prompt\n'
   w.clock = mock.clock(on)
@@ -56,8 +56,8 @@ function world(on: On, config: Record<string, unknown> | null, model: string, sp
   on('session.cwd', async () => ({ value: '/work' }))
   on('fs.exists', async (_$, e) => ({ value: e.path in w.files }))
   on('fs.write', async (_$, e) => { w.files[e.path] = e.text; w.writes.push(e.path); return { value: undefined } })
-  on('config.list', async () => ({ value: [{ key: 'model', label: 'Model', kind: 'choice' as const, value: 'Default', options: ['default', 'sonnet', 'opus', 'haiku', 'best'], provider: { plugin: 'engine', tier: 'core' as const }, isLocked: false }, ...['baseUrl', 'models', 'codexAccounts', 'codexModels'].map(field => ({ key: 'model-mod.' + field, label: field,
-    kind: 'text' as const, value: '', provider: { plugin: 'model-mod', tier: 'user' as const }, isLocked: false }))] }))
+  on('config.list', async () => ({ value: [{ key: 'model', label: 'Model', kind: 'choice' as const, value: 'Default', options: ['default', 'sonnet', 'opus', 'haiku', 'best'], provider: { plugin: 'engine', tier: 'core' as const }, isLocked: false }, ...['baseUrl', 'models', 'codexAccounts', 'codexModels', 'apiKey', 'fallbackModel', 'workerModel'].map(field => ({ key: 'model-mod.' + field, label: field,
+    kind: 'text' as const, value: w.configValues[field] ?? '', provider: { plugin: 'model-mod', tier: 'user' as const }, isLocked: false }))] }))
   on('config.set', async (_$, e) => {
     const refused = w.configSet?.(e.key)
     if (refused) return refused
@@ -1386,7 +1386,7 @@ test('Codex login: status and setup preserve the separate upstream', { options: 
   w.answers = ['Codex login (recommended)', 'main', 'All (recommended)']
   const setup = await $.command.run(SETUP)
   expect(setup.text).toContain('1 models configured; dir=/fake-home/.config/model-mod/accounts/main')
-  expect(w.questions[0]!.labels).toEqual(['Codex login (recommended)', 'Compatible API server'])
+  expect(w.questions[0]!.labels).toEqual(['Codex login (recommended)', 'Compatible API server', 'Manage configured upstreams'])
   expect(w.saved).toEqual([{ key: 'model-mod.codexModels', value: 'gpt-6.1-terra' }, { key: 'model-mod.codexAccounts', value: 'main' }])
   w.saved = []
   w.configSet = key => key.endsWith('.codexAccounts') ? { deny: 'locked' } : undefined
@@ -1400,6 +1400,83 @@ test('Codex login: status and setup preserve the separate upstream', { options: 
   w.answers = ['Codex login (recommended)', 'main', 'All (recommended)']
   expect((await $.command.run(SETUP)).text).toContain('previous settings restored')
   expect(w.saved).toEqual([{ key: 'model-mod.codexModels', value: 'gpt-6.1-terra' }, { key: 'model-mod.codexAccounts', value: '' }, { key: 'model-mod.codexModels', value: '' }])
+})
+
+test('manage: removing a Codex account preserves the other account and refuses removed models', { options: { ...CODEX_OPTIONS, codexAccounts: 'main,other', fallbackModel: CODEX_MODEL, workerModel: CODEX_MODEL } }, async ($, on) => {
+  const w = world(on, null, CODEX_MODEL, { stdout: '', code: 0 }, argv => argv.includes('check') ? { exitCode: 0, stdout: '{}' } : { exitCode: 0, stdout: '{}' })
+  w.configValues = { codexAccounts: 'main,other', codexModels: 'gpt-6.1-terra', fallbackModel: CODEX_MODEL, workerModel: CODEX_MODEL }
+  w.chooseUpstream = true
+  w.answers = ['Manage configured upstreams', 'Codex main; dir=/fake-home/.config/model-mod/accounts/main; login=ok; models=1', 'Remove', 'Keep directory (recommended)']
+  const result = await $.command.run(SETUP)
+  expect(result.text).toContain('Cleared: fallbackModel, workerModel')
+  expect(w.saved).toContainEqual({ key: 'model-mod.codexAccounts', value: 'other' })
+  expect(w.saved).toContainEqual({ key: 'model-mod.fallbackModel', value: '' })
+  expect(w.saved).toContainEqual({ key: 'model-mod.workerModel', value: '' })
+  expect(w.saved.some(x => x.key.endsWith('.codexModels'))).toBe(false)
+  await $.session.start({ cwd: '/work' } as never)
+  expect((await drain($.turn.step(STEP(CODEX_MODEL)))).result.answer).toContain('not in the allowlist; use /model')
+  expect(w.reached).not.toContain('turn.step')
+  expect(w.store.retiredModels).toContain(CODEX_MODEL)
+})
+
+test('manage: refusing a setting restores earlier account settings', { options: { ...CODEX_OPTIONS, fallbackModel: CODEX_MODEL } }, async ($, on) => {
+  const w = world(on, null, CODEX_MODEL, { stdout: '', code: 0 }, () => ({ exitCode: 0, stdout: '{}' }))
+  w.configValues = { codexAccounts: 'main', codexModels: 'gpt-6.1-terra', fallbackModel: CODEX_MODEL }
+  w.configSet = key => key.endsWith('.fallbackModel') ? { deny: 'locked' } : undefined
+  w.chooseUpstream = true
+  w.answers = ['Manage configured upstreams', 'Codex main; dir=/fake-home/.config/model-mod/accounts/main; login=ok; models=1', 'Remove', 'Keep directory (recommended)']
+  expect((await $.command.run(SETUP)).text).toContain('previous settings restored')
+  expect(w.saved).toContainEqual({ key: 'model-mod.codexAccounts', value: 'main' })
+  expect(w.saved).toContainEqual({ key: 'model-mod.codexModels', value: 'gpt-6.1-terra' })
+  expect(w.store.retiredModels).toEqual([])
+})
+
+test('manage: deleting the last account requires confirmation and logs out first', { options: CODEX_OPTIONS }, async ($, on) => {
+  const w = world(on, null, CODEX_MODEL, { stdout: '', code: 0 }, () => ({ exitCode: 0, stdout: '{}' }))
+  w.configValues = { codexAccounts: 'main', codexModels: 'gpt-6.1-terra' }
+  w.chooseUpstream = true
+  w.answers = ['Manage configured upstreams', 'Codex main; dir=/fake-home/.config/model-mod/accounts/main; login=ok; models=1', 'Remove', 'Delete directory', 'Confirm deletion']
+  expect((await $.command.run(SETUP)).text).toContain('Codex account main removed')
+  expect(w.saved).toContainEqual({ key: 'model-mod.codexAccounts', value: '' })
+  expect(w.saved).toContainEqual({ key: 'model-mod.codexModels', value: '' })
+  const logout = w.ran.findIndex(argv => argv.includes('logout'))
+  const remove = w.ran.findIndex(argv => argv.includes('remove-home'))
+  expect(logout >= 0 && remove > logout).toBe(true)
+  expect((await drain($.turn.step(STEP(CODEX_MODEL)))).result.answer).toContain('not in the allowlist; use /model')
+  expect(w.reached).not.toContain('turn.step')
+})
+
+test('manage: a failed rollback is reported', { options: CODEX_OPTIONS }, async ($, on) => {
+  const w = world(on, null, CODEX_MODEL, { stdout: '', code: 0 }, () => ({ exitCode: 0, stdout: '{}' }))
+  w.configValues = { codexAccounts: 'main', codexModels: 'gpt-6.1-terra' }
+  let writes = 0
+  w.configSet = key => key.endsWith('.codexModels') || (key.endsWith('.codexAccounts') && ++writes > 1) ? { deny: 'locked' } : undefined
+  w.chooseUpstream = true
+  w.answers = ['Manage configured upstreams', 'Codex main; dir=/fake-home/.config/model-mod/accounts/main; login=ok; models=1', 'Remove', 'Keep directory (recommended)']
+  expect((await $.command.run(SETUP)).text).toContain('rollback failed')
+})
+
+test('manage: removing an API leaves Codex configured and does not expose the key', { options: { ...CODEX_OPTIONS, ...OPTIONS, models: LOCAL } }, async ($, on) => {
+  const w = world(on, null, LOCAL, { stdout: '', code: 0 }, () => ({ exitCode: 0, stdout: '{}' }))
+  w.chooseUpstream = true
+  w.answers = ['Manage configured upstreams', 'API 127.0.0.1; models=1; key=configured', 'Remove']
+  const result = await $.command.run(SETUP)
+  expect(result.text).toContain('API upstream removed')
+  expect(JSON.stringify(w.questions) + result.text).not.toContain(KEY)
+  expect(w.saved).toContainEqual({ key: 'model-mod.apiKey', value: '' })
+  expect(w.saved.some(x => x.key.endsWith('.codexAccounts'))).toBe(false)
+  await $.session.start({ cwd: '/work' } as never)
+  expect((await drain($.turn.step(STEP(LOCAL)))).result.answer).toContain('not in the allowlist; use /model')
+})
+
+test('manage: a file-provided API requires manual removal', async ($, on) => {
+  const w = world(on, baseConfig, LOCAL, { stdout: '', code: 0 })
+  w.chooseUpstream = true
+  w.answers = ['Manage configured upstreams', 'API 127.0.0.1; models=1; key=configured; from configuration file', 'Remove']
+  const result = await $.command.run(SETUP)
+  expect(result.text).toContain('remove it from that file manually')
+  expect(w.saved).toEqual([])
+  expect(w.writes).toEqual([])
 })
 
 test('Codex login: device setup and manual fallback', async ($, on) => {

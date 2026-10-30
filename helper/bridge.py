@@ -442,6 +442,9 @@ def device_login(args):
                 except ProcessLookupError: pass
             else: proc.kill()
             proc.wait()
+        if os.name == 'posix':
+            try: os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError: pass
 
 
 def main():
@@ -450,11 +453,11 @@ def main():
         return 78
     parser = argparse.ArgumentParser(prog='bridge')
     subs = parser.add_subparsers(dest='command', required=True)
-    for name in ('messages', 'rate-limits', 'check', 'models', 'prepare-home', 'device-login', 'logout', 'remove-home', 'cleanup-home'):
+    for name in ('messages', 'rate-limits', 'check', 'models', 'prepare-home', 'validate-home', 'device-login', 'logout', 'remove-home', 'cleanup-home'):
         sub = subs.add_parser(name)
         sub.add_argument('--codex-home', required=True)
         sub.add_argument('--codex-bin', default='codex')
-        if name in ('prepare-home', 'remove-home', 'cleanup-home'):
+        if name in ('prepare-home', 'validate-home', 'remove-home', 'cleanup-home', 'device-login', 'logout'):
             sub.add_argument('--accounts-dir', required=True)
             sub.add_argument('--account', required=True)
         if name == 'messages':
@@ -481,12 +484,14 @@ def main():
         threading.Thread(target=watch_stdout, daemon=True).start()
     try:
         prepared = None
-        if args.command in ('prepare-home', 'remove-home', 'cleanup-home'):
+        if args.command in ('prepare-home', 'validate-home', 'remove-home', 'cleanup-home'):
             if ('..' in args.codex_home.replace('\\', '/').split('/') or
                     os.path.normcase(os.path.abspath(args.codex_home)) != os.path.normcase(os.path.abspath(os.path.join(args.accounts_dir, args.account)))):
                 raise BridgeError('Codex login: invalid account directory', code='invalid_home')
             target, created = account_home(args.accounts_dir, args.account, args.command == 'prepare-home')
             if os.path.normcase(os.path.realpath(args.codex_home)) != os.path.normcase(target):
+                raise BridgeError('Codex login: invalid account directory', code='invalid_home')
+            if args.command == 'validate-home' and not os.path.isdir(target):
                 raise BridgeError('Codex login: invalid account directory', code='invalid_home')
             if args.command == 'remove-home':
                 if os.name == 'posix':
@@ -505,6 +510,12 @@ def main():
                 except OSError: pass
             print(json.dumps({'created': created}), flush=True)
             return 0
+        if args.command in ('device-login', 'logout'):
+            target, _ = account_home(args.accounts_dir, args.account)
+            if ('..' in args.codex_home.replace('\\', '/').split('/') or
+                    os.path.normcase(os.path.abspath(args.codex_home)) != os.path.normcase(os.path.abspath(os.path.join(args.accounts_dir, args.account))) or
+                    os.path.normcase(os.path.realpath(args.codex_home)) != os.path.normcase(target)):
+                raise BridgeError('Codex login: invalid account directory', code='invalid_home')
         if not os.path.isabs(args.codex_home) or not os.path.isdir(args.codex_home):
             raise BridgeError('Codex login: account home must be an existing absolute directory', code='invalid_home')
         if args.command == 'messages':

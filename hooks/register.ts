@@ -163,6 +163,10 @@ async function configurePicker($: EngineInterface, c: { baseUrl: string; key?: s
     }
     const modelResult = await $.config.set({ key: modelsRow.key, value: setup ? (all ? '' : selected.join(',')) : (c.explicitModels ? selected.join(',') : '') })
     if ('deny' in modelResult) return 'model-mod: model option was refused; configure it through /plugin.'
+    if (setup) {
+      const retired = await retiredModels($)
+      if (retired.some(id => selected.includes(id))) await $.store.set('retiredModels', retired.filter(id => !selected.includes(id)))
+    }
     return text
   } catch (err) {
     if (err instanceof Cancelled) return 'model-mod: setup cancelled, nothing changed'
@@ -255,7 +259,15 @@ function addModels(c: Pick<Config, 'models'>, ids: readonly unknown[], validateI
 // (a row the user chose must never fall through to the subscription endpoint because the upstream was down at start).
 // With an allowlist the allowlist alone decides; the cached and picker models outside it are only remembered, so that
 // choosing one is refused here instead of being sent to the subscription endpoint under a model name from this mod.
+async function retiredModels($: EngineInterface): Promise<string[]> {
+  try {
+    const stored = await $.store.get('retiredModels')
+    return Array.isArray(stored) ? stored.filter((id): id is string => typeof id === 'string' && MODEL_ID.test(id)) : []
+  } catch { return [] }
+}
+
 async function seedModels($: EngineInterface, c: Config): Promise<void> {
+  const retired = new Set(await retiredModels($))
   const known: unknown[] = []
   try {
     const cached = await $.store.get('models')
@@ -271,10 +283,11 @@ async function seedModels($: EngineInterface, c: Config): Promise<void> {
     }
   } catch { /* no picker rows */ }
   if (!c.explicitModels) {
-    addModels(c, known)
+    addModels(c, known.filter(id => typeof id !== 'string' || !retired.has(id)))
+    c.excluded = new Set([...retired].filter(id => !c.models.includes(id)))
     return
   }
-  c.excluded = new Set(known.filter((id): id is string => typeof id === 'string' && MODEL_ID.test(id) &&
+  c.excluded = new Set([...known, ...retired].filter((id): id is string => typeof id === 'string' && MODEL_ID.test(id) &&
     !/claude|anthropic/i.test(id) && !OFFICIAL_ALIAS.test(id) && !c.models.includes(id)))
 }
 
@@ -285,7 +298,9 @@ async function refreshModels($: EngineInterface, c: Config): Promise<string> {
   try {
     const fetched = await modelList($, c.baseUrl, c.key)
     if ('error' in fetched) return fetched.error
-    const { ids, chat } = fetched
+    const { ids } = fetched
+    const retired = new Set(await retiredModels($))
+    const chat = fetched.chat.filter(id => !retired.has(id) || c.models.includes(id))
     if (!c.explicitModels) {
       addModels(c, chat)
       await $.store.set('models', c.models.filter(id => !c.codex?.has(id)).slice(-MODEL_CACHE_CAP))
@@ -1124,7 +1139,7 @@ function commandText(reply: { text: string }): { text: string } {
 }
 
 async function deviceSetup($: EngineInterface, c: Config, home: string, root: string, account: string, created: boolean): Promise<boolean> {
-  const args = helperArgs($, c, 'device-login', home)
+  const args = [...helperArgs($, c, 'device-login', home), '--accounts-dir', root, '--account', account]
   const child = $.process.spawn({ argv: args })
   let resolveReady: (value: { url: string; code: string } | undefined) => void = () => {}
   const ready = new Promise<{ url: string; code: string } | undefined>(resolve => { resolveReady = resolve })
@@ -1283,6 +1298,113 @@ async function codexStatus($: EngineInterface, c: Config): Promise<string[]> {
   }))
 }
 
+async function removeSettings($: EngineInterface, changes: Record<string, string>, removed: string[]): Promise<string | undefined> {
+  const rows = await $.config.list()
+  const entries = Object.entries(changes).map(([field, value]) => ({ field, value, row: rows.find(r => r.key.endsWith('.' + field) && r.provider.plugin.split('@')[0] === $.plugin.name.split('@')[0]) }))
+  if (entries.some(e => !e.row || e.row.isLocked)) return 'writable plugin config unavailable; nothing changed'
+  const oldRetired = await retiredModels($)
+  const oldCache = await $.store.get('models')
+  const custom = await $.env.get('ANTHROPIC_CUSTOM_MODEL_OPTION')
+  const clearCustom = typeof custom === 'string' && removed.includes(custom)
+  const kept = Array.isArray(oldCache) ? oldCache.filter(id => typeof id !== 'string' || !removed.includes(id)) : []
+  const retired = [...new Set([...oldRetired, ...removed])]
+  if (retired.length > MODEL_CACHE_CAP) return 'model ownership cache is full; nothing changed'
+  try {
+    await $.store.set('retiredModels', retired)
+    await $.store.set('models', kept)
+    if (clearCustom) await $.env.set('ANTHROPIC_CUSTOM_MODEL_OPTION', undefined)
+  } catch {
+    try { await $.store.set('retiredModels', oldRetired); await $.store.set('models', oldCache ?? []); if (clearCustom) await $.env.set('ANTHROPIC_CUSTOM_MODEL_OPTION', custom) } catch { return 'model cache update failed and rollback failed' }
+    return 'model cache could not be updated; previous values restored'
+  }
+  const written: typeof entries = []
+  let failed = false
+  for (const entry of entries) {
+    try {
+      if ('deny' in await $.config.set({ key: entry.row!.key, value: entry.value })) { failed = true; break }
+      written.push(entry)
+    } catch { written.push(entry); failed = true; break }
+  }
+  if (failed) {
+    let rollbackFailed = false
+    for (const entry of written.reverse()) {
+      const previous = entry.field === 'apiKey' && typeof pluginOptions.apiKey === 'string' ? pluginOptions.apiKey : entry.row!.value
+      try { if ('deny' in await $.config.set({ key: entry.row!.key, value: previous })) rollbackFailed = true } catch { rollbackFailed = true }
+    }
+    try { await $.store.set('retiredModels', oldRetired); await $.store.set('models', oldCache ?? []); if (clearCustom) await $.env.set('ANTHROPIC_CUSTOM_MODEL_OPTION', custom) } catch { rollbackFailed = true }
+    return rollbackFailed ? 'configuration failed and rollback failed; restore the previous settings in /plugin' : 'configuration failed; previous settings restored'
+  }
+  pluginOptions = { ...pluginOptions, ...changes }
+  config = undefined; loaded = false; loading = undefined
+  return undefined
+}
+
+async function manageUpstreams($: EngineInterface, c: Config): Promise<string> {
+  const accounts = new Map<string, CodexAccount>()
+  for (const item of c.codex?.values() ?? []) accounts.set(item.account, item)
+  const entries: { label: string; item?: CodexAccount }[] = []
+  for (const item of accounts.values()) {
+    let login = 'missing'
+    try { if ((await helperRun($, c, 'check', item.directory, 15_000)).exitCode === 0) login = 'ok' } catch { /* status remains missing */ }
+    const count = [...(c.codex?.values() ?? [])].filter(m => m.account === item.account).length
+    entries.push({ label: `Codex ${item.account}; dir=${item.directory}; login=${login}; models=${count}`, item })
+  }
+  if (c.key || c.headerFile) entries.push({ label: `API ${new URL(c.baseUrl).hostname}; models=${c.models.filter(id => !c.codex?.has(id)).length}; key=${c.key || c.headerFile ? 'configured' : 'not configured'}${c.source === 'file' ? '; from configuration file' : ''}` })
+  if (!entries.length) return 'model-mod: no configured upstreams.'
+  let chosen: typeof entries[number] | undefined
+  for (let page = 0; ; page = (page + 1) % Math.ceil(entries.length / 2)) {
+    const listed = entries.slice(page * 2, page * 2 + 2)
+    const labels = listed.map(entry => entry.label)
+    const options = [...labels, ...(entries.length > 2 ? ['More…'] : []), 'Back']
+    const answer = await ask($, `Manage configured upstreams (${page + 1}/${Math.ceil(entries.length / 2)}). Choose one?`, { options, header: 'Upstreams' })
+    if (answer === 'Back') return 'model-mod: no changes.'
+    if (answer === 'More…') continue
+    chosen = listed[labels.indexOf(answer)]
+    if (!chosen) return 'model-mod: no changes.'
+    break
+  }
+  if (!chosen.item) {
+    if (await ask($, 'Remove this API upstream?', ['Remove', 'Back']) !== 'Remove') return 'model-mod: no changes.'
+    if (c.source === 'file') return 'model-mod: API uses a configuration file; remove it from that file manually.'
+    const removed = c.models.filter(id => !c.codex?.has(id))
+    const changes: Record<string, string> = { baseUrl: '', models: '', apiKey: '' }
+    const cleared = ['fallbackModel', 'workerModel'].filter(field => removed.includes(String(pluginOptions[field] ?? '')))
+    for (const field of cleared) changes[field] = ''
+    const error = await removeSettings($, changes, removed)
+    if (error) return 'model-mod: ' + error
+    const file = await $.env.get('MODEL_MOD_CONFIG')
+    return `model-mod: API upstream removed.${cleared.length ? ' Cleared: ' + cleared.join(', ') + '.' : ''}${file ? ' A configuration file may still provide an API upstream; edit it separately if needed.' : ''}`
+  }
+  const item = chosen.item
+  const action = await ask($, `Manage Codex account ${item.account}?`, ['Log out', 'Remove', 'Back'])
+  if (action === 'Back') return 'model-mod: no changes.'
+  const root = c.accountsDir!
+  const pathArgs = (command: string) => [...helperArgs($, c, command, item.directory), '--accounts-dir', root, '--account', item.account]
+  const valid = async () => (await $.process.run(pathArgs('validate-home'), { timeoutMs: 15_000 })).exitCode === 0
+  const logout = async () => {
+    try { return await valid() && (await $.process.run(pathArgs('logout'), { timeoutMs: 15_000 })).exitCode === 0 } catch { return false }
+  }
+  if (action === 'Log out') return await logout() ? `model-mod: Codex login (${item.account}): login=missing; settings and directory retained.` : 'model-mod: logout failed; settings and directory retained.'
+  if (action !== 'Remove') return 'model-mod: no changes.'
+  const removeDir = await ask($, `Also delete the account directory ${item.directory}?`, ['Keep directory (recommended)', 'Delete directory'])
+  let deleteDir = false
+  if (removeDir === 'Delete directory') deleteDir = await ask($, `Permanently delete only ${item.directory}?`, ['Keep directory (recommended)', 'Confirm deletion']) === 'Confirm deletion'
+  const removed = [...(c.codex?.entries() ?? [])].filter(([, value]) => value.account === item.account).map(([id]) => id)
+  const remaining = (typeof pluginOptions.codexAccounts === 'string' ? pluginOptions.codexAccounts.split(',') : []).map(x => x.trim()).filter(x => x && x !== item.account)
+  const changes: Record<string, string> = { codexAccounts: remaining.join(',') }
+  if (!remaining.length) changes.codexModels = ''
+  const cleared = ['fallbackModel', 'workerModel'].filter(field => removed.includes(String(pluginOptions[field] ?? '')))
+  for (const field of cleared) changes[field] = ''
+  const error = await removeSettings($, changes, removed)
+  if (error) return 'model-mod: ' + error
+  let note = ''
+  if (deleteDir) {
+    if (!await logout()) note += ' Logout failed; directory deletion was attempted.'
+    try { if ((await $.process.run(pathArgs('remove-home'), { timeoutMs: 60_000 })).exitCode !== 0) note += ' Directory deletion failed.' } catch { note += ' Directory deletion failed.' }
+  }
+  return `model-mod: Codex account ${item.account} removed.${cleared.length ? ' Cleared: ' + cleared.join(', ') + '.' : ''}${note}`
+}
+
 async function admin($: EngineInterface, e: { origin: { kind: string } }, arg: 'setup' | 'status' | 'refresh') {
   const c = await load($)
   const invalidCodex = invalidCodexFields(pluginOptions)
@@ -1293,7 +1415,9 @@ async function admin($: EngineInterface, e: { origin: { kind: string } }, arg: '
     if (!interactive) return { text: 'model-mod setup is interactive. ' + status }
     try {
       const configured = [c?.codex?.size ? 'Codex login configured' : '', c?.key || c?.headerFile ? 'API server configured' : ''].filter(Boolean).join('; ')
-      const choice = await ask($, `Choose an upstream.${configured ? ' ' + configured + '.' : ''}`, ['Codex login (recommended)', 'Compatible API server'])
+      const choices = ['Codex login (recommended)', 'Compatible API server', ...(c && (c.codex?.size || c.key || c.headerFile) ? ['Manage configured upstreams'] : [])]
+      const choice = await ask($, `Choose an upstream.${configured ? ' ' + configured + '.' : ''}`, choices)
+      if (choice === 'Manage configured upstreams' && c) return { text: await manageUpstreams($, c) }
       if (choice === 'Codex login (recommended)') return { text: await setupCodex($, c) }
       if (choice !== 'Compatible API server') return { text: 'model-mod: setup cancelled, nothing changed' }
       return { text: await configurePicker($, c ?? { baseUrl: typeof pluginOptions.baseUrl === 'string' ? pluginOptions.baseUrl : DEFAULT_BASE_URL, models: [] }, true, interactive, status) }
@@ -1325,7 +1449,7 @@ async function admin($: EngineInterface, e: { origin: { kind: string } }, arg: '
     open = (await $.tool.list()).filter(tool => tool.mcp && !tool.name.startsWith('mcp__model-mod__') && !known.has(tool.name)).length
   }
   const codex = c.codex?.size ? await codexStatus($, c) : []
-  if (!c.key && !c.headerFile) return { text: ['model-mod 0.2.0: picker=active', ...(c.apiInvalid ? ['API server: invalid apiKey; configure a valid key'] : []), ...codex].join('; ') + codexWarning }
+  if (!c.key && !c.headerFile) return { text: ['model-mod 0.2.0: picker=active', ...(c.apiInvalid ? ['API server: invalid apiKey; configure a valid key'] : [])].join('; ') + (codex.length ? '\n' + codex.join('\n') : '') + codexWarning }
   const url = new URL(c.baseUrl)
   const loopback = loopbackHost(url.hostname)
   const warnings: string[] = []
@@ -1586,8 +1710,9 @@ export const register: Register = (on, options) => {
   on('command.run', { command: 'btw' }, async ($, e, next) => {
     try {
       const c = await load($)
-      if (!c) return next(e)
       const model = await $.session.model()
+      if (!c?.models.includes(model) && (await retiredModels($)).includes(model)) return commandText({ text: 'model-mod: model is not in the allowlist; use /model to choose another model' })
+      if (!c) return next(e)
       if (c.excluded?.has(model)) return commandText({ text: 'model-mod: model is not in the allowlist' })
       if (!c.models.includes(model)) return next(e)
       const question = e.args.trim()
@@ -1659,6 +1784,7 @@ export const register: Register = (on, options) => {
     const args = e.args.trim()
     if (!args) return next(e)
     const c = await load($)
+    if (!c?.models.includes(args) && (await retiredModels($)).includes(args)) return { text: 'model-mod: model is not in the allowlist; use /model to choose another model.' }
     if (!c) return next(e)
     if (c.excluded?.has(args)) return { text: c.codexDirectoryUnavailable?.has(args) ? 'model-mod: model is not in the allowlist; configure codexAccountsDir' : `model-mod: ${args} is not in the allowlist; run /model-mod:setup.` }
     if (!c.models.includes(args)) return next(e)
@@ -1759,7 +1885,6 @@ export const register: Register = (on, options) => {
   // engine's own request would name a non-Anthropic ID, so the summary is made here.
   on('session.compact', async ($, e, next) => {
     const c = await load($)
-    if (!c) return next(e)
     let model: string | undefined
     if (e.agentId === undefined) {
       try { model = await $.session.model() } catch { return next(e) }
@@ -1767,6 +1892,8 @@ export const register: Register = (on, options) => {
       // An unreadable value is unknown, not "subscription": ending the compaction is safe for both kinds of agent.
       try { model = await agentModelOf($, e.agentId) } catch { return { skip: 'model-mod: agent model unknown' } }
     }
+    if (model !== undefined && !c?.models.includes(model) && (await retiredModels($)).includes(model)) return { skip: 'model-mod: model is not in the allowlist; use /model to choose another model' }
+    if (!c) return next(e)
     if (model !== undefined && c.excluded?.has(model)) return { skip: 'model-mod: model is not in the allowlist' }
     if (model === undefined || !c.models.includes(model)) return next(e)
     // From here on never fall back to next(e): that would send the bridge model ID to the subscription endpoint.
@@ -1800,6 +1927,7 @@ export const register: Register = (on, options) => {
 
   on('turn.step', async function* ($, e, next) {
     const c = await load($)
+    if (!c?.models.includes(e.model) && (await retiredModels($)).includes(e.model)) return yield* failure(e, 'model is not in the allowlist; use /model to choose another model')
     if (!c) return yield* next(e)
     if (e.agentId !== undefined) {
       await rememberAgentModel($, e.agentId, e.model)
