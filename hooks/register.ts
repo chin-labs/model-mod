@@ -419,7 +419,7 @@ async function loadNow($: EngineInterface) {
       const appdata = await $.env.get('APPDATA')
       const dir = candidate.accountsDir ?? (appdata ? appdata.replace(/[\\/]+$/, '') + '\\model-mod\\accounts' : home ? home.replace(/\/+$/, '') + '/.config/model-mod/accounts' : undefined)
       if (!dir) {
-        $.ui.status('model-mod: Codex login: accounts directory unavailable; configure codexAccountsDir.')
+        $.ui.status('Codex login: accounts directory unavailable; configure codexAccountsDir.')
         built.excluded ??= new Set()
         for (const account of candidate.accounts as string[]) for (const model of candidate.codexModels as string[]) built.excluded.add(`${account}/${model}`)
       }
