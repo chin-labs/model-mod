@@ -259,6 +259,8 @@ def validate_write_root(cwd, accounts_dir, account):
     home = os.path.realpath(os.path.expanduser('~'))
     account_dir, _ = account_home(accounts_dir, account)
     protected = [os.path.join(home, '.codex'), os.path.join(home, '.config', 'model-mod'), account_dir, os.path.realpath(accounts_dir)]
+    codex_home = os.environ.get('CODEX_HOME')
+    if codex_home: protected.append(os.path.abspath(codex_home))
     def same(a, b):
         try: return os.path.samefile(a, b)
         except OSError: return False

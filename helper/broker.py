@@ -40,7 +40,7 @@ def paths(root):
 
 
 def minimal_env():
-    return {key: os.environ[key] for key in ('HOME', 'XDG_STATE_HOME', 'PATH', 'TMPDIR', 'LANG') if key in os.environ}
+    return {key: os.environ[key] for key in ('HOME', 'CODEX_HOME', 'XDG_STATE_HOME', 'PATH', 'TMPDIR', 'LANG') if key in os.environ}
 
 
 def peer_uid(conn):

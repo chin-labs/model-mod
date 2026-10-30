@@ -273,9 +273,13 @@ class DelegateTest(unittest.TestCase):
         self.assertFalse(any(r.get('method') == 'turn/start' for r in self.records()))
         self.mode('delegate_approval')
         with self.assertRaisesRegex(delegate.Failure, 'Working directory'): delegate.execute(dict(request, writeRoot='/'))
-        for unsafe in ('/', os.path.expanduser('~'), str(self.account_dir), str(self.account_dir.parent)):
-            with self.assertRaises(delegate.Failure):
-                delegate.validate_write_root(unsafe, str(self.account_dir.parent), 'test')
+        codex_home = self.root / 'envcodex'
+        (codex_home / 'sub').mkdir(parents=True)
+        with patch.dict(os.environ, {'CODEX_HOME': str(codex_home)}):
+            for unsafe in ('/', os.path.expanduser('~'), str(self.account_dir), str(self.account_dir.parent),
+                           str(codex_home), str(codex_home / 'sub')):
+                with self.assertRaises(delegate.Failure):
+                    delegate.validate_write_root(unsafe, str(self.account_dir.parent), 'test')
         alias = str(self.account_dir.parent).replace('accounts', 'ACCOUNTS')
         if os.path.isdir(alias):
             with self.assertRaises(delegate.Failure): delegate.validate_write_root(alias, str(self.account_dir.parent), 'test')
