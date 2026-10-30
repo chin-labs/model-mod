@@ -91,6 +91,13 @@ class Contract(unittest.TestCase):
             blocks = json.loads(text_interleaved.stdout)['content']
             self.assertEqual([decode_reasoning(b['signature'])['id'] for b in blocks if b['type'] == 'thinking'], ['reason1'])
             self.assertIn('discarded reasoning items: 1', text_interleaved.stderr)
+            many = self.run_bridge(body, mode='reasoning_many')
+            self.assertEqual(many.returncode, 0, many.stderr)
+            signatures = [b['signature'] for b in json.loads(many.stdout)['content'] if b['type'] == 'thinking']
+            self.assertEqual(len(signatures), 5)
+            self.assertLessEqual(sum(map(len, signatures)), REASONING_RESPONSE_LIMIT)
+            self.assertIn('discarded reasoning items: 1', many.stderr)
+            self.assertNotIn('140000', many.stderr)
             off = self.run_bridge(body, mode='reasoning_tool', extra=['--no-keep-reasoning'])
             self.assertNotIn('thinking', [block['type'] for block in json.loads(off.stdout)['content']])
             unavailable = self.run_bridge(body, mode='reasoning_start_error')
