@@ -115,7 +115,7 @@ def check_turn(value):
 
 class App:
     def __init__(self, args, cwd):
-        argv = [args.codex_bin, 'app-server', '-c', 'web_search="disabled"']
+        argv = [args.codex_bin, 'app-server', '-c', 'web_search="disabled"', '-c', 'include_permissions_instructions=false', '-c', 'include_environment_context=false']
         for feature in FEATURES: argv.extend(['--disable', feature])
         self.cwd = cwd
         self.deadline = time.monotonic() + getattr(args, 'max_seconds', 900)

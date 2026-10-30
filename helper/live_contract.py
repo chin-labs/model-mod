@@ -11,8 +11,8 @@ from pathlib import Path
 BRIDGE = Path(__file__).resolve().with_name('bridge.py')
 
 
-def run(home, codex_bin, model, body):
-    result = subprocess.run([sys.executable, str(BRIDGE), 'messages', '--codex-home', home,
+def run(home, codex_bin, model, body, expected_tool=None):
+    result = subprocess.run([sys.executable, '-E', '-s', str(BRIDGE), 'messages', '--codex-home', home,
                              '--codex-bin', codex_bin, '--model-map', 'test=' + model],
                             input=json.dumps(body), text=True, capture_output=True, timeout=180)
     if result.returncode:
@@ -21,6 +21,8 @@ def run(home, codex_bin, model, body):
     delta = next((frame for frame in frames if frame.get('type') == 'message_delta'), None)
     if not delta or 'event: error' in result.stdout:
         raise RuntimeError('messages did not complete')
+    if expected_tool and not any(frame.get('content_block', {}).get('type') == 'tool_use' and frame['content_block'].get('name') == expected_tool for frame in frames):
+        raise RuntimeError('expected tool use missing')
     return delta['delta']['stop_reason']
 
 
@@ -41,10 +43,14 @@ def main():
                 tools=[{'name': 'fixture_tool', 'description': 'Returns a fixture value.',
                         'input_schema': {'type': 'object', 'properties': {'value': {'type': 'string'}}}}],
                 messages=[{'role': 'user', 'content': 'Call fixture_tool with value teal.'}])
-    for label, request, expected in [('text and effort', text, 'end_turn'),
-                                      ('history', history, 'end_turn'),
-                                      ('tool use', tool, 'tool_use')]:
-        actual = run(args.codex_home, args.codex_bin, args.model, request)
+    write = dict(base, system='Use the provided Write tool when asked.',
+                 tools=[{'name': 'Write', 'description': 'Write a file.', 'input_schema': {'type': 'object', 'properties': {'file_path': {'type': 'string'}, 'content': {'type': 'string'}}, 'required': ['file_path', 'content']}}],
+                 messages=[{'role': 'user', 'content': 'Use Write to create a.txt containing x.'}])
+    for label, request, expected, expected_tool in [('text and effort', text, 'end_turn', None),
+                                      ('history', history, 'end_turn', None),
+                                      ('tool use', tool, 'tool_use', None),
+                                      ('write tool use', write, 'tool_use', 'Write')]:
+        actual = run(args.codex_home, args.codex_bin, args.model, request, expected_tool)
         if actual != expected:
             raise RuntimeError(label + ': unexpected stop reason ' + str(actual))
         print(label + ': passed')

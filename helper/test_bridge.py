@@ -44,6 +44,9 @@ class Contract(unittest.TestCase):
             self.assertIn('"stop_reason": "tool_use"', r.stdout)
             calls = [json.loads(x) for x in log.read_text().splitlines()]
             self.assertFalse({'OPENAI_API_KEY', 'CODEX_API_KEY', 'ANTHROPIC_API_KEY'} & set(calls[0]['env_keys']))
+            for setting in ('include_permissions_instructions=false', 'include_environment_context=false'):
+                self.assertIn(setting, calls[0]['argv'])
+                self.assertEqual(calls[0]['argv'][calls[0]['argv'].index(setting) - 1], '-c')
             self.assertEqual(sum(c.get('method') == 'turn/interrupt' for c in calls), 1)
 
     def test_history_and_names(self):
