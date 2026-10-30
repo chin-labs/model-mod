@@ -3,7 +3,9 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest.mock import patch
 
+import job_process
 import jobs
 
 
@@ -47,6 +49,23 @@ class JobStoreTest(unittest.TestCase):
         self.assertEqual(self.store.clear(older_than=time.time() - jobs.RETENTION_SECONDS), 0)
         self.assertEqual(self.store.clear(workspace=jobs.workspace_hash(self.tmp.name)), 1)
         self.assertEqual(self.store.records(), [])
+
+    def test_group_identity_before_signal(self):
+        member = {'pid': 23, 'started': 'start'}
+        with patch.object(job_process, 'start_time', return_value='different'), \
+             patch.object(job_process.os, 'getpgid', return_value=42), \
+             patch.object(job_process.os, 'killpg') as kill:
+            self.assertFalse(job_process.cleanup_verified(42, [member]))
+            kill.assert_not_called()
+        with patch.object(job_process, 'start_time', return_value='start'), \
+             patch.object(job_process.os, 'getpgid', return_value=43), \
+             patch.object(job_process.os, 'killpg') as kill:
+            self.assertFalse(job_process.cleanup_verified(42, [member]))
+            kill.assert_not_called()
+        with patch.object(job_process, 'start_time', return_value=None), \
+             patch.object(job_process.os, 'killpg') as kill:
+            self.assertFalse(job_process.cleanup_verified(42, [member]))
+            kill.assert_not_called()
 
     def test_limit_and_id_resolution(self):
         old = jobs.MAX_JOBS
