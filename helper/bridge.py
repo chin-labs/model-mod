@@ -381,8 +381,8 @@ def messages(args, app, prepared, cwd):
     if not args.no_keep_reasoning: params['experimentalRawEvents'] = True
     try:
         result = app.request('thread/start', params)
-    except BridgeError as error:
-        if args.no_keep_reasoning or error.code != 'codex_rejected_request': raise
+    except BridgeError:
+        if args.no_keep_reasoning: raise
         note('Codex login: raw reasoning unavailable')
         params.pop('experimentalRawEvents', None)
         result = app.request('thread/start', params)

@@ -978,6 +978,7 @@ function helperArgs($: EngineInterface, c: Config, command: string, home: string
   const script = root.replace(/[\\/]+$/, '') + sep + 'helper' + sep + 'bridge.py'
   const args = [c.pythonBin ?? 'python3', '-E', '-s', script, command, '--codex-home', home, '--codex-bin', c.codexBin ?? 'codex']
   if (command === 'messages') {
+    if (c.codexKeepReasoning === 'off') args.push('--no-keep-reasoning')
     if (c.codexServiceTier === 'priority') args.push('--service-tier', 'priority')
     args.push('--model-map', `${wire ?? model}=${model}`, '--idle-seconds', '300', '--max-seconds', '900')
     const item = [...(c.codex?.entries() ?? [])].find(([, value]) => value.directory === home && value.model === model)
@@ -2183,7 +2184,7 @@ export const register: Register = (on, options) => {
         // Retry-After comes back through --write-out, which curl writes to fd 2 itself: a header file opened on the stderr device
         // fails when the client hands the child a socket there. %header{} needs curl 7.84; an older curl prints nothing and the plain backoff applies.
         const searchEnabled = codex && await codexWebSearchState($, c) === 'on'
-        const call = codex ? { argv: [...helperArgs($, c, 'messages', codex.directory, codex.model, body.model), ...(searchEnabled ? ['--web-search'] : []), ...(c.codexKeepReasoning === 'off' ? ['--no-keep-reasoning'] : [])], env: undefined } : curlCall(c, ['-sN', '--fail-with-body', '--max-time', '900', '--speed-limit', '1', '--speed-time', String(STREAM_IDLE_SECONDS),
+        const call = codex ? { argv: [...helperArgs($, c, 'messages', codex.directory, codex.model, body.model), ...(searchEnabled ? ['--web-search'] : [])], env: undefined } : curlCall(c, ['-sN', '--fail-with-body', '--max-time', '900', '--speed-limit', '1', '--speed-time', String(STREAM_IDLE_SECONDS),
           '--write-out', '%{stderr}\nmodel-mod-http:%{http_code}\nmodel-mod-retry-after:%header{retry-after}\n',
           '-H', 'content-type: application/json',
           '-H', 'anthropic-version: 2023-06-01', '--data-binary', '@-', c.baseUrl + '/v1/messages'])

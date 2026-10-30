@@ -76,7 +76,9 @@ for line in sys.stdin:
         if mode == 'bad_web_search': web_search = 'disabled' if web_search == 'live' else 'live'
         send({'id': ident, 'result': {'config': {'web_search': web_search, 'features': features, 'mcp_servers': {}}}})
     elif method == 'thread/start':
-        if mode in ('rejected_request', 'rejected_params'):
+        if mode == 'reasoning_start_error' and params.get('experimentalRawEvents'):
+            send({'id': ident, 'error': {'code': -32000, 'message': 'synthetic'}})
+        elif mode in ('rejected_request', 'rejected_params'):
             send({'id': ident, 'error': {'code': -32600 if mode == 'rejected_request' else -32602, 'message': 'untrusted details'}})
         elif mode in ('bad', 'rate'):
             print('synthetic app-server failure ' + 'A' * 80, file=sys.stderr, flush=True)

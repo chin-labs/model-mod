@@ -1,4 +1,5 @@
 import json
+import base64
 import argparse
 import contextlib
 import io
@@ -33,6 +34,10 @@ class Contract(unittest.TestCase):
         for invalid in ('gAAAAx', 'mmcx2:eyJ0eXBlIjoicmVhc29uaW5nIn0', 'mmcx1:!', 'mmcx1:e30',
                         'mmcx1:' + 'A' * REASONING_ITEM_LIMIT, signature + '='):
             self.assertIsNone(decode_reasoning(invalid))
+        def raw_signature(raw): return 'mmcx1:' + base64.urlsafe_b64encode(raw.encode()).decode().rstrip('=')
+        for raw in ('[]', '{"type":"reasoning","summary":[],"extra":1}',
+                    '{"type":"reasoning","type":"message","summary":[]}', '{"type":"message","summary":[]}'):
+            self.assertIsNone(decode_reasoning(raw_signature(raw)))
         self.assertIsNone(encode_reasoning(dict(item, extra='no')))
         self.assertIsNone(encode_reasoning(dict(item, summary=[{'type': 'bad', 'text': 'no'}])))
         self.assertIsNone(encode_reasoning(dict(item, encrypted_content='x' * REASONING_ITEM_LIMIT)))
@@ -46,6 +51,12 @@ class Contract(unittest.TestCase):
         self.assertNotIn('reasoning', [part['type'] for part in prepare(body, {'test': 'model'}, False)['history']])
         body['messages'][1]['content'][0]['signature'] = 'gAAAAx'
         self.assertNotIn('reasoning', [part['type'] for part in prepare(body, {'test': 'model'})['history']])
+        large = encode_reasoning(dict(item, encrypted_content='x' * 140000))
+        count = REASONING_RESPONSE_LIMIT // len(large)
+        body['messages'][1]['content'] = [{'type': 'thinking', 'thinking': '', 'signature': large} for _ in range(count + 1)]
+        limited = prepare(body, {'test': 'model'})
+        self.assertEqual(sum(part['type'] == 'reasoning' for part in limited['history']), count)
+        self.assertEqual(limited['dropped'], 1)
 
     def test_reasoning_stream_and_retry(self):
         body = dict(BASE, stream=False, tools=TOOLS)
@@ -61,8 +72,15 @@ class Contract(unittest.TestCase):
             self.assertNotIn('xxxxxxxxxxxxxxxx', result.stderr)
             records = [json.loads(line) for line in log.read_text().splitlines()]
             self.assertTrue(next(row for row in records if row.get('method') == 'thread/start')['params']['experimentalRawEvents'])
+            streamed = self.run_bridge(dict(body, stream=True), mode='reasoning_tool')
+            self.assertEqual(streamed.returncode, 0)
+            self.assertLess(streamed.stdout.index('signature_delta'), streamed.stdout.index('tool_use'))
+            self.assertNotIn('xxxxxxxxxxxxxxxx', streamed.stderr)
             off = self.run_bridge(body, mode='reasoning_tool', extra=['--no-keep-reasoning'])
             self.assertNotIn('thinking', [block['type'] for block in json.loads(off.stdout)['content']])
+            unavailable = self.run_bridge(body, mode='reasoning_start_error')
+            self.assertEqual(unavailable.returncode, 0)
+            self.assertIn('raw reasoning unavailable', unavailable.stderr)
             for mode in ('reasoning_invalid_shape', 'reasoning_large'):
                 discarded = self.run_bridge(body, mode=mode)
                 self.assertEqual(discarded.returncode, 0)
@@ -84,6 +102,10 @@ class Contract(unittest.TestCase):
                 self.assertNotIn('reasoning', [item['type'] for item in injected[1]])
                 self.assertEqual(response.stderr.count('reasoning discarded; retrying once'), 1)
                 self.assertNotIn(signature, response.stderr)
+            streaming_retry = self.run_bridge(dict(replay, stream=True), mode='reasoning_invalid_once')
+            self.assertEqual(streaming_retry.returncode, 0, streaming_retry.stderr)
+            self.assertEqual(streaming_retry.stdout.count('event: message_start'), 1)
+            self.assertEqual(streaming_retry.stderr.count('reasoning discarded; retrying once'), 1)
 
     def test_account_home_boundaries(self):
         with tempfile.TemporaryDirectory() as tmp:
