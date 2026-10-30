@@ -689,7 +689,7 @@ def main():
                             if not isinstance(page, dict) or not isinstance(page.get('data'), list) or 'nextCursor' not in page: raise incompatible('model/list')
                             for model in page['data']:
                                 if not isinstance(model, dict) or not isinstance(model.get('id'), str) or not isinstance(model.get('displayName'), str): raise incompatible('model/list data')
-                                if not model.get('hidden') and not NOT_CHAT.search(model['id']): models.append({'id': model['id'], 'displayName': model['displayName'], 'efforts': model_efforts(model), 'defaultEffort': model.get('defaultReasoningEffort') if model.get('defaultReasoningEffort') in EFFORTS else None})
+                                if not model.get('hidden') and not NOT_CHAT.search(model['id']): models.append({'id': model['id'], 'displayName': model['displayName'], 'efforts': model_efforts(model), 'defaultEffort': model.get('defaultReasoningEffort') if model.get('defaultReasoningEffort') in ('minimal',) + EFFORTS else None})
                             cursor = page['nextCursor']
                             if cursor is None: break
                             if not isinstance(cursor, str) or cursor in seen: raise incompatible('model/list cursor')

@@ -18,7 +18,7 @@ type RunReply = { exitCode: number; stdout: string; stderr?: string; isStdoutTru
 // `wait`: mock-clock milliseconds between the last stdout piece and the first stderr piece (curl's write-out comes when the transfer ends);
 // `hang`: the child writes its pieces and then neither ends nor writes again until it is closed.
 type SpawnReply = { stdout: string | readonly string[]; stderr?: string | readonly string[]; code: number; wait?: number; hang?: boolean }
-type World = { system: string; killed: number; toolsList?: string[]; spawned: { argv: readonly string[]; input?: string; env?: Record<string, string> }[]; ran: (readonly string[])[]
+type World = { runDelay?: number; rateStarted?: boolean; system: string; killed: number; toolsList?: string[]; spawned: { argv: readonly string[]; input?: string; env?: Record<string, string> }[]; ran: (readonly string[])[]
   ranEnv: (Record<string, string> | undefined)[]; reached: string[]; envSet: [string, string | undefined][]; messagesRead: number; failEnvSets: number; failEnvName?: string
   // The upstream's model list (null: unreachable), what the store holds, the picker rows of the settings, the requests
   // `$.http.fetch` made (the authorization header is reduced to its first 6 characters).
@@ -106,6 +106,7 @@ function world(on: On, config: Record<string, unknown> | null, model: string, sp
     return { value: { code: reply.code, signal: null } }
   })
   on('process.run', async (_$, e) => {
+    if (e.argv.includes('rate-limits') && w.runDelay) { w.rateStarted = true; await w.clock.sleep(w.runDelay) }
     w.ran.push(e.argv)
     w.ranEnv.push(e.init?.env)
     const reply: RunReply | undefined = e.argv[0] === 'uname' ? { exitCode: 0, stdout: w.system + '\n' } : typeof run === 'function' ? run(e.argv, e.init?.stdin) : run
@@ -1352,6 +1353,20 @@ test('Codex fallback: unknown reset warns only once and does not switch', { opti
   await $.turn.complete(END); await w.clock.advance(1)
   expect(w.modelRuns).toEqual([])
   expect(notes.filter(text => text.includes('reset time is unknown')).length).toBe(1)
+})
+
+test('Codex fallback: a slow quota read does not block turn completion', { options: { ...OPTIONS, ...CODEX_OPTIONS, fallbackModel: 'gpt-fb' } }, async ($, on) => {
+  const w = world(on, null, CODEX_MODEL, { stdout: SSE_OK, code: 0 }, argv => argv.includes('rate-limits')
+    ? { exitCode: 0, stdout: JSON.stringify({ primary: { remainingPercent: 0, resetsAt: 3600 } }) } : { exitCode: 0, stdout: '{}' })
+  w.runDelay = 10_000
+  await w.clock.set(1000)
+  await $.turn.complete(END)
+  await w.clock.advance(1)
+  expect(w.rateStarted).toBe(true)
+  expect(w.modelRuns).toEqual([])
+  await w.clock.advance(10_000)
+  for (let i = 0; i < 100; i++) await Promise.resolve()
+  expect(w.modelRuns).toEqual(['gpt-fb'])
 })
 
 for (const apiKey of [KEY, 'bad key']) {
