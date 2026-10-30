@@ -855,7 +855,7 @@ async function applyWindowNow($: EngineInterface, c: Config, model: string): Pro
 // size. The response never passes through the engine, whose process output is capped at 4 MiB (a large PNG as base64
 // is not). The JSON is read with tr/grep/sed/base64 (whitespace removed, the first "b64_json" string taken, `\/`
 // unescaped): enough for the response of an images endpoint. Any failing stage fails the whole call; the image is
-// decoded to a private temporary file next to the target, then linked into place without replacing an existing path.
+// decoded to a private temporary file next to the target, then installed without replacing an existing path.
 const IMAGE_PIPELINE = [
   'set -o pipefail',
   'out=$3; dir=$(dirname -- "$out") || exit 1',
@@ -887,7 +887,16 @@ const IMAGE_PIPELINE = [
     ' base64 -d > "$tmp"',
   'status=$?',
   'if [ "$status" -ne 0 ] || [ ! -s "$tmp" ]; then echo "no image in the response"; exit 1; fi',
-  'if [ -d "$out" ] || ! ln -n -- "$tmp" "$out"; then echo "file already exists or cannot be created"; exit 1; fi',
+  'if ! ln -n -- "$tmp" "$out" 2>/dev/null; then',
+  '  if [ -e "$out" ] || [ -L "$out" ]; then echo "file already exists"; exit 1; fi',
+  '  if ! { set -C; exec 3> "$out"; } 2>/dev/null; then',
+  '    if [ -e "$out" ] || [ -L "$out" ]; then echo "file already exists"; else echo "cannot create image file"; fi; exit 1',
+  '  fi',
+  '  trap \'exec 3>&-; rm -f -- "$out"; exit 1\' HUP INT TERM',
+  '  if ! cat "$tmp" >&3; then exec 3>&-; rm -f -- "$out"; echo "cannot write image file"; exit 1; fi',
+  '  exec 3>&-',
+  '  trap \'exit 1\' HUP INT TERM',
+  'fi',
   'rm -f -- "$tmp" || exit 1',
   'wc -c < "$out"',
 ].join('\n')
@@ -1650,8 +1659,8 @@ export const register: Register = (on, options) => {
           !['low', 'medium', 'high', 'auto'].includes(String(quality))) return answer('size or quality is not supported.', true)
       const cwd = (await $.session.cwd()).replace(/\/+$/, '') || '/'
       const given = typeof input.path === 'string' ? input.path : `generated-images/image-${Date.now()}.png`
-      if (!/^[A-Za-z0-9._\/-]{1,200}\.png$/.test(given) || given.startsWith('/') || given.split('/').some(part => part === '..' || part === '')) {
-        return answer('path must be a relative .png path inside the working directory.', true)
+      if (!/^[A-Za-z0-9._\/-]{1,200}\.png$/.test(given) || given.startsWith('/') || given.split('/').some(part => part === '.' || part === '..' || part === '')) {
+        return answer('path must be a relative .png path inside the working directory without "." or ".." segments.', true)
       }
       const out = `${cwd}/${given}`
       const refused = await permitted($, e, IMAGE_TOOL, codex

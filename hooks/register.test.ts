@@ -1503,7 +1503,11 @@ test('Codex image generation requests permission and validates PNG before writin
   expect(w.ran.some(argv => argv.includes('--write'))).toBe(true)
   expect(await call('bad.png')).toContain('invalid PNG')
   expect(await call('declined.png')).toContain('declined')
-  expect(await call('../escape.png')).toContain('relative .png path')
+  const questionsBeforeInvalidPaths = w.questions.length
+  for (const path of ['../escape.png', './x.png', 'a/./y.png']) {
+    expect(await call(path)).toContain('relative .png path')
+  }
+  expect(w.questions.length).toBe(questionsBeforeInvalidPaths)
   expect(w.spawned.length).toBe(2)
   expect(await call('existing.png')).toContain('Could not save image')
   expect(await call('link/escape.png')).toContain('Could not save image')

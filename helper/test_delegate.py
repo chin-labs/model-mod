@@ -100,14 +100,25 @@ class DelegateTest(unittest.TestCase):
         self.assertEqual(thread['serviceName'], 'model_mod')
         self.assertEqual(thread['sandbox'], 'read-only')
         self.assertEqual(thread['approvalPolicy'], 'never')
-        for mode in ('image_failure', 'image_large'):
+        for mode in ('image_failure', 'image_large', 'bad_flag', 'delegate_bad_sandbox'):
+            self.log.unlink(missing_ok=True)
             self.mode(mode)
             with self.assertRaises(delegate.Failure): image.execute(dict(request))
+            if mode in ('bad_flag', 'delegate_bad_sandbox'):
+                self.assertFalse(any(r.get('method') == 'turn/start' for r in self.records()))
         self.mode('rate')
         with self.assertRaisesRegex(delegate.Failure, 'quota or rate limit'): image.execute(dict(request))
         (self.account_dir / 'fake_config.json').write_text(json.dumps({'mode': 'image_success', 'account': None}))
         with self.assertRaisesRegex(delegate.Failure, 'not logged in'): image.execute(dict(request))
         target = self.root / 'outside.png'
+        target.write_bytes(b'untouched')
+        for outside_path in (str(target), str(generated / '..' / '..' / '..' / 'outside.png')):
+            with self.subTest(savedPath=outside_path):
+                target.write_bytes(b'untouched')
+                (self.account_dir / 'fake_config.json').write_text(json.dumps({'mode': 'image_success', 'savedPath': outside_path}))
+                self.assertTrue(image.execute(dict(request))['ok'])
+                self.assertTrue(target.exists())
+                self.assertEqual(target.read_bytes(), b'untouched')
         target.write_bytes(b'untouched')
         saved.symlink_to(target)
         (self.account_dir / 'fake_config.json').write_text(json.dumps({'mode': 'image_success', 'log': str(self.log), 'savedPath': str(saved)}))
@@ -200,6 +211,20 @@ class DelegateTest(unittest.TestCase):
         self.assertNotEqual(run(failed, '22').returncode, 0)
         self.assertFalse(failed.exists())
         self.assertEqual(sorted(p.name for p in out.parent.iterdir()), ['image.png'])
+        ln = bindir / 'ln'
+        ln.write_text('#!/bin/sh\nexit 1\n')
+        ln.chmod(0o755)
+        fallback = self.repo / 'new' / 'fallback.png'
+        self.assertEqual(run(fallback).returncode, 0)
+        self.assertEqual(fallback.read_bytes(), b'hello')
+        existing = run(fallback)
+        self.assertNotEqual(existing.returncode, 0)
+        self.assertIn('file already exists', existing.stdout)
+        self.assertEqual(fallback.read_bytes(), b'hello')
+        cannot_create = run(self.repo / 'new' / ('x' * 300 + '.png'))
+        self.assertNotEqual(cannot_create.returncode, 0)
+        self.assertIn('cannot create image file', cannot_create.stdout)
+        self.assertNotIn('file already exists', cannot_create.stdout)
 
     def test_protocol_safety(self):
         self.mode('delegate_approval')
