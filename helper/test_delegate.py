@@ -642,6 +642,36 @@ class DelegateTest(unittest.TestCase):
         self.assertNotIn('\x01', result)
         self.assertIn('truncated', result)
 
+    def test_gate_verdict_and_protocol(self):
+        valid = {'verdict': 'pass', 'findings': [], 'needsHuman': False}
+        blocking = {'severity': 'blocking', 'file': 'file', 'line': 1, 'summary': 'issue'}
+        for verdict in ('pass', 'block', 'unknown'):
+            value = dict(valid, verdict=verdict, findings=[blocking] if verdict == 'block' else [], needsHuman=verdict == 'unknown')
+            self.assertEqual(delegate.gate_verdict(json.dumps(value))['verdict'], verdict)
+        invalid = [dict(valid, extra=1), {'verdict': 'pass'}, dict(valid, needsHuman='false'),
+                   dict(valid, findings=[dict(blocking, summary='x' * 501)]), dict(valid, findings=[blocking]),
+                   dict(valid, findings=[blocking] * 21), dict(valid, needsHuman=True)]
+        for value in invalid:
+            self.assertEqual(delegate.gate_verdict(json.dumps(value))['verdict'], 'unknown')
+        for text in ('invalid', '{"verdict":"pass","verdict":"pass","findings":[],"needsHuman":false}'):
+            self.assertEqual(delegate.gate_verdict(text)['verdict'], 'unknown')
+        (self.repo / 'file').write_text('changed\n')
+        (self.repo / 'new').write_text('untracked\n')
+        self.mode('gate')
+        req = dict(self.request, kind='review', options={'gate': True}, sessionId='session')
+        first = json.loads(delegate.execute(req))
+        self.assertEqual(first['verdict'], 'pass')
+        records = self.records()
+        thread = next(r['params'] for r in records if r.get('method') == 'thread/start')
+        self.assertEqual(thread['sandbox'], 'read-only')
+        self.assertEqual(thread['approvalPolicy'], 'never')
+        turn = next(r['params'] for r in records if r.get('method') == 'turn/start')
+        self.assertEqual(turn['outputSchema'], delegate.GATE_SCHEMA)
+        self.assertEqual(turn['sandboxPolicy'], {'type': 'readOnly', 'networkAccess': False})
+        self.assertIn('untracked', turn['input'][0]['text'])
+        (self.repo / 'new').write_text('modified\n')
+        self.assertNotEqual(first['fingerprint'], delegate.gate_snapshot(str(self.repo), None, 'session')['fingerprint'])
+
     def test_adversarial_diffs(self):
         req = dict(self.request, kind='review', options={'adversarial': True, 'text': 'focus'})
         self.mode('text')

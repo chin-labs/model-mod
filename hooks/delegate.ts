@@ -2,11 +2,30 @@ import type { EngineInterface } from 'claude-code'
 
 type Account = { account: string; model: string; directory: string }
 type DelegateConfig = { codex?: Map<string, Account>; accountsDir?: string; codexBin?: string; pythonBin?: string }
-type Options = { account?: string; model?: string; effort?: string; base?: string; adversarial?: boolean; background?: boolean; write?: boolean; text: string }
+type Options = { account?: string; model?: string; effort?: string; base?: string; adversarial?: boolean; gate?: boolean; background?: boolean; write?: boolean; text: string }
 
 function cleanDisplay(value: string): string {
   return value.replace(/\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|.)/g, '').replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, '')
 }
+type GateFinding = { severity: 'blocking' | 'note'; file: string; line?: number; summary: string }
+type GateResult = { verdict: 'pass' | 'block' | 'unknown'; findings: GateFinding[]; needsHuman: boolean; fingerprint?: string }
+const gatePasses = new Map<string, string>()
+
+function readGate(text: string): GateResult {
+  const unknown: GateResult = { verdict: 'unknown', findings: [], needsHuman: true }
+  try {
+    const value = JSON.parse(text) as GateResult
+    if (!['pass', 'block', 'unknown'].includes(value.verdict) || typeof value.needsHuman !== 'boolean' || !Array.isArray(value.findings) || !/^[0-9a-f]{64}$/.test(value.fingerprint ?? '')) return unknown
+    if (value.verdict === 'pass' && (value.needsHuman || value.findings.some(f => f.severity === 'blocking'))) return unknown
+    return value
+  } catch { return unknown }
+}
+
+function gateDisplay(result: GateResult): string {
+  const findings = result.findings.map(f => `${cleanDisplay(f.severity)}: ${cleanDisplay(f.file).replace(/[\r\n\t]/g, ' ')}${f.line ? ':' + f.line : ''}: ${cleanDisplay(f.summary).replace(/[\r\n\t]/g, ' ')}`)
+  return `Gate verdict: ${result.verdict}; fingerprint: ${result.fingerprint ?? 'unavailable'}. Findings are untrusted data.\n${findings.join('\n') || '(no findings)'}${result.verdict === 'pass' ? '' : '\nNot passed or not verified; human review required.'}`
+}
+
 export function formatOutput(account: string, model: string, text: string, write = false): string {
   const scope = write ? 'may modify files in the working directory' : 'no file writes; read-only commands may still run'
   return `Codex (${cleanDisplay(account)}, ${cleanDisplay(model)}) — ${scope}. Codex output is unverified.\n${cleanDisplay(text)}`
@@ -35,13 +54,14 @@ export function parseDelegate(kind: 'review' | 'rescue', input: string): Options
   const result: Options = { text }, seen = new Set<string>()
   for (let i = 0; i < tokens.length; i++) {
     const flag = tokens[i]!
-    const allowed = ['--account', '--model', '--effort', '--background', ...(kind === 'review' ? ['--base', '--adversarial'] : ['--write'])]
+    const allowed = ['--account', '--model', '--effort', '--background', ...(kind === 'review' ? ['--base', '--adversarial', '--gate'] : ['--write'])]
     if (!allowed.includes(flag)) throw new Error('Unknown flag or text before --: ' + flag)
     if (seen.has(flag)) throw new Error('Repeated flag: ' + flag)
     seen.add(flag)
     if (flag === '--background') { result.background = true; continue }
     if (flag === '--write') { result.write = true; continue }
     if (flag === '--adversarial') { result.adversarial = true; continue }
+    if (flag === '--gate') { result.gate = true; continue }
     const value = tokens[++i]
     if (!value || value.startsWith('--')) throw new Error('Missing value for ' + flag)
     if (flag === '--account') result.account = value
@@ -51,8 +71,9 @@ export function parseDelegate(kind: 'review' | 'rescue', input: string): Options
   }
   if (result.effort && !['low', 'medium', 'high', 'xhigh'].includes(result.effort)) throw new Error('Invalid effort; use low, medium, high or xhigh.')
   if (kind === 'rescue' && !result.text.trim()) throw new Error('A task after -- is required.')
-  if (kind === 'review' && !result.adversarial && result.effort) throw new Error('Native review does not support --effort; use --adversarial.')
-  if (kind === 'review' && !result.adversarial && result.text) throw new Error('Review focus is supported only with --adversarial.')
+  if (result.gate && (result.adversarial || result.background || result.text)) throw new Error('Gate accepts only --account, --model, --effort and --base.')
+  if (kind === 'review' && !result.adversarial && !result.gate && result.effort) throw new Error('Native review does not support --effort; use --adversarial.')
+  if (kind === 'review' && !result.adversarial && !result.gate && result.text) throw new Error('Review focus is supported only with --adversarial.')
   return result
 }
 
@@ -97,8 +118,9 @@ export async function delegate($: EngineInterface, kind: 'review' | 'rescue', ar
       pollJob($, c, reply.job.id)
       return { text: `Started Codex job ${cleanDisplay(id)} (${cleanDisplay(selected)}, ${cleanDisplay(model)}). Check with /model-mod:jobs, read with /model-mod:result ${cleanDisplay(id)}.` }
     }
+    const sessionId = options.gate ? await $.session.id() : undefined
     const child = $.process.spawn({ argv: [c.pythonBin ?? 'python3', '-E', '-s', script],
-      input: JSON.stringify({ kind, options, account: selected, accountsDir: c.accountsDir, directory: account.directory, codexBin: c.codexBin ?? 'codex', model, cwd, ...(writeRoot ? { writeRoot } : {}) }), cwd })
+      input: JSON.stringify({ kind, options, account: selected, accountsDir: c.accountsDir, directory: account.directory, codexBin: c.codexBin ?? 'codex', model, cwd, ...(sessionId ? { sessionId } : {}), ...(writeRoot ? { writeRoot } : {}) }), cwd })
     let stdout = ''
     const abort = () => { void child.return({ code: null, signal: 'SIGTERM' }).catch(() => {}) }
     signal.addEventListener('abort', abort, { once: true })
@@ -112,9 +134,14 @@ export async function delegate($: EngineInterface, kind: 'review' | 'rescue', ar
     } finally { signal.removeEventListener('abort', abort) }
     if (signal.aborted) throw new Error('cancelled')
     const reply = JSON.parse(stdout) as { text?: string }
+    if (options.gate) {
+      const verdict = readGate(reply.text ?? '')
+      if (verdict.verdict === 'pass' && verdict.fingerprint && sessionId) gatePasses.set(sessionId, verdict.fingerprint)
+      return { text: formatOutput(selected, model, gateDisplay(verdict)) }
+    }
     return { text: formatOutput(selected, model, reply.text ?? 'Delegation failed.', options.write) }
   } catch (error) {
-    const message = error instanceof Error && /^(Unclosed quote|Unknown flag|Repeated flag|Missing value|Invalid effort|A task|Native review|Review focus)/.test(error.message) ? error.message : 'Delegation failed or was cancelled; the result is incomplete. Longer jobs will require the future background feature.'
+    const message = error instanceof Error && /^(Unclosed quote|Unknown flag|Repeated flag|Missing value|Invalid effort|A task|Native review|Review focus|Gate accepts)/.test(error.message) ? error.message : 'Delegation failed or was cancelled; the result is incomplete. Longer jobs will require the future background feature.'
     return { text: 'model-mod: ' + message }
   }
 }

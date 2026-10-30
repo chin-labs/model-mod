@@ -11,6 +11,12 @@ test('delegate parser handles quotes, separator, repeats and unknown flags', () 
   expect(() => parseDelegate('rescue', `--model 'unterminated`)).toThrow()
 })
 
+test('gate accepts only the permitted review options', () => {
+  expect(parseDelegate('review', '--gate --account test --model chat --effort high --base main')).toEqual({ text: '', gate: true, account: 'test', model: 'chat', effort: 'high', base: 'main' })
+  for (const args of ['--gate --background', '--gate --adversarial', '--gate -- focus', '--gate --gate']) expect(() => parseDelegate('review', args)).toThrow()
+  expect(() => parseDelegate('rescue', '--gate -- task')).toThrow()
+})
+
 test('write is rescue-only and requires explicit confirmation', async () => {
   expect(parseDelegate('rescue', '--write -- task')).toEqual({ write: true, text: 'task' })
   expect(() => parseDelegate('rescue', '--write --write -- task')).toThrow()

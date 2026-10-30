@@ -148,7 +148,9 @@ for line in sys.stdin:
                 event('rawResponseItem/completed', {'item': dict(reasoning, id='after-call')})
             if mode == 'reasoning_many':
                 for n in range(2, 7): event('rawResponseItem/completed', {'item': dict(reasoning, id='reason' + str(n))})
-        if mode == 'delegate_echo':
+        if mode == 'gate':
+            text = config.get('gateText', json.dumps({'verdict': 'pass', 'findings': [], 'needsHuman': False}))
+        elif mode == 'delegate_echo':
             text = params['input'][0]['text'] + '\n' + os.environ['CODEX_HOME']
         else:
             text = '\x1b[31mhello\x1b[0m\x01' + 'x' * 65000 if mode == 'delegate_long' else 'hello'
