@@ -515,7 +515,8 @@ async function tools($: EngineInterface, c: Config, model: string, history: read
   const enabled = new Set(live.map(tool => tool.name))
   // The built-in WebSearch/WebFetch run a side request that names the session model; for a local model it
   // would go to the subscription endpoint, so the bridge's own two tools replace them.
-  const offered: Tool[] = captured.filter(tool => enabled.has(tool.name) && tool.name !== 'WebSearch' && tool.name !== 'WebFetch' &&
+  // The bridge provides its own tool loading, so the client's built-in ToolSearch is unnecessary.
+  const offered: Tool[] = captured.filter(tool => enabled.has(tool.name) && tool.name !== 'WebSearch' && tool.name !== 'WebFetch' && tool.name !== 'ToolSearch' &&
     !(c.codex?.has(model) && (tool.name === IMAGE_TOOL || tool.name === WEB_SEARCH_TOOL))).map(({ name, description, input_schema }) =>
     ({ name, description, input_schema }))
   // The engine gives a plugin no input schema for an MCP tool; one in the capture file is used, any other is
