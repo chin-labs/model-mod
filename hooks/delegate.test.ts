@@ -103,3 +103,12 @@ test('notification polling deduplicates, stops on terminal or error and times ou
   for (let i = 0; i < 140; i++) await step()
   expect(calls).toBe(140); expect(callbacks.length).toBe(0)
 })
+
+test('successful background submission starts a job without spawning foreground helper', async () => {
+  let timer = 0
+  const $ = { plugin: { root: '/plugin' }, session: { model: async () => 'test/chat', cwd: async () => '/repo' },
+    clock: { after: () => { timer++ } }, process: { run: async () => ({ stdout: JSON.stringify({ ok: true, job }) }), spawn: () => { throw new Error('foreground used') } } } as unknown as EngineInterface
+  const result = await delegate($, 'rescue', '--background -- hello', config, new AbortController().signal)
+  expect(result.text).toContain('Started Codex job abcdef012345')
+  expect(timer).toBe(1)
+})

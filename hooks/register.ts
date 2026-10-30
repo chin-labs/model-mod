@@ -1979,7 +1979,9 @@ export const register: Register = (on, options) => {
   on('command.run', { command: 'model-mod:refresh' }, ($, e) => admin($, e, 'refresh').then(commandText))
   on('command.run', { command: 'model-mod:review' }, async ($, e, next) => delegate($, 'review', e.args, await load($), next.signal))
   on('command.run', { command: 'model-mod:rescue' }, async ($, e, next) => delegate($, 'rescue', e.args, await load($), next.signal))
-  for (const command of ['jobs', 'result', 'cancel'] as const) on('command.run', { command: `model-mod:${command}` }, async ($, e) => backgroundCommand($, command, e.args, await load($)))
+  on('command.run', { command: 'model-mod:jobs' }, async ($, e) => backgroundCommand($, 'jobs', e.args, await load($)))
+  on('command.run', { command: 'model-mod:result' }, async ($, e) => backgroundCommand($, 'result', e.args, await load($)))
+  on('command.run', { command: 'model-mod:cancel' }, async ($, e) => backgroundCommand($, 'cancel', e.args, await load($)))
 
   on('agent.spawn', async ($, e, next) => {
     const started = await next(e)
