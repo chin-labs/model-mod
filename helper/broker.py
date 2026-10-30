@@ -1,4 +1,5 @@
 """Local supervisor and private IPC for read-only background delegation."""
+import errno
 import fcntl
 import hmac
 import json
@@ -49,7 +50,10 @@ def peer_uid(conn):
         return struct.unpack('3i', conn.getsockopt(socket.SOL_SOCKET, socket.SO_PEERCRED, 12))[1]
     if sys.platform == 'darwin':
         # xucred begins with version, uid, ngroups; LOCAL_PEERCRED is 1 at SOL_LOCAL (0).
-        return struct.unpack_from('=II', conn.getsockopt(0, 1, 76))[1]
+        try: return struct.unpack_from('=II', conn.getsockopt(0, 1, 76))[1]
+        except OSError as exc:
+            if exc.errno in (errno.ENOPROTOOPT, errno.EOPNOTSUPP): return None
+            raise
     return None
 
 
@@ -87,7 +91,9 @@ def ensure():
                     if time.monotonic() >= deadline: return
                     time.sleep(.02)
             try:
-                if connect(root, 'ping', timeout=.2).get('ok'): return
+                with open(tokenpath, encoding='utf-8') as source: previous = json.load(source)
+                reply = connect(root, 'ping', timeout=.2)
+                if reply.get('ok') and reply.get('generation') == previous.get('generation'): return
             except (OSError, ValueError, KeyError): pass
             credentials = {'token': secrets.token_hex(32), 'generation': secrets.token_hex(16)}
             jobs.atomic_write(tokenpath, json.dumps(credentials).encode())
@@ -110,10 +116,13 @@ def ensure():
 
 def terminate_group(pgid):
     try: os.killpg(pgid, signal.SIGTERM)
-    except ProcessLookupError: return
+    except ProcessLookupError: return True
+    except PermissionError: return False
     time.sleep(.15)
     try: os.killpg(pgid, signal.SIGKILL)
     except ProcessLookupError: pass
+    except PermissionError: return False
+    return True
 
 
 class Server(socketserver.ThreadingUnixStreamServer):
@@ -145,8 +154,7 @@ class Server(socketserver.ThreadingUnixStreamServer):
             members = [m for m in (record.get('runner'), record.get('appServer')) if isinstance(m, dict)]
             pgid = record.get('pgid')
             if job_process.verified_group(pgid, members):
-                terminate_group(pgid)
-                error = 'broker_restarted'
+                error = 'broker_restarted' if terminate_group(pgid) else 'possible_leftover'
             else:
                 error = 'possible_leftover'
             self.store.transition(record['id'], 'interrupted', error=error)
@@ -188,6 +196,10 @@ class Server(socketserver.ThreadingUnixStreamServer):
                 proc.stdin.write(json.dumps(request, ensure_ascii=False).encode())
                 proc.stdin.close()
             except (OSError, ValueError):
+                child = self.children.pop(ident, None)
+                if child is not None:
+                    terminate_group(child['proc'].pid)
+                    child['proc'].wait(timeout=2)
                 self.store.transition(ident, 'failed', error='runner_start_failed')
             finally:
                 self.pending.pop(ident, None)
@@ -221,8 +233,8 @@ class Server(socketserver.ThreadingUnixStreamServer):
                     self.store.transition(ident, 'cancelling')
                     child = self.children[ident]
                     child['cancel'] = True
-                    terminate_group(child['proc'].pid)
-                    self.store.transition(ident, 'cancelled')
+                    cleaned = terminate_group(child['proc'].pid)
+                    self.store.transition(ident, 'cancelled', error=None if cleaned else 'possible_leftover')
                 return {'ok': True, 'job': self.store.resolve(ident)}
             if method == 'shutdown':
                 self.stopping = True
@@ -233,10 +245,11 @@ class Server(socketserver.ThreadingUnixStreamServer):
         with self.guard:
             for ident, child in list(self.children.items()):
                 if child['proc'].poll() is None: continue
-                terminate_group(child['proc'].pid)
+                cleaned = terminate_group(child['proc'].pid)
                 record = self.store.resolve(ident)
                 if record['state'] not in jobs.TERMINAL:
-                    self.store.transition(ident, 'cancelled' if child['cancel'] else 'interrupted', error=None if child['cancel'] else 'runner_exited')
+                    error = 'possible_leftover' if not cleaned else None if child['cancel'] else 'runner_exited'
+                    self.store.transition(ident, 'cancelled' if child['cancel'] else 'interrupted', error=error)
                 del self.children[ident]
             self.schedule()
             now = time.monotonic()
@@ -248,9 +261,9 @@ class Server(socketserver.ThreadingUnixStreamServer):
     def finish(self):
         with self.guard:
             for ident, child in list(self.children.items()):
-                terminate_group(child['proc'].pid)
+                cleaned = terminate_group(child['proc'].pid)
                 child['proc'].wait(timeout=2)
-                self.store.transition(ident, 'interrupted', error='broker_stopped')
+                self.store.transition(ident, 'interrupted', error='broker_stopped' if cleaned else 'possible_leftover')
             for ident in self.pending: self.store.transition(ident, 'interrupted', error='broker_stopped')
             self.server_close()
         sockpath, tokenpath, pidpath, lockpath = paths(self.root)

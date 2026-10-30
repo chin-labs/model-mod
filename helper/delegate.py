@@ -98,7 +98,8 @@ def clean(text):
 
 
 class App:
-    def __init__(self, request):
+    def __init__(self, request, own_group=True, on_spawn=None):
+        self.own_group = own_group
         self.deadline = time.monotonic() + TOTAL_SECONDS
         self.idle = IDLE_SECONDS
         self.counter = 0
@@ -110,7 +111,8 @@ class App:
         for feature in FEATURES: args.extend(['--disable', feature])
         self.proc = subprocess.Popen(args, cwd=request['cwd'], env=env(request['directory']), stdin=subprocess.PIPE,
                                      stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1,
-                                     start_new_session=(os.name == 'posix'))
+                                     start_new_session=(os.name == 'posix' and own_group))
+        if on_spawn is not None: on_spawn(self.proc.pid)
         self.queue = queue.Queue()
         self.writes = queue.Queue()
         def write():
@@ -212,17 +214,17 @@ class App:
             except (OSError, ValueError): pass
         finally:
             try:
-                if os.name == 'posix': os.killpg(self.proc.pid, signal.SIGTERM)
+                if os.name == 'posix' and self.own_group: os.killpg(self.proc.pid, signal.SIGTERM)
                 elif self.proc.poll() is None: self.proc.terminate()
             except ProcessLookupError: pass
             try: self.proc.wait(timeout=3)
             except subprocess.TimeoutExpired:
-                if os.name == 'posix':
+                if os.name == 'posix' and self.own_group:
                     try: os.killpg(self.proc.pid, signal.SIGKILL)
                     except ProcessLookupError: pass
                 else: self.proc.kill()
                 self.proc.wait()
-            if os.name == 'posix':
+            if os.name == 'posix' and self.own_group:
                 try: os.killpg(self.proc.pid, signal.SIGKILL)
                 except ProcessLookupError: pass
             self.writes.put(None)
@@ -231,7 +233,7 @@ class App:
                 if stream: stream.close()
 
 
-def execute(request):
+def execute(request, own_group=True, on_spawn=None):
     started = time.monotonic()
     cwd = request['cwd']
     if not os.path.isabs(cwd) or not os.path.isdir(cwd): raise Failure('Working directory is unavailable.')
@@ -248,7 +250,7 @@ def execute(request):
     if options.get('adversarial') and not diff:
         return 'No changes to review.'
     verify_version(SimpleNamespace(codex_bin=request['codexBin'], codex_home=home))
-    app = App(request)
+    app = App(request, own_group=own_group, on_spawn=on_spawn)
     app.deadline = started + TOTAL_SECONDS
     try:
         init = app.request('initialize', {'clientInfo': {'name': 'model-mod-delegate', 'version': '0.2.0'}, 'capabilities': {'experimentalApi': True}})
@@ -327,4 +329,67 @@ def main():
     print(json.dumps({'text': text}, ensure_ascii=False), flush=True)
 
 
-if __name__ == '__main__': main()
+def runner(ident, parent):
+    import broker
+    import job_process
+    import jobs
+    store = jobs.Store(broker.root_path())
+    def watch_parent():
+        while True:
+            time.sleep(.1)
+            if os.getppid() != parent:
+                os.killpg(os.getpgrp(), signal.SIGKILL)
+    threading.Thread(target=watch_parent, daemon=True).start()
+    try:
+        request = json.load(sys.stdin)
+        record = store.resolve(ident)
+        home, _ = account_home(broker.account_root(), record['account'])
+        request.update(account=record['account'], accountsDir=broker.account_root(), directory=home)
+        if not store.transition(ident, 'running'): return
+        def on_spawn(pid):
+            store.set_process(ident, app_server={'pid': pid, 'started': job_process.start_time(pid)})
+        options = request['options']
+        diff = diff_for(request['cwd'], options.get('base')) if options.get('adversarial') else b''
+        result = execute(request, own_group=False, on_spawn=on_spawn)
+        for secret in (options.get('text', ''), diff.decode('utf-8', 'replace'), home):
+            if secret: result = result.replace(secret, '[redacted]')
+        store.transition(ident, 'completed', result=result)
+    except Exception:
+        store.transition(ident, 'failed', error='delegation_failed')
+
+
+def client(method):
+    if os.name != 'posix':
+        return {'ok': False, 'error': 'Background jobs are not supported on Windows.'}
+    import broker
+    try:
+        payload = json.load(sys.stdin)
+        if not isinstance(payload, dict): raise ValueError()
+        if method == 'submit':
+            request = payload.get('request', payload)
+            if 'accountsDir' in request and os.path.realpath(request['accountsDir']) != os.path.realpath(broker.account_root()):
+                return {'ok': False, 'error': 'Background jobs require the default accounts directory; use foreground delegation for a custom directory.'}
+            request = dict(request)
+            request.pop('accountsDir', None)
+            request.pop('directory', None)
+            payload = {'request': request}
+        return broker.connect(broker.root_path(), method, payload, timeout=3)
+    except (OSError, ValueError, KeyError, TypeError):
+        return {'ok': False, 'error': 'Background broker unavailable; start a new session to launch it.'}
+
+
+if __name__ == '__main__':
+    if len(sys.argv) > 1 and sys.argv[1] == 'broker-ensure':
+        try:
+            import broker
+            broker.ensure()
+        except Exception: pass
+    elif len(sys.argv) > 1 and sys.argv[1] == 'broker':
+        import broker
+        broker.serve()
+    elif len(sys.argv) == 4 and sys.argv[1] == 'runner':
+        runner(sys.argv[2], int(sys.argv[3]))
+    elif len(sys.argv) == 3 and sys.argv[1] == 'client':
+        print(json.dumps(client(sys.argv[2]), ensure_ascii=False), flush=True)
+    else:
+        main()

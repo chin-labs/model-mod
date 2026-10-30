@@ -85,6 +85,18 @@ class JobStoreTest(unittest.TestCase):
             self.assertFalse(job_process.cleanup_verified(42, [member]))
             kill.assert_not_called()
 
+    def test_ttl_and_queue_limit(self):
+        records = [self.create() for _ in range(5)]
+        with self.assertRaisesRegex(ValueError, 'queue'):
+            self.create()
+        self.assertTrue(self.store.transition(records[0]['id'], 'cancelled'))
+        with self.store.locked():
+            record = self.store.resolve(records[0]['id'])
+            record['updatedAt'] = time.time() - jobs.RETENTION_SECONDS - 1
+            self.store.write(record)
+        self.assertEqual(self.store.clear(older_than=time.time() - jobs.RETENTION_SECONDS), 1)
+        self.assertEqual(len(self.store.records()), 4)
+
     def test_limit_and_id_resolution(self):
         old = jobs.MAX_JOBS
         jobs.MAX_JOBS = 2
