@@ -71,7 +71,7 @@
     "fallbackModel": {
       "type": "string",
       "title": "Fallback model (optional)",
-      "description": "One of your models to switch to when the subscription usage limit is reached; switches back after the limit resets. Empty: no automatic switch. Choose it from the models /model-mod:setup offers."
+      "description": "One of your models to use when a subscription or Codex login quota is exhausted. No account rotation; choose a different upstream or account. Automatic switching requires a known reset time; API upstreams have no official rate limits. Empty: off."
     },
     "fallbackPercent": {
       "type": "number",
@@ -88,6 +88,12 @@
       "type": "string",
       "title": "Prompts directory (optional)",
       "description": "Absolute path of a directory with your own compact.md, title.md, subagent-note.md and worker.md. Empty: use the plugin's prompts. A missing or unusable file is not replaced by a built-in prompt."
+    },
+    "codexServiceTier": {
+      "type": "string",
+      "title": "Codex service tier",
+      "description": "default or priority. Priority requires a supported Codex plan and may use quota faster. Actual tier and billing are unverified.",
+      "default": "default"
     }
   }
 }

@@ -40,7 +40,7 @@ The mod activates with either a valid `apiKey` or a valid combination of `codexA
 | `models` | Comma-separated model IDs the mod answers for. Empty: every chat model the upstream lists. | empty |
 | `imageModel` | Model for `generate_image`. Empty: `gpt-image-2`, or the first `gpt-image*` the upstream lists. `none` turns the tool off. | empty |
 | `contextWindow` | Input tokens assumed for a model whose window is unknown (minimum 32000). An explicit value overrides the Codex catalog window (see [Limitations](LIMITATIONS.md)). | `272000` (API); catalog effective window or 128,000 (Codex) |
-| `fallbackModel` | One of your models to switch to when the subscription limit is reached. Empty: no automatic switch. | empty |
+| `fallbackModel` | Model to switch to when a subscription or Codex login quota is reached; no account rotation, and the same account cannot be the fallback. Empty: off. | empty |
 | `fallbackPercent` | Used share of a rate-limit window (50–100) at which the switch happens. Only read when `fallbackModel` is set. | `100` |
 | `workerModel` | Model for the `model-mod:local-worker` agent type. Empty: the fallback model; if both are empty there is no worker type. | empty |
 | `promptsDir` | Absolute directory with your own `compact.md`, `title.md`, `subagent-note.md` and `worker.md`. Empty: the plugin's `prompts/` directory. | empty |
@@ -103,3 +103,7 @@ claude plugin configure model-mod@model-mod --values-stdin < /path/to/private-co
 ```
 
 Never put a key in `--config` arguments (they can show up in process listings) or paste it into a message. In organization-managed Claude Code, personally installed plugins may not receive every hook unless the organization lists the plugin in its managed settings.
+
+Codex status shows remaining percentages, reset times, credits, plan and `ordinaryUsageAllowed`; unavailable fields are marked unavailable. Codex quota is checked at most once per account every five minutes, or immediately after a quota error; no automatic switch occurs without a future reset time. API upstreams have no official rateLimits and are not covered. Accounts are not rotated automatically; configure a `fallbackModel` on another upstream or account.
+
+`codexServiceTier` is `default` (the default) or `priority`; invalid values use `default`. `priority` requires a supported Codex plan and may respond faster while consuming quota faster; actual tier and billing are unverified.

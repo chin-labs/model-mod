@@ -142,6 +142,50 @@ def catalog_windows(home):
     except (OSError, ValueError, TypeError, KeyError, AttributeError, OverflowError): return {}
 
 
+EFFORTS = ('low', 'medium', 'high', 'xhigh', 'max')
+
+
+def model_efforts(model):
+    options = model.get('supportedReasoningEfforts')
+    if not isinstance(options, list): return []
+    values = {option.get('reasoningEffort') for option in options if isinstance(option, dict) and isinstance(option.get('reasoningEffort'), str)}
+    return [value for value in ('minimal',) + EFFORTS if value in values]
+
+
+def clamp_effort(app, prepared, home):
+    try:
+        with open(os.path.join(home, 'models_cache.json'), encoding='utf-8') as f: cached = json.load(f).get('models', [])
+        model = next((m for m in cached if isinstance(m, dict) and m.get('slug') == prepared['model']), None)
+        if model and isinstance(model.get('supported_reasoning_levels'), list):
+            model = {'id': model['slug'], 'supportedReasoningEfforts': [{'reasoningEffort': option.get('effort')} for option in model['supported_reasoning_levels'] if isinstance(option, dict)], 'defaultReasoningEffort': model.get('default_reasoning_level')}
+            if any(value in EFFORTS for value in model_efforts(model)): return apply_effort(prepared, model)
+    except (OSError, ValueError, TypeError, AttributeError): pass
+    try:
+        page = app.request('model/list', {'cursor': None, 'includeHidden': False})
+        models = page.get('data', [])
+        if not isinstance(models, list): return
+        model = next((m for m in models if isinstance(m, dict) and (m.get('model') == prepared['model'] or m.get('id') == prepared['model'])), None)
+        if not model: return
+        apply_effort(prepared, model)
+    except (BridgeError, TypeError, ValueError, AttributeError):
+        pass
+
+
+def apply_effort(prepared, model):
+    supported = [value for value in model_efforts(model) if value in EFFORTS]
+    if not supported: return
+    old = prepared['effort']
+    if not prepared['explicit_effort'] and old not in supported:
+        default = model.get('defaultReasoningEffort')
+        new = default if default in supported else supported[0]
+    else:
+        eligible = [value for value in supported if EFFORTS.index(value) <= EFFORTS.index(old)]
+        new = eligible[-1] if eligible else supported[0]
+    if old != new:
+        note('Codex login: effort clamped ' + old + ' to ' + new)
+        prepared['effort'] = new
+
+
 class App:
     def __init__(self, args, cwd):
         argv = [args.codex_bin, 'app-server', '-c', 'web_search="disabled"', '-c', 'include_permissions_instructions=false', '-c', 'include_environment_context=false']
@@ -304,6 +348,7 @@ def emit(event, data):
 
 def messages(args, app, prepared, cwd):
     p = prepared
+    clamp_effort(app, p, args.codex_home)
     for field in p['ignored']: note('Codex login: ignored field ' + field)
     if p['dropped']: note('Codex login: discarded thinking blocks: ' + str(p['dropped']))
     result = app.request('thread/start', {'model': p['model'], 'cwd': cwd, 'sandbox': 'read-only', 'approvalPolicy': 'never', 'ephemeral': True, 'baseInstructions': p['system'], 'developerInstructions': TOOL_INSTRUCTIONS, 'dynamicTools': p['tools']})
@@ -315,7 +360,9 @@ def messages(args, app, prepared, cwd):
     if result.get('approvalPolicy') != 'never' or not isinstance(result.get('sandbox'), dict) or result['sandbox'].get('type') != 'readOnly': raise incompatible('sandbox or approvalPolicy')
     app.thread_id = thread_id
     if p['history']: app.request('thread/inject_items', {'threadId': app.thread_id, 'items': p['history']})
-    result = app.request('turn/start', {'threadId': app.thread_id, 'model': p['model'], 'effort': p['effort'], 'input': p['input']})
+    turn = {'threadId': app.thread_id, 'model': p['model'], 'effort': p['effort'], 'input': p['input']}
+    if args.service_tier == 'priority': turn['serviceTier'] = 'priority'
+    result = app.request('turn/start', turn)
     try:
         app.turn_id = result['turn']['id']
         if not isinstance(app.turn_id, str) or not app.turn_id: raise ValueError()
@@ -513,7 +560,7 @@ def main():
         return 78
     parser = argparse.ArgumentParser(prog='bridge')
     subs = parser.add_subparsers(dest='command', required=True)
-    for name in ('messages', 'rate-limits', 'check', 'models', 'windows', 'prepare-home', 'validate-home', 'can-remove-home', 'device-login', 'logout', 'remove-home', 'cleanup-home'):
+    for name in ('messages', 'rate-limits', 'account-info', 'check', 'models', 'windows', 'prepare-home', 'validate-home', 'can-remove-home', 'device-login', 'logout', 'remove-home', 'cleanup-home'):
         sub = subs.add_parser(name)
         sub.add_argument('--codex-home', required=True)
         sub.add_argument('--codex-bin', default='codex')
@@ -521,6 +568,7 @@ def main():
             sub.add_argument('--accounts-dir', required=True)
             sub.add_argument('--account', required=True)
         if name == 'messages':
+            sub.add_argument('--service-tier', choices=('default', 'priority'), default='default')
             sub.add_argument('--model-map', action='append', default=[])
             sub.add_argument('--idle-seconds', type=float, default=300)
             sub.add_argument('--max-seconds', type=float, default=900)
@@ -609,6 +657,7 @@ def main():
             prepared = prepare(body, model_map)
             prepared['client_model'] = client_model
             prepared['effort'] = effort
+            prepared['explicit_effort'] = bool(match)
             catalog_window = args.catalog_window if args.catalog_window is not None else catalog_windows(args.codex_home).get(prepared['model'], DEFAULT_CONTEXT_WINDOW)
             if args.context_window is None: args.context_window = catalog_window
             args.compact_window = max(args.context_window, catalog_window)
@@ -640,7 +689,7 @@ def main():
                             if not isinstance(page, dict) or not isinstance(page.get('data'), list) or 'nextCursor' not in page: raise incompatible('model/list')
                             for model in page['data']:
                                 if not isinstance(model, dict) or not isinstance(model.get('id'), str) or not isinstance(model.get('displayName'), str): raise incompatible('model/list data')
-                                if not model.get('hidden') and not NOT_CHAT.search(model['id']): models.append({'id': model['id'], 'displayName': model['displayName']})
+                                if not model.get('hidden') and not NOT_CHAT.search(model['id']): models.append({'id': model['id'], 'displayName': model['displayName'], 'efforts': model_efforts(model), 'defaultEffort': model.get('defaultReasoningEffort') if model.get('defaultReasoningEffort') in EFFORTS else None})
                             cursor = page['nextCursor']
                             if cursor is None: break
                             if not isinstance(cursor, str) or cursor in seen: raise incompatible('model/list cursor')
@@ -649,14 +698,27 @@ def main():
                     elif args.command == 'rate-limits':
                         limits = app.request('account/rateLimits/read', {})
                         snapshot = limits.get('rateLimits') or {}
-                        result = {'ordinaryUsageAllowed': limits.get('ordinaryUsageAllowed')}
+                        reached = snapshot.get('rateLimitReachedType')
+                        allowed_reached = ('rate_limit_reached', 'workspace_owner_credits_depleted', 'workspace_member_credits_depleted', 'workspace_owner_usage_limit_reached', 'workspace_member_usage_limit_reached')
+                        ordinary = limits.get('ordinaryUsageAllowed')
+                        result = {'ordinaryUsageAllowed': ordinary if type(ordinary) is bool else None,
+                                  'rateLimitReachedType': reached if reached in allowed_reached else None}
+                        credits = snapshot.get('credits')
+                        result['credits'] = {'hasCredits': credits.get('hasCredits') if type(credits.get('hasCredits')) is bool else None, 'unlimited': credits.get('unlimited') if type(credits.get('unlimited')) is bool else None, 'balance': credits.get('balance') if isinstance(credits.get('balance'), str) and re.fullmatch(r'[0-9.]+', credits['balance']) else None} if isinstance(credits, dict) else None
                         for key in ('primary', 'secondary'):
                             window = snapshot.get(key)
                             if isinstance(window, dict):
                                 used = window.get('usedPercent')
-                                result[key] = {'remainingPercent': 100 - used if isinstance(used, (int, float)) else None, 'resetsAt': window.get('resetsAt')}
+                                result[key] = {'remainingPercent': 100 - used if type(used) in (int, float) else None, 'resetsAt': window.get('resetsAt') if type(window.get('resetsAt')) is int else None, 'windowDurationMins': window.get('windowDurationMins') if type(window.get('windowDurationMins')) is int else None}
                             else: result[key] = None
                         print(json.dumps(result, ensure_ascii=False), flush=True)
+                    elif args.command == 'account-info':
+                        account = app.request('account/read', {'refreshToken': False}).get('account')
+                        account = account if isinstance(account, dict) else {}
+                        login = account.get('type')
+                        plan = account.get('planType')
+                        valid_plans = ('free', 'go', 'plus', 'pro', 'prolite', 'promax', 'team', 'self_serve_business_prolite', 'self_serve_business_usage_based', 'business', 'ent26', 'enterprise_cbp_automation', 'enterprise_cbp_usage_based', 'enterprise', 'edu', 'edu_plus', 'edu_pro', 'sci', 'sci_plus', 'unknown')
+                        print(json.dumps({'loginMethod': login if login in ('chatgpt', 'apiKey', 'amazonBedrock', 'gcp') else None, 'planType': plan if plan in valid_plans else None}), flush=True)
                     else:
                         # Track whether an SSE response has started.
                         if prepared['stream']:
@@ -694,7 +756,7 @@ def main():
         note('Codex login: bridge failure: ' + type(e).__name__)
     finally:
         watcher_stop.set()
-        if app and status != 200 and app.stderr_tail:
+        if app and status != 200 and app.stderr_tail and args.command not in ('account-info', 'rate-limits'):
             redacted = re.sub(r'[A-Za-z0-9_\-.]{32,}', '<redacted>', app.stderr_tail.decode('utf-8', 'replace'))
             remaining = 2048
             for line in redacted.splitlines():

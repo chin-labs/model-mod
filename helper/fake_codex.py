@@ -149,8 +149,9 @@ for line in sys.stdin:
         send({'id': ident, 'result': {}})
         event('thread/tokenUsage/updated', {'tokenUsage': {'total': {'inputTokens': 100, 'cachedInputTokens': 40, 'outputTokens': 9}}})
         event('turn/completed', {'turn': {'id': 'turn1', 'status': 'interrupted'}})
-    elif method == 'model/list': send({'id': ident, 'result': {'data': [{'id': 'chat', 'displayName': 'Chat'}, {'id': 'image', 'displayName': 'Image'}], 'nextCursor': None}})
-    elif method == 'account/rateLimits/read': send({'id': ident, 'result': {'rateLimits': {'primary': {'usedPercent': 30}, 'ordinaryUsageAllowed': True}}})
+    elif method == 'model/list': send({'id': ident, 'result': {'data': config.get('models', [{'id': 'chat', 'displayName': 'Chat'}, {'id': 'image', 'displayName': 'Image'}]), 'nextCursor': None}})
+    elif method == 'account/rateLimits/read': send({'id': ident, 'result': config.get('rate_limits', {'rateLimits': {'primary': {'usedPercent': 30}}, 'ordinaryUsageAllowed': True})})
+    elif method == 'account/read': send({'id': ident, 'result': {'account': config.get('account', {'type': 'chatgpt', 'planType': 'plus', 'email': 'private@example.test'})}})
 
 if mode == 'stubborn':
     while True: time.sleep(1)

@@ -361,6 +361,44 @@ class Contract(unittest.TestCase):
             turn = next(x for x in records if x.get('method') == 'turn/start')
             self.assertEqual(turn['params']['effort'], 'max')
 
+    def test_catalog_and_account_data(self):
+        with tempfile.TemporaryDirectory() as home:
+            log = Path(home, 'log')
+            config = Path(home, 'fake_config.json')
+            model = {'id': 'gpt-6.1-terra', 'displayName': 'Terra',
+                     'supportedReasoningEfforts': [{'reasoningEffort': x, 'description': ''} for x in ('minimal', 'medium', 'xhigh')],
+                     'defaultReasoningEffort': 'medium'}
+            limits = {'ordinaryUsageAllowed': False, 'rateLimits': {'primary': {'usedPercent': 38, 'resetsAt': 123, 'windowDurationMins': 300},
+                      'credits': {'hasCredits': True, 'balance': '5', 'unlimited': False}, 'rateLimitReachedType': 'weekly'}}
+            config.write_text(json.dumps({'log': str(log), 'models': [model], 'rate_limits': limits}))
+            def run(command, *args, body=None):
+                return subprocess.run([sys.executable, str(BRIDGE), command, '--codex-home', home, '--codex-bin', str(FAKE), *args], input=json.dumps(body) if body else None, text=True, capture_output=True, timeout=15)
+            for suffix, expected in [('(low)', 'medium'), ('(high)', 'medium'), ('(max)', 'xhigh'), ('', 'medium')]:
+                r = run('messages', '--model-map', 'test=gpt-6.1-terra', body=dict(BASE, model='test' + suffix))
+                self.assertEqual(r.returncode, 0, r.stderr)
+                turn = [json.loads(x) for x in log.read_text().splitlines() if '"method": "turn/start"' in x][-1]
+                self.assertEqual(turn['params']['effort'], expected)
+                self.assertNotIn('serviceTier', turn['params'])
+            r = run('messages', '--model-map', 'test=gpt-6.1-terra', '--service-tier', 'priority', body=BASE)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            turn = [json.loads(x) for x in log.read_text().splitlines() if '"method": "turn/start"' in x][-1]
+            self.assertEqual(turn['params']['serviceTier'], 'priority')
+            Path(home, 'models_cache.json').write_text(json.dumps({'models': [{'slug': 'gpt-6.1-terra', 'supported_reasoning_levels': [{'effort': 'high'}], 'default_reasoning_level': 'high'}]}))
+            before = len(log.read_text().splitlines())
+            cached = run('messages', '--model-map', 'test=gpt-6.1-terra', body=dict(BASE, model='test(max)'))
+            self.assertEqual(cached.returncode, 0, cached.stderr)
+            requests = [json.loads(x) for x in log.read_text().splitlines()[before:]]
+            self.assertFalse(any(row.get('method') == 'model/list' for row in requests))
+            self.assertEqual(next(row for row in requests if row.get('method') == 'turn/start')['params']['effort'], 'high')
+            self.assertEqual(json.loads(run('models').stdout)['models'][0]['efforts'], ['minimal', 'medium', 'xhigh'])
+            result = json.loads(run('rate-limits').stdout)
+            self.assertEqual(result['primary'], {'remainingPercent': 62, 'resetsAt': 123, 'windowDurationMins': 300})
+            self.assertEqual(result['credits']['balance'], '5')
+            self.assertFalse(result['ordinaryUsageAllowed'])
+            account = run('account-info')
+            self.assertEqual(json.loads(account.stdout), {'loginMethod': 'chatgpt', 'planType': 'plus'})
+            self.assertNotIn('private@example.test', account.stdout + account.stderr)
+
     def test_check_and_home(self):
         with tempfile.TemporaryDirectory() as home:
             argv = [sys.executable, str(BRIDGE), 'check', '--codex-home', home, '--codex-bin', str(FAKE)]

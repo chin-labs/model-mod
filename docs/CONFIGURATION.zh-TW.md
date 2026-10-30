@@ -40,7 +40,7 @@ API 伺服器路徑會把工作階段送往接受 Messages 風格串流請求（
 | `models` | 以逗號分隔的模型 ID，mod 只接管這些。空白：上游列出的所有 chat 模型。 | 空白 |
 | `imageModel` | `generate_image` 使用的模型。空白：`gpt-image-2`，或上游列出的第一個 `gpt-image*`。`none` 關閉此工具。 | 空白 |
 | `contextWindow` | 對未知視窗大小的模型所假設的輸入 token 數（最小 32000）。明設的值會覆寫 Codex 模型目錄視窗（見[限制](LIMITATIONS.zh-TW.md)）。 | `272000`（API）；目錄有效視窗或 128,000（Codex） |
-| `fallbackModel` | 訂閱用量達上限時要切換到的模型。空白：不自動切換。 | 空白 |
+| `fallbackModel` | 訂閱或 Codex 登入額度達上限時切換的模型；不會輪流換帳號，同帳號不可作為備援。空白：不自動切換。 | 空白 |
 | `fallbackPercent` | rate-limit 視窗用量達多少比例（50–100）時切換。僅在設定 `fallbackModel` 時有效。 | `100` |
 | `workerModel` | `model-mod:local-worker` 代理類型使用的模型。空白：用 fallback 模型；兩者都空白則不提供 worker 代理類型。 | 空白 |
 | `promptsDir` | 存放自訂 `compact.md`、`title.md`、`subagent-note.md`、`worker.md` 的絕對路徑目錄。空白：使用插件內的 `prompts/`。 | 空白 |
@@ -103,3 +103,7 @@ claude plugin configure model-mod@model-mod --values-stdin < /path/to/private-co
 ```
 
 不要把金鑰放進 `--config` 參數（可能出現在程序列表），也不要貼進訊息。在組織管理的 Claude Code 中，個人安裝的插件可能收不到所有 hook，除非組織把插件列入管理設定。
+
+Codex status 顯示各視窗的剩餘比例、重置時間、credits、方案及 `ordinaryUsageAllowed`；取得不到的欄位顯示 unavailable。Codex 額度最多每帳號五分鐘查一次，額度錯誤可立即查詢；沒有可用的未來重置時間時不自動切換。API 上游沒有官方 rateLimits，不適用此機制。額度用完不會自動輪流換帳號，可設定不同上游或帳號的 `fallbackModel`。
+
+`codexServiceTier` 可設 `default`（預設）或 `priority`；非法值視為 `default`。`priority` 需要 Codex 方案支援，可能較快回應但較快耗用額度；實際層級與計費是否生效未驗證。

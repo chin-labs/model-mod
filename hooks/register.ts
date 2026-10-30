@@ -196,7 +196,7 @@ async function configurePicker($: EngineInterface, c: { baseUrl: string; key?: s
 }
 
 type CodexAccount = { account: string; model: string; directory: string; window?: number }
-type Config = { codex?: Map<string, CodexAccount>; pythonBin?: string; codexBin?: string; accountsDir?: string; apiInvalid?: boolean; prompts: Prompts; promptsDir?: string; baseUrl: string; headerFile?: string; key?: string; models: string[]; toolsFile?: string; defaultWindow?: number; contextWindowExplicit?: boolean; explicitModels?: boolean; excluded?: Set<string>; codexDirectoryUnavailable?: Set<string>; imageAuto?: boolean; source?: 'options' | 'file'; maxTokens: number; effortMode: 'suffix' | 'none'; imageModel?: string; contextWindows?: Record<string, number>; sideModel?: string; keepThinking?: boolean; localTitle?: boolean; localContext?: boolean; toolSearch?: 'auto' | 'on' | 'off'; toolSearchPercent?: number; refresh?: string[]; fallbackModel?: string; fallbackPercent?: number; workerModel?: string }
+type Config = { codex?: Map<string, CodexAccount>; pythonBin?: string; codexBin?: string; accountsDir?: string; apiInvalid?: boolean; prompts: Prompts; promptsDir?: string; baseUrl: string; headerFile?: string; key?: string; models: string[]; toolsFile?: string; defaultWindow?: number; contextWindowExplicit?: boolean; explicitModels?: boolean; excluded?: Set<string>; codexDirectoryUnavailable?: Set<string>; imageAuto?: boolean; source?: 'options' | 'file'; maxTokens: number; effortMode: 'suffix' | 'none'; imageModel?: string; contextWindows?: Record<string, number>; sideModel?: string; keepThinking?: boolean; localTitle?: boolean; localContext?: boolean; toolSearch?: 'auto' | 'on' | 'off'; toolSearchPercent?: number; refresh?: string[]; fallbackModel?: string; fallbackPercent?: number; workerModel?: string; codexServiceTier?: 'default' | 'priority'; codexServiceTierInvalid?: boolean }
 type Tool = { name: string; description: string; input_schema: Record<string, unknown> }
 
 let config: Config | undefined
@@ -381,7 +381,7 @@ function optionsCandidate(o: PluginOptions): Record<string, unknown> | undefined
     defaultWindow: number('contextWindow', 272_000), contextWindowExplicit: typeof o.contextWindow === 'number', sideModel: side === 'none' ? undefined : side || 'claude-haiku-5-5',
     keepThinking: o.keepThinking !== false, localTitle: o.localTitle !== false, localContext: o.localContext !== false,
     toolSearch: text('toolSearch') || 'auto', toolSearchPercent: number('toolSearchPercent', 10),
-    fallbackModel: text('fallbackModel'), fallbackPercent: number('fallbackPercent', 100), workerModel: text('workerModel'), promptsDir: text('promptsDir') }
+    codexServiceTier: text('codexServiceTier') === 'priority' ? 'priority' : 'default', codexServiceTierInvalid: !['default', 'priority', ''].includes(text('codexServiceTier')), fallbackModel: text('fallbackModel'), fallbackPercent: number('fallbackPercent', 100), workerModel: text('workerModel'), promptsDir: text('promptsDir') }
 }
 
 // One load at a time: the options and the settings are read once and every caller gets the same answer.
@@ -496,6 +496,7 @@ async function loadNow($: EngineInterface) {
     built.models = built.models.filter(id => !retired.includes(id) || built.codex?.has(id))
     built.excluded ??= new Set()
     for (const id of retired) if (!built.codex?.has(id)) built.excluded.add(id)
+    if (fromOptions && pluginOptions.codexServiceTier !== undefined && !['default', 'priority', ''].includes(String(pluginOptions.codexServiceTier))) $.ui.status('model-mod: invalid codexServiceTier; using default.')
     if (built.apiInvalid) $.ui.status('model-mod: API server apiKey contains invalid characters; configure a valid key.')
     // The models the mod switches the session to when the subscription's limit is reached (`fallbackModel`) and runs the
     // `local-worker` agent type on (`workerModel`, else the fallback model). Options only; off when empty. Each must be
@@ -969,6 +970,7 @@ function helperArgs($: EngineInterface, c: Config, command: string, home: string
   const script = root.replace(/[\\/]+$/, '') + sep + 'helper' + sep + 'bridge.py'
   const args = [c.pythonBin ?? 'python3', '-E', '-s', script, command, '--codex-home', home, '--codex-bin', c.codexBin ?? 'codex']
   if (command === 'messages') {
+    if (c.codexServiceTier === 'priority') args.push('--service-tier', 'priority')
     args.push('--model-map', `${wire ?? model}=${model}`, '--idle-seconds', '300', '--max-seconds', '900')
     const item = [...(c.codex?.entries() ?? [])].find(([, value]) => value.directory === home && value.model === model)
     if (item) args.push('--context-window', String(windowOf(c, item[0]) ?? 128_000), '--catalog-window', String(item[1].window ?? 128_000))
@@ -1096,6 +1098,11 @@ function renderTranscript(messages: readonly SessionMessage[]): string {
   return all.length > MAX_TRANSCRIPT ? '[earlier part omitted]\n' + all.slice(all.length - MAX_TRANSCRIPT) : all
 }
 
+const CODEX_LIMIT_POLL_MS = 5 * 60_000
+const codexLimitChecks = new Map<string, number>()
+const codexLimitPending = new Set<string>()
+const codexLimitFailed = new Set<string>()
+let unknownResetHinted = false
 let fallbackHinted = false
 // Called when a turn of the main loop has ended. While a subscription model is selected and a rate-limit window the
 // last response reported is used up (and not yet reset), the session switches to `fallbackModel` with the client's own
@@ -1119,7 +1126,7 @@ async function autoFallback($: EngineInterface, c: Config): Promise<string | und
     // The engine raises PostModelSwitch for this too; applying the window here as well does not depend on it.
     try { await applyWindow($, c, await $.session.model()) } catch { /* window stays as it was */ }
     return await $.session.model() === memo.from
-      ? `model-mod: the rate limit has reset; switched back to ${memo.from}.`
+      ? `model-mod: the rate limit has reset; switched back to ${memo.from}. Your messages and project files are sent to that upstream.`
       : `model-mod: the rate limit has reset; could not switch back to ${memo.from}, choose it with /model.`
   }
   if (memo.suppressUntil !== undefined) {
@@ -1128,12 +1135,47 @@ async function autoFallback($: EngineInterface, c: Config): Promise<string | und
   }
   const target = c.fallbackModel
   if (target === undefined) return undefined
-  // Only a subscription model is switched away from: another plugin's model has no known way back.
-  if (!/^claude-/i.test(model) || model === target || c.models.includes(model) || c.excluded?.has(model)) return undefined
-  const { rateLimits } = await $.session.usage()
-  const reached = rateLimits.filter(r => r.percentUsed >= (c.fallbackPercent ?? 100) && r.resetsAt !== undefined &&
-    Date.parse(r.resetsAt) > now)
-  if (reached.length === 0) return undefined
+  const codex = c.codex?.get(model)
+  let reached: { kind: string; percentUsed: number; resetsAt?: string }[]
+  if (codex) {
+    if (codexLimitPending.has(codex.directory)) return undefined
+    const force = codexLimitFailed.delete(codex.directory)
+    if (!force && now - (codexLimitChecks.get(codex.directory) ?? -Infinity) < CODEX_LIMIT_POLL_MS) return undefined
+    codexLimitChecks.set(codex.directory, now)
+    codexLimitPending.add(codex.directory)
+    try {
+      const result = await helperRun($, c, 'rate-limits', codex.directory, 15_000)
+      if (result.exitCode !== 0 || result.isStdoutTruncated) return undefined
+      const limits = JSON.parse(result.stdout) as CodexLimits
+      const windows = (['primary', 'secondary'] as const).flatMap(kind => {
+        const window = limits[kind]
+        if (!window || typeof window.resetsAt !== 'number' || !Number.isFinite(window.resetsAt) || window.resetsAt * 1000 <= now) return []
+        const minutes = window.windowDurationMins
+        const name = minutes === 300 ? '5h' : minutes === 10080 ? 'weekly' : kind
+        return [{ kind: name, percentUsed: typeof window.remainingPercent === 'number' ? 100 - window.remainingPercent : 0, resetsAt: new Date(window.resetsAt * 1000).toISOString() }]
+      })
+      reached = windows.filter(window => window.percentUsed >= (c.fallbackPercent ?? 100))
+      if (limits.ordinaryUsageAllowed === false && !reached.length) reached = windows
+      if (limits.ordinaryUsageAllowed === false && !windows.length) {
+        if (unknownResetHinted) return undefined
+        unknownResetHinted = true
+        return 'model-mod: Codex quota is exhausted but the reset time is unknown; use /model to switch manually or configure fallbackModel.'
+      }
+    } catch { return undefined } finally { codexLimitPending.delete(codex.directory) }
+    const currentMemo = (await $.state.get(FALLBACK)).value
+    if (await $.session.model() !== model || currentMemo?.from !== undefined || (currentMemo?.suppressUntil !== undefined && now < currentMemo.suppressUntil)) return undefined
+    if (c.codex?.get(target)?.directory === codex.directory && reached.length) {
+      if (fallbackHinted) return undefined
+      fallbackHinted = true
+      return 'model-mod: the fallback model uses the same exhausted Codex account; choose a model on a different upstream.'
+    }
+  } else {
+    // Only subscription models and Codex login models have known rate limits.
+    if (!/^claude-/i.test(model) || model === target || c.models.includes(model) || c.excluded?.has(model)) return undefined
+    const { rateLimits } = await $.session.usage()
+    reached = rateLimits.filter(r => r.percentUsed >= (c.fallbackPercent ?? 100) && r.resetsAt !== undefined && Date.parse(r.resetsAt) > now)
+  }
+  if (!reached.length) return undefined
   if (!c.models.includes(target)) {
     if (fallbackHinted) return undefined
     fallbackHinted = true
@@ -1143,6 +1185,7 @@ async function autoFallback($: EngineInterface, c: Config): Promise<string | und
     return `model-mod: could not prepare the local model ${target}; model not changed.`
   }
   const until = Math.max(...reached.map(r => Date.parse(r.resetsAt!)))
+  if (codex && await $.session.model() !== model) return undefined
   await $.state.set(FALLBACK, { from: model, to: target, until })
   await $.command.run({ command: 'model', args: target })
   try { await applyWindow($, c, await $.session.model()) } catch { /* window stays as it was */ }
@@ -1333,11 +1376,14 @@ async function setupCodex($: EngineInterface, c?: Config): Promise<string> {
   }
 }
 
+type CodexWindow = { remainingPercent?: number | null; resetsAt?: number | null; windowDurationMins?: number | null }
+type CodexLimits = { primary?: CodexWindow | null; secondary?: CodexWindow | null; ordinaryUsageAllowed?: boolean | null; usageLimitExceeded?: boolean | null; rateLimitReachedType?: string | null; credits?: { hasCredits?: boolean; balance?: string | null; unlimited?: boolean } | null }
+
 async function codexStatus($: EngineInterface, c: Config): Promise<string[]> {
   const accounts = new Map<string, CodexAccount>()
   for (const item of c.codex?.values() ?? []) accounts.set(item.account, item)
   return Promise.all([...accounts.values()].map(async item => {
-    let python = 'unavailable', version = 'unavailable', login = 'unavailable', limits = 'unavailable', resets = 'unavailable', ordinary = 'unavailable'
+    let python = 'unavailable', version = 'unavailable', login = 'unavailable', limits = 'unavailable', ordinary = 'unavailable', plan = 'unavailable', credits = 'unavailable'
     const warnings: string[] = []
     try {
       const result = await helperRun($, c, 'check', item.directory, 15_000)
@@ -1354,15 +1400,29 @@ async function codexStatus($: EngineInterface, c: Config): Promise<string[]> {
     try {
       const result = await helperRun($, c, 'rate-limits', item.directory, 15_000)
       if (result.exitCode === 0) {
-        const data = JSON.parse(result.stdout) as { primary?: { remainingPercent?: number; resetsAt?: number }; secondary?: { remainingPercent?: number; resetsAt?: number }; ordinaryUsageAllowed?: boolean }
-        const pct = (n: unknown) => typeof n === 'number' && Number.isFinite(n) ? `${n}%` : 'unavailable'
-        const time = (n: unknown) => typeof n === 'number' && Number.isFinite(n) ? new Date(n * 1000).toISOString() : 'unavailable'
-        limits = `${pct(data.primary?.remainingPercent)}/${pct(data.secondary?.remainingPercent)}`
-        resets = `${time(data.primary?.resetsAt)}/${time(data.secondary?.resetsAt)}`
+        const data = JSON.parse(result.stdout) as CodexLimits
+        const show = (name: string, window?: CodexWindow | null) => {
+          const minutes = window?.windowDurationMins
+          const label = minutes === 300 ? '5h' : minutes === 10080 ? 'weekly' : typeof minutes === 'number' && minutes > 0 ? `${minutes}m` : name
+          const pct = typeof window?.remainingPercent === 'number' && Number.isFinite(window.remainingPercent) ? `${window.remainingPercent}% left` : 'unavailable'
+          const reset = typeof window?.resetsAt === 'number' && Number.isFinite(window.resetsAt) ? new Date(window.resetsAt * 1000).toISOString() : 'unavailable'
+          return `${label} ${pct} (resets ${reset})`
+        }
+        limits = `${show('primary', data.primary)}, ${show('secondary', data.secondary)}`
         if (typeof data.ordinaryUsageAllowed === 'boolean') ordinary = String(data.ordinaryUsageAllowed)
+        if (data.credits && typeof data.credits.hasCredits === 'boolean' && typeof data.credits.unlimited === 'boolean') {
+          credits = data.credits.unlimited ? 'unlimited' : data.credits.hasCredits ? `available${typeof data.credits.balance === 'string' && /^[0-9.]+$/.test(data.credits.balance) ? ` (${data.credits.balance})` : ''}` : 'none'
+        }
       }
     } catch { /* limits remain unavailable */ }
-    return scrub(c, `upstream=Codex login; account=${item.account}; dir=${item.directory}; python=${python}; codex=${version}; login=${login}; limits=${limits}, resets ${resets}, ordinaryUsageAllowed=${ordinary}${warnings.map(w => '; warning: ' + w).join('')}`, false)
+    try {
+      const result = await helperRun($, c, 'account-info', item.directory, 15_000)
+      if (result.exitCode === 0) {
+        const info = JSON.parse(result.stdout) as { planType?: unknown; loginMethod?: unknown }
+        if (typeof info.planType === 'string' && /^[a-zA-Z0-9_-]{1,40}$/.test(info.planType)) plan = info.planType
+      }
+    } catch { /* plan remains unavailable */ }
+    return scrub(c, `upstream=Codex login; account=${item.account}; dir=${item.directory}; python=${python}; codex=${version}; login=${login}; limits=${limits}; credits=${credits}; plan=${plan}; ordinaryUsageAllowed=${ordinary}; serviceTier=${c.codexServiceTier ?? 'default'}${c.codexServiceTierInvalid ? ' (invalid setting; using default)' : ''}${warnings.map(w => '; warning: ' + w).join('')}`, false)
   }))
 }
 
@@ -1956,10 +2016,10 @@ export const register: Register = (on, options) => {
     if (e.agentId !== undefined) return result
     try {
       const c = await load($)
-      const note = c ? await autoFallback($, c) : undefined
-      if (note !== undefined) {
-        $.ui.status(note)
-        $.ui.toast(note, { timeoutMs: 15_000 })
+      if (c) {
+        const notify = (note: string | undefined) => { if (note !== undefined) { $.ui.status(note); $.ui.toast(note, { timeoutMs: 15_000 }) } }
+        if (c.codex?.has(await $.session.model())) $.clock.after(0, () => { void autoFallback($, c).then(notify).catch(() => undefined) })
+        else notify(await autoFallback($, c))
       }
     } catch { /* the switch is best effort; the session keeps its model */ }
     return result
@@ -2164,6 +2224,7 @@ export const register: Register = (on, options) => {
             // Only an answer that is itself a rate limit or overload carries a meaningful Retry-After; on a 200 whose stream broke it is ignored.
             if (!RETRYABLE_HTTP_STATUS.includes(httpStatus)) retryAfter = undefined
             if (!streamed && transient && retryAfter !== undefined && retryAfter > 15) {
+              if (codex && (httpStatus === 429 || type === 'rate_limit_error')) codexLimitFailed.add(codex.directory)
               return yield* failure(e, `${reason}${httpStatus && httpStatus !== 429 ? ` (HTTP ${httpStatus})` : ''}, retry after ${retryAfter}s`, parser.nextIndex)
             }
             if (!streamed && sendThinking && type === 'invalid_request_error') {
@@ -2191,6 +2252,7 @@ export const register: Register = (on, options) => {
               }
               continue
             }
+            if (codex && (httpStatus === 429 || type === 'rate_limit_error')) codexLimitFailed.add(codex.directory)
             return yield* failure(e, reason, parser.nextIndex)
           }
           if (!codex && c.keepThinking !== false) stashThinking(parser.firstToolId(), parser.thinkingBlocks())

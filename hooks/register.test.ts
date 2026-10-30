@@ -1262,6 +1262,98 @@ test('/model-mod:model: sdk is refused and an empty local list points to setup',
 const CODEX_MODEL = 'main/gpt-6.1-terra'
 const CODEX_OPTIONS = { codexAccounts: 'main', codexModels: 'gpt-6.1-terra', promptsDir: PROMPTS_DIR }
 
+test('Codex fallback: throttles reads, switches on quota and returns after reset', { options: { ...OPTIONS, ...CODEX_OPTIONS, fallbackModel: 'gpt-fb' } }, async ($, on) => {
+  let used = 20
+  const w = world(on, null, CODEX_MODEL, { stdout: SSE_OK, code: 0 }, argv => {
+    if (argv.includes('rate-limits')) return { exitCode: 0, stdout: JSON.stringify({ primary: { remainingPercent: 100 - used, windowDurationMins: 300, resetsAt: 3600 }, ordinaryUsageAllowed: true }) }
+    return { exitCode: 0, stdout: '{}' }
+  })
+  const settle = async () => { await w.clock.advance(1); for (let i = 0; i < 100; i++) await Promise.resolve() }
+  await w.clock.set(1_000)
+  await $.turn.complete(END); await settle()
+  expect(w.ran.filter(a => a.includes('rate-limits')).length).toBe(1)
+  used = 100
+  await $.turn.complete(END); await settle()
+  expect(w.ran.filter(a => a.includes('rate-limits')).length).toBe(1)
+  expect(w.modelRuns).toEqual([])
+  await w.clock.set(301_001)
+  await $.turn.complete(END); await settle()
+  expect(w.modelRuns).toEqual(['gpt-fb'])
+  await w.clock.set(3_600_001)
+  await $.turn.complete(END); await settle()
+  expect(w.modelRuns).toEqual(['gpt-fb', CODEX_MODEL])
+})
+
+test('Codex fallback: same-account target and failed quota read never switch', { options: { ...CODEX_OPTIONS, codexModels: 'gpt-6.1-terra,gpt-other', fallbackModel: 'main/gpt-other' } }, async ($, on) => {
+  let fail = false
+  const w = world(on, null, CODEX_MODEL, { stdout: SSE_OK, code: 0 }, argv => argv.includes('rate-limits')
+    ? { exitCode: fail ? 1 : 0, stdout: JSON.stringify({ primary: { remainingPercent: 0, resetsAt: 3600 } }) }
+    : { exitCode: 0, stdout: '{}' })
+  const settle = async () => { await w.clock.advance(1); for (let i = 0; i < 100; i++) await Promise.resolve() }
+  await w.clock.set(1000)
+  await $.turn.complete(END); await settle()
+  expect(w.modelRuns).toEqual([])
+  fail = true
+  await w.clock.set(301001)
+  await $.turn.complete(END); await settle()
+  expect(w.modelRuns).toEqual([])
+})
+
+test('Codex fallback: a manual model change suppresses the automatic return', { options: { ...OPTIONS, ...CODEX_OPTIONS, fallbackModel: 'gpt-fb' } }, async ($, on) => {
+  const w = world(on, null, CODEX_MODEL, { stdout: SSE_OK, code: 0 }, argv => argv.includes('rate-limits')
+    ? { exitCode: 0, stdout: JSON.stringify({ primary: { remainingPercent: 0, resetsAt: 3600 } }) } : { exitCode: 0, stdout: '{}' })
+  const settle = async () => { await w.clock.advance(1); for (let i = 0; i < 100; i++) await Promise.resolve() }
+  await w.clock.set(1000)
+  await $.turn.complete(END); await settle()
+  expect(w.modelRuns).toEqual(['gpt-fb'])
+  w.current = 'claude-sonnet-5-5'
+  await $.turn.complete(END); await settle()
+  await w.clock.set(3_600_001)
+  await $.turn.complete(END); await settle()
+  expect(w.modelRuns).toEqual(['gpt-fb'])
+})
+
+test('Codex fallback: a 429 bypasses the five-minute throttle', { options: { ...OPTIONS, ...CODEX_OPTIONS, fallbackModel: 'gpt-fb' } }, async ($, on) => {
+  let used = 0
+  const w = world(on, null, CODEX_MODEL, { stdout: '{"error":{"type":"rate_limit_error"}}', stderr: 'model-mod-http:429\nmodel-mod-retry-after:20\n', code: 1 }, argv => argv.includes('rate-limits')
+    ? { exitCode: 0, stdout: JSON.stringify({ primary: { remainingPercent: 100 - used, resetsAt: 3600 } }) } : { exitCode: 0, stdout: '{}' })
+  await w.clock.set(1000)
+  await $.turn.complete(END); await w.clock.advance(1)
+  expect(w.ran.filter(a => a.includes('rate-limits')).length).toBe(1)
+  used = 100
+  await drain($.turn.step(STEP(CODEX_MODEL)))
+  await $.turn.complete(END); await w.clock.advance(1)
+  expect(w.ran.filter(a => a.includes('rate-limits')).length).toBe(2)
+  expect(w.modelRuns).toEqual(['gpt-fb'])
+})
+
+test('Codex status: windows, credits and plan show remaining quota', { options: { ...CODEX_OPTIONS, codexServiceTier: 'priority' } }, async ($, on) => {
+  const w = world(on, null, CODEX_MODEL, { stdout: SSE_OK, code: 0 }, argv => {
+    if (argv.includes('account-info')) return { exitCode: 0, stdout: JSON.stringify({ loginMethod: 'chatgpt', planType: 'plus' }) }
+    if (argv.includes('rate-limits')) return { exitCode: 0, stdout: JSON.stringify({ primary: { remainingPercent: 62, windowDurationMins: 300, resetsAt: 1800000000 }, secondary: { remainingPercent: 81, windowDurationMins: 10080, resetsAt: 1800003600 }, credits: { hasCredits: true, balance: '5', unlimited: false }, ordinaryUsageAllowed: true }) }
+    return { exitCode: 0, stdout: '{}' }
+  })
+  const status = await $.command.run({ command: 'model-mod:status', args: '', origin: { kind: 'composer' } } as never)
+  expect(status.text).toContain('5h 62% left'); expect(status.text).toContain('weekly 81% left')
+  expect(status.text).toContain('credits=available (5)'); expect(status.text).toContain('plan=plus'); expect(status.text).toContain('serviceTier=priority')
+  await drain($.turn.step(STEP(CODEX_MODEL)))
+  expect(w.spawned[0]!.argv).toContain('--service-tier')
+  expect(w.spawned[0]!.argv).toContain('priority')
+})
+
+test('Codex fallback: unknown reset warns only once and does not switch', { options: { ...OPTIONS, ...CODEX_OPTIONS, fallbackModel: 'gpt-fb' } }, async ($, on) => {
+  const w = world(on, null, CODEX_MODEL, { stdout: SSE_OK, code: 0 }, argv => argv.includes('rate-limits')
+    ? { exitCode: 0, stdout: JSON.stringify({ ordinaryUsageAllowed: false }) } : { exitCode: 0, stdout: '{}' })
+  const notes: string[] = []
+  on('ui.status', async (_$, e) => { if (e.text) notes.push(e.text); return { value: undefined } })
+  await w.clock.set(1000)
+  await $.turn.complete(END); await w.clock.advance(1)
+  await w.clock.set(301001)
+  await $.turn.complete(END); await w.clock.advance(1)
+  expect(w.modelRuns).toEqual([])
+  expect(notes.filter(text => text.includes('reset time is unknown')).length).toBe(1)
+})
+
 for (const apiKey of [KEY, 'bad key']) {
   test('Codex login: status names invalid fields without exposing values', { options: { ...CODEX_OPTIONS, apiKey, codexAccounts: 'Bad Account' } }, async ($, on) => {
     world(on, null, LOCAL, { stdout: '', code: 0 })
@@ -1404,7 +1496,7 @@ test('Codex login: status and setup preserve the separate upstream', { options: 
   })
   const status = await $.command.run({ command: 'model-mod:status', args: '', origin: { kind: 'composer' } } as never)
   expect(status.text).toContain('account=main; dir=/fake-home/.config/model-mod/accounts/main; python=3.12.0; codex=0.166.0; login=ok')
-  expect(status.text).toContain('limits=80%/70%')
+  expect(status.text).toContain('primary 80% left'); expect(status.text).toContain('secondary 70% left')
   expect(status.text).not.toContain('untested')
   expect(status.text).toContain('invalid apiKey')
   w.chooseUpstream = true
