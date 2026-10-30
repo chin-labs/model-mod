@@ -54,6 +54,7 @@ The mod activates with either a valid `apiKey` or a valid combination of `codexA
 | `codexAccountsDir` | Absolute directory; default `~/.config/model-mod/accounts`, or `%APPDATA%\model-mod\accounts` on Windows (unverified). Each account has a separate subdirectory. |
 | `codexBin` | Executable name or absolute path; default `codex`. |
 | `pythonBin` | Executable name or absolute path; default `python3`. On Windows use `python` (unverified). |
+| `codexKeepReasoning` | `on` (default) or `off`; invalid values use `on` and appear in status. Uses experimental APIs; real Codex replay is unverified. |
 | `codexWebSearch` | `on` (default) or `off`; invalid values use `on` and appear in status. Search is disabled when WebSearch is absent from the session tool list. |
 
 Native search and openPage run at OpenAI and are not constrained by Claude permission domain rules (allowed or blocked domains); model-mod makes no `allowed_domains` security claim. Queries are sent to OpenAI.

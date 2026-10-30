@@ -7,6 +7,7 @@
 - **子代理與 Workflow。** 在訂閱工作階段中，可用 `model-mod:local-worker` 代理類型把工作交給你的模型（需設定 `workerModel` 或 `fallbackModel`），或讓 Workflow agent 指定 `model: "<你的模型 ID>"`。用你的模型的工作階段仍可委派給訂閱模型，該請求走訂閱。
 - **網頁搜尋與擷取。** API 路徑的 `web_search` 經 API 上游執行；Codex 登入在 `codexWebSearch` 開啟且工作階段提供 WebSearch 時使用原生搜尋。`web_fetch` 自行下載公開 HTTP(S) 頁面，每一跳都檢查所有 DNS 回答，拒絕私網與特殊用途位址（最多五次重新導向）。
 - **圖片生成。** `generate_image` 把 PNG 存到工作目錄。API 路徑使用 `/v1/images/generations` 與設定的圖片模型；Codex 登入使用內建圖片生成，不需設定 `imageModel`。
+- **Codex 推理延續。** 工具迴圈期間可透過實驗性 app-server API 在記憶體保留不透明的 reasoning item；真實 Codex 回合的重放尚未驗證。見[限制說明](LIMITATIONS.zh-TW.md#codex-登入的限制)。
 - **工具搜尋。** `tool_search` 用來找出 schema 被延後載入的 MCP 工具。
 - **Effort。** Claude Code 的五級（`low`、`medium`、`high`、`xhigh`、`max`）以模型後綴（如 `model(high)`）送出。Codex 登入路徑會由 helper 將後綴轉為 app-server effort，包含 `max`；`effortMode` 僅適用 API 路徑。Ultracode 是獨立的 workflow 開關，不改變等級。
 - **壓縮。** `/compact` 與自動壓縮使用你的模型。摘要保留多少取決於模型，不是無損存檔。

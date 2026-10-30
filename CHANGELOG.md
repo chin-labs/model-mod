@@ -5,6 +5,7 @@ All notable changes to this project are listed here. The format follows [Keep a 
 ## 0.2.0 - 2026-10-30
 
 ### Added
+- Keep opaque Codex reasoning in memory during tool exchanges using experimental app-server APIs; replay with a real Codex turn is unverified.
 - Codex login supports native web search when permitted, with activity shown as assistant text lines.
 - Background read-only Codex delegation, job management and best-effort completion notices.
 - Guided Codex device authentication during setup, with account directories shown in setup and status.
