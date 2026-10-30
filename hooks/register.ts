@@ -1260,13 +1260,13 @@ async function admin($: EngineInterface, e: { origin: { kind: string } }, arg: '
     open = (await $.tool.list()).filter(tool => tool.mcp && !tool.name.startsWith('mcp__model-mod__') && !known.has(tool.name)).length
   }
   const codex = c.codex?.size ? await codexStatus($, c) : []
-  if (!c.key && !c.headerFile) return { text: ['model-mod 0.1.2: picker=active', ...(c.apiInvalid ? ['API server: invalid apiKey; configure a valid key'] : []), ...codex].join('; ') + codexWarning }
+  if (!c.key && !c.headerFile) return { text: ['model-mod 0.2.0: picker=active', ...(c.apiInvalid ? ['API server: invalid apiKey; configure a valid key'] : []), ...codex].join('; ') + codexWarning }
   const url = new URL(c.baseUrl)
   const loopback = loopbackHost(url.hostname)
   const warnings: string[] = []
   if (c.headerFile !== undefined && !await $.fs.exists(c.headerFile)) warnings.push('headerFile not found')
   if (!loopback && url.protocol === 'http:') warnings.push('plain http to a non-loopback host sends the API key unencrypted')
-  return { text: `model-mod 0.1.2: picker=active${warnings.map(w => `; warning: ${w}`).join('')}; host=${loopback ? url.hostname : 'remote'}; config=${c.source}; models=${c.models.length}; tools=${captured ? (c.toolsFile ? 'captured' : 'listed') : 'missing'}` +
+  return { text: `model-mod 0.2.0: picker=active${warnings.map(w => `; warning: ${w}`).join('')}; host=${loopback ? url.hostname : 'remote'}; config=${c.source}; models=${c.models.length}; tools=${captured ? (c.toolsFile ? 'captured' : 'listed') : 'missing'}` +
     `; ${promptStatus(c.prompts)}; tool search=${c.toolSearch ?? 'auto'}; MCP tools without a captured schema=${open}${open && c.refresh ? ' (/model-mod:refresh captures them)' : ''}${codex.length ? '\n' + codex.join('\n') : ''}${codexWarning}` }
 }
 

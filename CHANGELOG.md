@@ -2,6 +2,22 @@
 
 All notable changes to this project are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Every release that changes plugin code or manifest files raises the `version` in `.claude-plugin/plugin.json`; installed clients only pick up a release whose version differs from the one they have.
 
+## 0.2.0 - 2026-10-30
+
+### Added
+- Codex login upstream through the official `codex app-server` and a local Python helper. Models use `<account>/<model>` IDs and display as `<model> @ <account>`; setup offers an upstream choice. Configure `codexAccounts`, `codexModels`, `codexAccountsDir`, `codexBin` and `pythonBin` in plugin options.
+- Status reports Codex accounts and usage limits. API and Codex upstreams can coexist; Codex takes precedence for matching IDs.
+
+### Changed
+- Codex turns use client-provided tools only; built-in capabilities are disabled. Reserved `mcp__` and incompatible tool names use reversible aliases. Codex CLI versions below 0.165.0 are refused.
+- Codex requests use bounded retries and handle upstream 429 responses. Codex models do not offer `generate_image` or `web_search`; their default context window is 128,000 tokens.
+
+### Fixed
+- Convert `tool_reference` blocks in tool results to text and exclude the built-in ToolSearch from tools sent to Codex.
+
+### Documentation
+- Update the English and Traditional Chinese README and documentation for both upstreams. Windows, Python 3.9 and concurrent use of two Codex accounts remain unverified.
+
 ## 0.1.2 - 2026-10-30
 
 ### Changed
