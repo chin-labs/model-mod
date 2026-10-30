@@ -18,7 +18,7 @@ type RunReply = { exitCode: number; stdout: string; stderr?: string; isStdoutTru
 // `wait`: mock-clock milliseconds between the last stdout piece and the first stderr piece (curl's write-out comes when the transfer ends);
 // `hang`: the child writes its pieces and then neither ends nor writes again until it is closed.
 type SpawnReply = { stdout: string | readonly string[]; stderr?: string | readonly string[]; code: number; wait?: number; hang?: boolean }
-type World = { runDelay?: number; rateStarted?: boolean; system: string; killed: number; toolsList?: string[]; toolListFailsAfter?: number; toolListCalls: number /* tool.list throws from the call after this many have succeeded */; spawned: { argv: readonly string[]; input?: string; env?: Record<string, string> }[]; ran: (readonly string[])[]
+type World = { messages?: unknown[]; runDelay?: number; rateStarted?: boolean; system: string; killed: number; toolsList?: string[]; toolListFailsAfter?: number; toolListCalls: number /* tool.list throws from the call after this many have succeeded */; spawned: { argv: readonly string[]; input?: string; env?: Record<string, string> }[]; ran: (readonly string[])[]
   ranEnv: (Record<string, string> | undefined)[]; reached: string[]; envSet: [string, string | undefined][]; messagesRead: number; failEnvSets: number; failEnvName?: string
   // The upstream's model list (null: unreachable), what the store holds, the picker rows of the settings, the requests
   // `$.http.fetch` made (the authorization header is reduced to its first 6 characters).
@@ -84,7 +84,7 @@ function world(on: On, config: Record<string, unknown> | null, model: string, sp
   on('session.usage', async () => ({ value: { startedAt: 0, context: { window: 1_000_000 }, rateLimits: w.limits, ...w.usage } as never }))
   on('session.messages', async () => {
     w.messagesRead++
-    return { value: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }] }
+    return { value: (w.messages ?? [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }]) as never }
   })
   on('tool.list', async () => {
     if (w.toolListFailsAfter !== undefined && w.toolListCalls++ >= w.toolListFailsAfter) throw new Error('tool list failed')
@@ -1505,6 +1505,53 @@ for (const [setting, hasWebSearch, enabled, status] of [
     if (setting === 'invalid') expect(result.text).toContain('invalid setting; using on')
   })
 }
+
+for (const setting of ['on', 'off', 'invalid'] as const) {
+  test(`Codex reasoning: ${setting} and provider isolation`, { options: { ...OPTIONS, ...CODEX_OPTIONS, models: LOCAL, codexKeepReasoning: setting } }, async ($, on) => {
+    const makeSse = (signature: string) => [
+      ['message_start', { message: { usage: {} } }],
+      ['content_block_start', { index: 0, content_block: { type: 'thinking', thinking: '' } }],
+      ['content_block_delta', { index: 0, delta: { type: 'signature_delta', signature } }],
+      ['content_block_stop', { index: 0 }],
+      ['content_block_start', { index: 1, content_block: { type: 'tool_use', id: 'reason-call', name: 'Read', input: {} } }],
+      ['content_block_stop', { index: 1 }],
+      ['message_delta', { delta: { stop_reason: 'tool_use' } }], ['message_stop', {}],
+    ].map(([event, data]) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`).join('')
+    const w = world(on, null, CODEX_MODEL, [{ stdout: makeSse('mmcx1:YWJj'), code: 0 },
+      { stdout: SSE_OK, code: 0 }, { stdout: SSE_OK, code: 0 }])
+    await drain($.turn.step(STEP(CODEX_MODEL)))
+    w.messages = [{ role: 'user', content: [{ type: 'text', text: 'hi' }] },
+      { role: 'assistant', content: [{ type: 'tool_use', id: 'reason-call', name: 'Read', input: {} }] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'reason-call', content: 'ok' }] }]
+    await drain($.turn.step(STEP(CODEX_MODEL)))
+    const codexBody = JSON.parse(w.spawned[1]!.input!)
+    expect(codexBody.messages[1].content[0].type).toBe(setting === 'off' ? 'tool_use' : 'thinking')
+    expect(w.spawned[1]!.argv.includes('--no-keep-reasoning')).toBe(setting === 'off')
+    await drain($.turn.step(STEP(LOCAL)))
+    const apiBody = JSON.parse(w.spawned[2]!.input!)
+    expect(apiBody.messages[1].content[0].type).toBe('tool_use')
+    const status = await $.command.run({ command: 'model-mod:status', args: '', origin: { kind: 'composer' } } as never)
+    expect(status.text).toContain('keepReasoning=' + (setting === 'off' ? 'off' : 'on'))
+    if (setting === 'invalid') expect(status.text).toContain('invalid setting; using on')
+  })
+}
+
+test('API reasoning is never replayed to Codex', { options: { ...OPTIONS, ...CODEX_OPTIONS, models: LOCAL } }, async ($, on) => {
+  const sse = [
+    ['content_block_start', { index: 0, content_block: { type: 'thinking', thinking: '', signature: 'gAAAAfake' } }],
+    ['content_block_stop', { index: 0 }],
+    ['content_block_start', { index: 1, content_block: { type: 'tool_use', id: 'api-call', name: 'Read', input: {} } }],
+    ['content_block_stop', { index: 1 }], ['message_delta', { delta: { stop_reason: 'tool_use' } }], ['message_stop', {}],
+  ].map(([event, data]) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`).join('')
+  const w = world(on, null, LOCAL, [{ stdout: sse, code: 0 }, { stdout: SSE_OK, code: 0 }])
+  await drain($.turn.step(STEP(LOCAL)))
+  w.messages = [{ role: 'user', content: [{ type: 'text', text: 'hi' }] },
+    { role: 'assistant', content: [{ type: 'tool_use', id: 'api-call', name: 'Read', input: {} }] },
+    { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'api-call', content: 'ok' }] }]
+  await drain($.turn.step(STEP(CODEX_MODEL)))
+  const body = JSON.parse(w.spawned[1]!.input!)
+  expect(body.messages[1].content[0].type).toBe('tool_use')
+})
 
 test('Codex native search stays off when the tool list cannot be read', { options: CODEX_OPTIONS }, async ($, on) => {
   const w = world(on, null, CODEX_MODEL, { stdout: SSE_OK, code: 0 })

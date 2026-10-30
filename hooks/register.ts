@@ -196,7 +196,7 @@ async function configurePicker($: EngineInterface, c: { baseUrl: string; key?: s
 }
 
 type CodexAccount = { account: string; model: string; directory: string; window?: number }
-type Config = { codex?: Map<string, CodexAccount>; pythonBin?: string; codexBin?: string; accountsDir?: string; apiInvalid?: boolean; prompts: Prompts; promptsDir?: string; baseUrl: string; headerFile?: string; key?: string; models: string[]; toolsFile?: string; defaultWindow?: number; contextWindowExplicit?: boolean; explicitModels?: boolean; excluded?: Set<string>; codexDirectoryUnavailable?: Set<string>; imageAuto?: boolean; source?: 'options' | 'file'; maxTokens: number; effortMode: 'suffix' | 'none'; imageModel?: string; contextWindows?: Record<string, number>; sideModel?: string; keepThinking?: boolean; localTitle?: boolean; localContext?: boolean; toolSearch?: 'auto' | 'on' | 'off'; toolSearchPercent?: number; refresh?: string[]; fallbackModel?: string; fallbackPercent?: number; workerModel?: string; codexServiceTier?: 'default' | 'priority'; codexServiceTierInvalid?: boolean; codexWebSearch?: 'on' | 'off'; codexWebSearchInvalid?: boolean }
+type Config = { codex?: Map<string, CodexAccount>; pythonBin?: string; codexBin?: string; accountsDir?: string; apiInvalid?: boolean; prompts: Prompts; promptsDir?: string; baseUrl: string; headerFile?: string; key?: string; models: string[]; toolsFile?: string; defaultWindow?: number; contextWindowExplicit?: boolean; explicitModels?: boolean; excluded?: Set<string>; codexDirectoryUnavailable?: Set<string>; imageAuto?: boolean; source?: 'options' | 'file'; maxTokens: number; effortMode: 'suffix' | 'none'; imageModel?: string; contextWindows?: Record<string, number>; sideModel?: string; keepThinking?: boolean; localTitle?: boolean; localContext?: boolean; toolSearch?: 'auto' | 'on' | 'off'; toolSearchPercent?: number; refresh?: string[]; fallbackModel?: string; fallbackPercent?: number; workerModel?: string; codexServiceTier?: 'default' | 'priority'; codexServiceTierInvalid?: boolean; codexWebSearch?: 'on' | 'off'; codexWebSearchInvalid?: boolean; codexKeepReasoning?: 'on' | 'off'; codexKeepReasoningInvalid?: boolean }
 type Tool = { name: string; description: string; input_schema: Record<string, unknown> }
 
 let config: Config | undefined
@@ -382,6 +382,7 @@ function optionsCandidate(o: PluginOptions): Record<string, unknown> | undefined
     keepThinking: o.keepThinking !== false, localTitle: o.localTitle !== false, localContext: o.localContext !== false,
     toolSearch: text('toolSearch') || 'auto', toolSearchPercent: number('toolSearchPercent', 10),
     codexWebSearch: text('codexWebSearch') === 'off' ? 'off' : 'on', codexWebSearchInvalid: o.codexWebSearch !== undefined && !['on', 'off'].includes(text('codexWebSearch')),
+    codexKeepReasoning: text('codexKeepReasoning') === 'off' ? 'off' : 'on', codexKeepReasoningInvalid: o.codexKeepReasoning !== undefined && !['on', 'off'].includes(text('codexKeepReasoning')),
     codexServiceTier: text('codexServiceTier') === 'priority' ? 'priority' : 'default', codexServiceTierInvalid: !['default', 'priority', ''].includes(text('codexServiceTier')), fallbackModel: text('fallbackModel'), fallbackPercent: number('fallbackPercent', 100), workerModel: text('workerModel'), promptsDir: text('promptsDir') }
 }
 
@@ -758,14 +759,14 @@ const RETRY_DELAYS = [2000, 6000, 15000]
 const WRITE_OUT_GRACE_MS = 2000
 const RETRYABLE_HTTP_STATUS = [429, 502, 503, 504, 529]
 // The engine's transcript does not keep the signed reasoning a bridge response carries (a mod cannot record a thinking
-// block), so it is remembered here by the first tool call it came with and handed back inside the tool loop, which lets the
-// model continue its reasoning instead of starting over. Only blocks whose signature has the shape the API returns for
-// Codex reasoning (an OpenAI encrypted item) are kept; anything else is dropped as before.
-const CODEX_SIGNATURE = /^gAAAA/
+// block), so it is remembered here by the first tool call it came with and handed back inside the tool loop.
+// The API and Codex bridge use distinct signatures and never replay one another's data.
+const API_SIGNATURE = /^gAAAA/
+const CODEX_SIGNATURE = /^mmcx1:/
 type Thinking = { type: 'thinking'; thinking: string; signature: string }
 const thinkingStash = new Map<string, Thinking[]>()
-function stashThinking(toolId: string | undefined, blocks: Thinking[]): void {
-  const usable = blocks.filter(b => CODEX_SIGNATURE.test(b.signature))
+function stashThinking(toolId: string | undefined, blocks: Thinking[], codex: boolean): void {
+  const usable = blocks.filter(b => (codex ? CODEX_SIGNATURE : API_SIGNATURE).test(b.signature))
   if (toolId === undefined || usable.length === 0) return
   if (thinkingStash.size >= 300) thinkingStash.delete(thinkingStash.keys().next().value as string)
   thinkingStash.set(toolId, usable)
@@ -1436,7 +1437,7 @@ async function codexStatus($: EngineInterface, c: Config): Promise<string[]> {
         if (typeof info.planType === 'string' && /^[a-zA-Z0-9_-]{1,40}$/.test(info.planType)) plan = info.planType
       }
     } catch { /* plan remains unavailable */ }
-    return scrub(c, `upstream=Codex login; account=${item.account}; dir=${item.directory}; python=${python}; codex=${version}; login=${login}; limits=${limits}; credits=${credits}; plan=${plan}; ordinaryUsageAllowed=${ordinary}; webSearch=${search}${c.codexWebSearchInvalid ? ' (invalid setting; using on)' : ''}; serviceTier=${c.codexServiceTier ?? 'default'}${c.codexServiceTierInvalid ? ' (invalid setting; using default)' : ''}${warnings.map(w => '; warning: ' + w).join('')}`, false)
+    return scrub(c, `upstream=Codex login; account=${item.account}; dir=${item.directory}; python=${python}; codex=${version}; login=${login}; limits=${limits}; credits=${credits}; plan=${plan}; ordinaryUsageAllowed=${ordinary}; webSearch=${search}${c.codexWebSearchInvalid ? ' (invalid setting; using on)' : ''}; keepReasoning=${c.codexKeepReasoning ?? 'on'}${c.codexKeepReasoningInvalid ? ' (invalid setting; using on)' : ''}; serviceTier=${c.codexServiceTier ?? 'default'}${c.codexServiceTierInvalid ? ' (invalid setting; using default)' : ''}${warnings.map(w => '; warning: ' + w).join('')}`, false)
   }))
 }
 
@@ -2154,12 +2155,12 @@ export const register: Register = (on, options) => {
       }) })).filter(message => message.content.length > 0)
       while (messages.length && messages[0]!.role !== 'user') messages.shift()
       let withThinking: typeof messages | undefined
-      if (!codex && c.keepThinking !== false && thinkingStash.size > 0) {
+      if ((codex ? c.codexKeepReasoning !== 'off' : c.keepThinking !== false) && thinkingStash.size > 0) {
         let any = false
         withThinking = messages.map(message => {
           if (message.role !== 'assistant') return message
           const ids = message.content.filter(b => b.type === 'tool_use').map(b => String((b as { id?: unknown }).id))
-          const kept = ids.map(id => thinkingStash.get(id)).find(Boolean)
+          const kept = ids.map(id => thinkingStash.get(id)?.filter(b => (codex ? CODEX_SIGNATURE : API_SIGNATURE).test(b.signature))).find(blocks => blocks?.length)
           if (!kept) return message
           any = true
           return { ...message, content: [...kept, ...message.content] }
@@ -2182,7 +2183,7 @@ export const register: Register = (on, options) => {
         // Retry-After comes back through --write-out, which curl writes to fd 2 itself: a header file opened on the stderr device
         // fails when the client hands the child a socket there. %header{} needs curl 7.84; an older curl prints nothing and the plain backoff applies.
         const searchEnabled = codex && await codexWebSearchState($, c) === 'on'
-        const call = codex ? { argv: [...helperArgs($, c, 'messages', codex.directory, codex.model, body.model), ...(searchEnabled ? ['--web-search'] : [])], env: undefined } : curlCall(c, ['-sN', '--fail-with-body', '--max-time', '900', '--speed-limit', '1', '--speed-time', String(STREAM_IDLE_SECONDS),
+        const call = codex ? { argv: [...helperArgs($, c, 'messages', codex.directory, codex.model, body.model), ...(searchEnabled ? ['--web-search'] : []), ...(c.codexKeepReasoning === 'off' ? ['--no-keep-reasoning'] : [])], env: undefined } : curlCall(c, ['-sN', '--fail-with-body', '--max-time', '900', '--speed-limit', '1', '--speed-time', String(STREAM_IDLE_SECONDS),
           '--write-out', '%{stderr}\nmodel-mod-http:%{http_code}\nmodel-mod-retry-after:%header{retry-after}\n',
           '-H', 'content-type: application/json',
           '-H', 'anthropic-version: 2023-06-01', '--data-binary', '@-', c.baseUrl + '/v1/messages'])
@@ -2309,7 +2310,7 @@ export const register: Register = (on, options) => {
             if (codex && (httpStatus === 429 || type === 'rate_limit_error')) codexLimitFailed.add(codex.directory)
             return yield* failure(e, reason, parser.nextIndex)
           }
-          if (!codex && c.keepThinking !== false) stashThinking(parser.firstToolId(), parser.thinkingBlocks())
+          if (codex ? c.codexKeepReasoning !== 'off' : c.keepThinking !== false) stashThinking(parser.firstToolId(), parser.thinkingBlocks(), !!codex)
           if (own) {
             own.turns.push({ role: 'assistant', content: parser.blocks() })
             own.pending = parser.blocks().filter(b => b.type === 'tool_use').map(b => String(b.id))
