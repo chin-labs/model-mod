@@ -171,7 +171,7 @@ async function configurePicker($: EngineInterface, c: { baseUrl: string; key?: s
 }
 
 type CodexAccount = { account: string; model: string; directory: string }
-type Config = { codex?: Map<string, CodexAccount>; pythonBin?: string; codexBin?: string; accountsDir?: string; apiInvalid?: boolean; prompts: Prompts; promptsDir?: string; baseUrl: string; headerFile?: string; key?: string; models: string[]; toolsFile?: string; defaultWindow?: number; explicitModels?: boolean; excluded?: Set<string>; codexDirectoryUnavailable?: Set<string>; imageAuto?: boolean; source?: 'options' | 'file'; maxTokens: number; effortMode: 'suffix' | 'none'; imageModel?: string; contextWindows?: Record<string, number>; sideModel?: string; keepThinking?: boolean; localTitle?: boolean; localContext?: boolean; toolSearch?: 'auto' | 'on' | 'off'; toolSearchPercent?: number; refresh?: string[]; fallbackModel?: string; fallbackPercent?: number; workerModel?: string }
+type Config = { codex?: Map<string, CodexAccount>; pythonBin?: string; codexBin?: string; accountsDir?: string; apiInvalid?: boolean; prompts: Prompts; promptsDir?: string; baseUrl: string; headerFile?: string; key?: string; models: string[]; toolsFile?: string; defaultWindow?: number; contextWindowExplicit?: boolean; explicitModels?: boolean; excluded?: Set<string>; codexDirectoryUnavailable?: Set<string>; imageAuto?: boolean; source?: 'options' | 'file'; maxTokens: number; effortMode: 'suffix' | 'none'; imageModel?: string; contextWindows?: Record<string, number>; sideModel?: string; keepThinking?: boolean; localTitle?: boolean; localContext?: boolean; toolSearch?: 'auto' | 'on' | 'off'; toolSearchPercent?: number; refresh?: string[]; fallbackModel?: string; fallbackPercent?: number; workerModel?: string }
 type Tool = { name: string; description: string; input_schema: Record<string, unknown> }
 
 let config: Config | undefined
@@ -242,7 +242,7 @@ let pluginOptions: PluginOptions = {}
 
 // The window of a bridge model: the configured one, else the known one, else the default of the options.
 function windowOf(c: Config, model: string): number | undefined {
-  return c.contextWindows?.[model] ?? (c.defaultWindow === undefined ? undefined : c.codex?.has(model) && c.defaultWindow === 272_000 ? 128_000 : KNOWN_WINDOWS[model] ?? c.defaultWindow)
+  return c.contextWindows?.[model] ?? (c.defaultWindow === undefined ? undefined : c.codex?.has(model) ? (c.contextWindowExplicit ? c.defaultWindow : 128_000) : KNOWN_WINDOWS[model] ?? c.defaultWindow)
 }
 function addModels(c: Pick<Config, 'models'>, ids: readonly unknown[], validateId = true): void {
   for (const id of ids) {
@@ -341,7 +341,7 @@ function optionsCandidate(o: PluginOptions): Record<string, unknown> | undefined
   return { baseUrl: validKey ? baseUrl : DEFAULT_BASE_URL, key: validKey ? key : undefined, apiInvalid: hasKey && !validKey, accounts: codexValid ? accounts : [], codexModels: codexValid ? codexModels : [],
     accountsDir: dir || undefined, codexBin: bin, pythonBin: python, models: validKey ? text('models').split(/[\s,]+/).filter(Boolean) : [], maxTokens: number('maxTokens', 32_000),
     effortMode: text('effortMode') === 'none' ? 'none' : 'suffix', imageModel: text('imageModel') !== 'none' ? text('imageModel') || undefined : undefined, imageAuto: text('imageModel') === '',
-    defaultWindow: number('contextWindow', 272_000), sideModel: side === 'none' ? undefined : side || 'claude-haiku-5-5',
+    defaultWindow: number('contextWindow', 272_000), contextWindowExplicit: o.contextWindow !== undefined, sideModel: side === 'none' ? undefined : side || 'claude-haiku-5-5',
     keepThinking: o.keepThinking !== false, localTitle: o.localTitle !== false, localContext: o.localContext !== false,
     toolSearch: text('toolSearch') || 'auto', toolSearchPercent: number('toolSearchPercent', 10),
     fallbackModel: text('fallbackModel'), fallbackPercent: number('fallbackPercent', 100), workerModel: text('workerModel'), promptsDir: text('promptsDir') }

@@ -1286,6 +1286,12 @@ test('Codex login: streaming and auxiliary requests use the helper without an AP
   expect(w.store.models).toBeUndefined()
 })
 
+test('Codex login: an explicitly configured context window is retained', { options: { ...CODEX_OPTIONS, contextWindow: 272000 } }, async ($, on) => {
+  const w = world(on, null, CODEX_MODEL, { stdout: SSE_OK, code: 0 })
+  await drain($.turn.step(STEP(CODEX_MODEL)))
+  expect(w.envSet).toContainEqual(['CLAUDE_CODE_MAX_CONTEXT_TOKENS', '272000'])
+})
+
 test('Codex login: message_start before a 429 respects Retry-After and retries', { options: CODEX_OPTIONS }, async ($, on) => {
   const start = 'event: message_start\ndata: {"message":{"usage":{}}}\n\n'
   const error = 'event: error\ndata: {"type":"error","error":{"type":"api_error"}}\n\n'
