@@ -9,6 +9,54 @@ class InvalidRequest(Exception):
     pass
 
 
+REASONING_PREFIX = 'mmcx1:'
+REASONING_ITEM_LIMIT = 256 * 1024
+REASONING_RESPONSE_LIMIT = 1024 * 1024
+METADATA_FIELD = 'internal_chat_message_' + 'metadata_passthrough'
+
+
+def valid_reasoning(item):
+    if not isinstance(item, dict) or set(item) - {'type', 'id', 'summary', 'content', 'encrypted_content', METADATA_FIELD}:
+        return False
+    if item.get('type') != 'reasoning' or not isinstance(item.get('summary'), list): return False
+    for field in ('id', 'encrypted_content'):
+        if field in item and item[field] is not None and not isinstance(item[field], str): return False
+    def text_items(value, allowed):
+        return isinstance(value, list) and all(isinstance(x, dict) and set(x) == {'type', 'text'} and x['type'] in allowed and isinstance(x['text'], str) for x in value)
+    if not text_items(item['summary'], ('summary_text',)): return False
+    if item.get('content') is not None and not text_items(item['content'], ('text', 'reasoning_text')): return False
+    metadata = item.get(METADATA_FIELD)
+    if metadata is not None and (not isinstance(metadata, dict) or set(metadata) - {'turn_id'} or (metadata.get('turn_id') is not None and not isinstance(metadata['turn_id'], str))): return False
+    return True
+
+
+def encode_reasoning(item):
+    if not valid_reasoning(item): return None
+    try:
+        raw = json.dumps(item, ensure_ascii=True, separators=(',', ':')).encode('ascii')
+        signature = REASONING_PREFIX + base64.urlsafe_b64encode(raw).decode('ascii').rstrip('=')
+    except (ValueError, TypeError, UnicodeError, RecursionError): return None
+    return signature if len(signature) <= REASONING_ITEM_LIMIT else None
+
+
+def decode_reasoning(signature):
+    if not isinstance(signature, str) or not signature.startswith(REASONING_PREFIX) or len(signature) > REASONING_ITEM_LIMIT: return None
+    encoded = signature[len(REASONING_PREFIX):]
+    if not encoded or not re.fullmatch(r'[A-Za-z0-9_-]+', encoded): return None
+    try:
+        raw = base64.b64decode(encoded + '=' * (-len(encoded) % 4), altchars=b'-_', validate=True)
+        if base64.urlsafe_b64encode(raw).decode('ascii').rstrip('=') != encoded: return None
+        def unique(pairs):
+            obj = {}
+            for key, value in pairs:
+                if key in obj: raise ValueError('duplicate key')
+                obj[key] = value
+            return obj
+        item = json.loads(raw.decode('utf-8'), object_pairs_hook=unique)
+        return item if valid_reasoning(item) else None
+    except (ValueError, UnicodeError, RecursionError): return None
+
+
 def names(tools):
     forward, reverse = {}, {}
     for tool in tools:
@@ -43,7 +91,7 @@ def blocks(content):
     return content
 
 
-def prepare(body, model_map):
+def prepare(body, model_map, keep_reasoning=True):
     if not isinstance(body, dict) or not isinstance(body.get('model'), str) or body['model'] not in model_map:
         raise InvalidRequest('unknown model')
     msgs, tools = body.get('messages'), body.get('tools', [])
@@ -88,6 +136,7 @@ def prepare(body, model_map):
         if not isinstance(msg, dict) or msg.get('role') not in ('user', 'assistant'):
             raise InvalidRequest('invalid message role')
         role = msg['role']
+        reasoning_bytes = 0
         for b in blocks(msg.get('content')):
             kind = b.get('type')
             if kind == 'text' and isinstance(b.get('text'), str):
@@ -116,7 +165,13 @@ def prepare(body, model_map):
                 output = ''.join(p['text'] for p in result) if all(p['type'] == 'input_text' for p in result) else result
                 history.append({'type': 'function_call_output', 'call_id': b['tool_use_id'], 'output': output})
             elif kind in ('thinking', 'redacted_thinking'):
-                dropped += 1
+                signature = b.get('signature')
+                item = decode_reasoning(signature) if keep_reasoning and role == 'assistant' and kind == 'thinking' else None
+                if item is not None and reasoning_bytes + len(signature) <= REASONING_RESPONSE_LIMIT:
+                    history.append(item)
+                    reasoning_bytes += len(signature)
+                else:
+                    dropped += 1
             else:
                 raise InvalidRequest('unsupported content block')
     last = msgs[-1]

@@ -86,7 +86,10 @@ for line in sys.stdin:
             send({'id': ident, 'result': {'thread': {'id': 'invalid' if mode == 'invalid_uuid' else '12345678-1234-4234-8234-123456789abc'}, 'approvalPolicy': 'never', 'sandbox': {'type': 'workspaceWrite' if mode == 'delegate_bad_sandbox' else 'readOnly', 'networkAccess': False}}})
     if method == 'thread/start' and mode == 'delegate_no_read':
         while True: time.sleep(1)
-    elif method == 'thread/inject_items': send({'id': ident, 'result': {}})
+    elif method == 'thread/inject_items':
+        if mode == 'reasoning_inject_error' and any(item.get('type') == 'reasoning' for item in params['items']):
+            send({'id': ident, 'error': {'code': -32602, 'message': 'synthetic'}})
+        else: send({'id': ident, 'result': {}})
     elif method == 'turn/start':
         items = [{'type': 'sleep'}, {'type': 'commandExecution'}] if mode == 'wait_forbidden' else [{'type': 'fileChange'}] if mode == 'forbidden_response' else ([{'type': 'sleep'}] if mode == 'wait_response' else [])
         send({'id': ident, 'result': {'turn': {'id': 'turn1', 'items': items}}})
@@ -104,6 +107,20 @@ for line in sys.stdin:
         if mode == 'delegate_filechange':
             event('item/started', {'item': {'type': 'fileChange'}})
             continue
+        if mode in ('reasoning_invalid_once', 'reasoning_invalid_always'):
+            count_file = os.path.join(os.environ['CODEX_HOME'], 'fake_turn_count')
+            try:
+                with open(count_file, encoding='utf-8') as f: count = int(f.read())
+            except (OSError, ValueError): count = 0
+            with open(count_file, 'w', encoding='utf-8') as f: f.write(str(count + 1))
+            if mode == 'reasoning_invalid_always' or count == 0:
+                event('turn/completed', {'turn': {'id': 'turn1', 'status': 'failed', 'error': {'message': 'invalid_encrypted_content', 'code': 400}}})
+                continue
+        if mode in ('reasoning_tool', 'reasoning_invalid_shape', 'reasoning_large'):
+            reasoning = {'type': 'reasoning', 'id': 'reason1', 'summary': [], 'content': None,
+                         'encrypted_content': 'x' * (300000 if mode == 'reasoning_large' else 16)}
+            if mode == 'reasoning_invalid_shape': reasoning['unexpected'] = 'private'
+            event('rawResponseItem/completed', {'item': reasoning, 'threadId': '12345678-1234-4234-8234-123456789abc', 'turnId': 'turn1'})
         if mode == 'delegate_echo':
             text = params['input'][0]['text'] + '\n' + os.environ['CODEX_HOME']
         else:
@@ -156,7 +173,7 @@ for line in sys.stdin:
             event('item/completed', {'item': {'type': 'contextCompaction'}})
             event('thread/tokenUsage/updated', {'tokenUsage': {'modelContextWindow': 475000, 'total': {'inputTokens': 10}}})
             event('turn/completed', {'turn': {'id': 'turn1', 'status': 'completed'}})
-        elif mode == 'tools':
+        elif mode in ('tools', 'reasoning_tool', 'reasoning_invalid_shape', 'reasoning_large'):
             event('item/tool/call', {'callId': 'call1', 'tool': 'one', 'arguments': {'n': 1}})
             event('item/tool/call', {'callId': 'call2', 'tool': 'two', 'arguments': {'n': 2}})
         else:

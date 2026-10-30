@@ -25,7 +25,8 @@ import unicodedata
 for stream in (sys.stdin, sys.stdout, sys.stderr):
     stream.reconfigure(encoding='utf-8')
 
-from mapping import InvalidRequest, classify, prepare, usage_delta
+from mapping import (InvalidRequest, classify, prepare, usage_delta, encode_reasoning,
+                     REASONING_RESPONSE_LIMIT)
 
 # Last live-tested version: codex-cli 0.165.0.
 MIN_TESTED_VERSION = (0, 165, 0)
@@ -88,6 +89,12 @@ def verify_version(args):
         error.version = text
         raise error
     return text, 'tested' if version == MIN_TESTED_VERSION and not match.group(4) and not match.group(5) else 'untested'
+
+
+def invalid_encrypted_content(error):
+    if isinstance(error, dict): return any(invalid_encrypted_content(v) for v in error.values())
+    if isinstance(error, list): return any(invalid_encrypted_content(v) for v in error)
+    return isinstance(error, str) and 'invalid_encrypted_content' in error
 
 
 def retry_seconds(error):
@@ -275,6 +282,8 @@ class App:
             if obj.get('id') == ident and 'method' not in obj:
                 if 'error' in obj:
                     status, kind = classify(obj['error'])
+                    if invalid_encrypted_content(obj['error']):
+                        raise BridgeError('Codex login: app-server request failed', status, kind, code='invalid_encrypted_content')
                     if method == 'initialize': raise incompatible('experimentalApi')
                     if isinstance(obj['error'], dict) and obj['error'].get('code') in (-32600, -32602):
                         raise BridgeError('Codex login: request rejected by Codex', 400, 'invalid_request_error', code='codex_rejected_request')
@@ -368,7 +377,15 @@ def messages(args, app, prepared, cwd):
     if p['dropped']: note('Codex login: discarded thinking blocks: ' + str(p['dropped']))
     instructions = TOOL_INSTRUCTIONS
     if app.web_search == 'live': instructions = instructions.replace('Use only the provided function tools.', 'Use the provided function tools and native web search.')
-    result = app.request('thread/start', {'model': p['model'], 'cwd': cwd, 'sandbox': 'read-only', 'approvalPolicy': 'never', 'ephemeral': True, 'baseInstructions': p['system'], 'developerInstructions': instructions, 'dynamicTools': p['tools']})
+    params = {'model': p['model'], 'cwd': cwd, 'sandbox': 'read-only', 'approvalPolicy': 'never', 'ephemeral': True, 'baseInstructions': p['system'], 'developerInstructions': instructions, 'dynamicTools': p['tools']}
+    if not args.no_keep_reasoning: params['experimentalRawEvents'] = True
+    try:
+        result = app.request('thread/start', params)
+    except BridgeError as error:
+        if args.no_keep_reasoning or error.code != 'codex_rejected_request': raise
+        note('Codex login: raw reasoning unavailable')
+        params.pop('experimentalRawEvents', None)
+        result = app.request('thread/start', params)
     try:
         thread_id = result['thread']['id']
         if not isinstance(thread_id, str) or str(uuid.UUID(thread_id)) != thread_id.lower(): raise ValueError()
@@ -376,7 +393,13 @@ def messages(args, app, prepared, cwd):
         raise incompatible('thread.id')
     if result.get('approvalPolicy') != 'never' or not isinstance(result.get('sandbox'), dict) or result['sandbox'].get('type') != 'readOnly': raise incompatible('sandbox or approvalPolicy')
     app.thread_id = thread_id
-    if p['history']: app.request('thread/inject_items', {'threadId': app.thread_id, 'items': p['history']})
+    if p['history']:
+        try:
+            app.request('thread/inject_items', {'threadId': app.thread_id, 'items': p['history']})
+        except BridgeError as error:
+            if any(item.get('type') == 'reasoning' for item in p['history']) and error.code != 'invalid_encrypted_content':
+                raise BridgeError('Codex login: reasoning unavailable', code='reasoning_unavailable')
+            raise
     turn = {'threadId': app.thread_id, 'model': p['model'], 'effort': p['effort'], 'input': p['input']}
     if args.service_tier == 'priority': turn['serviceTier'] = 'priority'
     result = app.request('turn/start', turn)
@@ -385,8 +408,14 @@ def messages(args, app, prepared, cwd):
         if not isinstance(app.turn_id, str) or not app.turn_id: raise ValueError()
     except (KeyError, TypeError, ValueError): raise incompatible('turn.id')
     message = {'id': 'msg_' + uuid.uuid4().hex, 'type': 'message', 'role': 'assistant', 'model': p['client_model'], 'content': [], 'stop_reason': None, 'stop_sequence': None, 'usage': {'input_tokens': 0, 'output_tokens': 0}}
-    if p['stream']: emit('message_start', {'type': 'message_start', 'message': message})
+    stream_started = False
+    def start_stream():
+        nonlocal stream_started
+        if p['stream'] and not stream_started:
+            emit('message_start', {'type': 'message_start', 'message': message})
+            stream_started = True
     content, opened, calls, latest = [], False, [], {}
+    reasoning_size, reasoning_dropped = 0, 0
     batch_deadline, call_ids, search_ids = None, set(), set()
     if check_turn(result.get('turn'), app.web_search == 'live'):
         app.wait_interrupted = True
@@ -407,8 +436,27 @@ def messages(args, app, prepared, cwd):
             app.interrupt()
         if app.wait_interrupted and method not in ('turn/completed', 'thread/tokenUsage/updated') and not (method == 'item/tool/call' and params.get('tool') in p['reverse']):
             continue
-        if method == 'item/agentMessage/delta':
+        if method == 'rawResponseItem/completed' and not args.no_keep_reasoning:
+            item = params.get('item') if isinstance(params, dict) else None
+            if not isinstance(item, dict) or item.get('type') != 'reasoning': continue
+            signature = encode_reasoning(item)
+            if signature is None or reasoning_size + len(signature) > REASONING_RESPONSE_LIMIT:
+                reasoning_dropped += 1
+                continue
+            if opened:
+                if p['stream']: emit('content_block_stop', {'type': 'content_block_stop', 'index': len(content)-1})
+                opened = False
+            reasoning_size += len(signature)
+            content.append({'type': 'thinking', 'thinking': '', 'signature': signature})
+            if p['stream']:
+                start_stream()
+                idx = len(content)-1
+                emit('content_block_start', {'type': 'content_block_start', 'index': idx, 'content_block': {'type': 'thinking', 'thinking': ''}})
+                emit('content_block_delta', {'type': 'content_block_delta', 'index': idx, 'delta': {'type': 'signature_delta', 'signature': signature}})
+                emit('content_block_stop', {'type': 'content_block_stop', 'index': idx})
+        elif method == 'item/agentMessage/delta':
             if calls: continue
+            start_stream()
             if not opened:
                 content.append({'type': 'text', 'text': ''}); opened = True
                 if p['stream']: emit('content_block_start', {'type': 'content_block_start', 'index': len(content)-1, 'content_block': {'type': 'text', 'text': ''}})
@@ -425,6 +473,7 @@ def messages(args, app, prepared, cwd):
                 if p['stream']: emit('content_block_stop', {'type': 'content_block_stop', 'index': len(content)-1})
                 opened = False
             text = '\n' + web_search_summary(item) + '\n'
+            start_stream()
             content.append({'type': 'text', 'text': text})
             if p['stream']:
                 idx = len(content)-1
@@ -440,6 +489,7 @@ def messages(args, app, prepared, cwd):
             block = {'type': 'tool_use', 'id': params.get('callId'), 'name': name, 'input': params.get('arguments')}
             if not isinstance(block['id'], str) or not block['id'] or block['id'] in call_ids or not isinstance(block['input'], dict): raise BridgeError('Codex login: invalid dynamic tool call')
             call_ids.add(block['id'])
+            start_stream()
             calls.append(block); content.append(block)
             if batch_deadline is None and not app.interrupted: batch_deadline = time.monotonic() + TOOL_BATCH_SECONDS
             if p['stream']:
@@ -456,8 +506,9 @@ def messages(args, app, prepared, cwd):
         elif method == 'turn/completed' and params.get('turn', {}).get('id') == app.turn_id:
             status = params['turn'].get('status')
             if status != 'completed' and not ((calls or app.wait_interrupted) and status == 'interrupted'):
-                code, kind = classify(params['turn'].get('error'))
-                raise BridgeError('Codex login: app-server turn failed', code, kind)
+                error = params['turn'].get('error')
+                code, kind = classify(error)
+                raise BridgeError('Codex login: app-server turn failed', code, kind, code='invalid_encrypted_content' if invalid_encrypted_content(error) else 'bridge_error')
             app.turn_id = None
             app.interrupt_id = None
             break
@@ -465,14 +516,16 @@ def messages(args, app, prepared, cwd):
             error = params.get('error', params)
             if not params.get('willRetry', False):
                 status, kind = classify(error)
-                raise BridgeError('Codex login: app-server turn error', status, kind, retry_seconds(error))
+                raise BridgeError('Codex login: app-server turn error', status, kind, retry_seconds(error), code='invalid_encrypted_content' if invalid_encrypted_content(error) else 'bridge_error')
         elif method and 'id' in obj:
             app.send({'id': obj['id'], 'error': {'code': -32601, 'message': 'not permitted'}})
     if opened and p['stream']: emit('content_block_stop', {'type': 'content_block_stop', 'index': len(content)-1})
+    if reasoning_dropped: note('Codex login: discarded reasoning items: ' + str(reasoning_dropped))
     usage = usage_delta({}, latest)
     if not latest: note('Codex login: usage unavailable; zero is not an accurate count')
     reason = 'tool_use' if calls else 'end_turn'
     if p['stream']:
+        start_stream()
         emit('message_delta', {'type': 'message_delta', 'delta': {'stop_reason': reason, 'stop_sequence': None}, 'usage': usage})
         emit('message_stop', {'type': 'message_stop'})
     else:
@@ -602,6 +655,7 @@ def main():
             sub.add_argument('--account', required=True)
         if name == 'messages':
             sub.add_argument('--web-search', action='store_true')
+            sub.add_argument('--no-keep-reasoning', action='store_true')
             sub.add_argument('--service-tier', choices=('default', 'priority'), default='default')
             sub.add_argument('--model-map', action='append', default=[])
             sub.add_argument('--idle-seconds', type=float, default=300)
@@ -688,7 +742,7 @@ def main():
                 base = match.group(1)
                 if base not in model_map and client_model in model_map: model_map[base] = model_map[client_model]
                 body = dict(body, model=base)
-            prepared = prepare(body, model_map)
+            prepared = prepare(body, model_map, not args.no_keep_reasoning)
             prepared['client_model'] = client_model
             prepared['effort'] = effort
             prepared['explicit_effort'] = bool(match)
@@ -762,7 +816,17 @@ def main():
                                 started = True
                                 original_emit(event, data)
                             globals()['emit'] = tracked
-                        messages(args, app, prepared, cwd)
+                        try:
+                            messages(args, app, prepared, cwd)
+                        except BridgeError as error:
+                            has_reasoning = any(item.get('type') == 'reasoning' for item in prepared['history'])
+                            if started or not has_reasoning or error.code not in ('invalid_encrypted_content', 'reasoning_unavailable'): raise
+                            note('Codex login: reasoning discarded; retrying once')
+                            prepared['history'] = [item for item in prepared['history'] if item.get('type') != 'reasoning']
+                            app.close()
+                            app = App(args, cwd)
+                            app.initialize()
+                            messages(args, app, prepared, cwd)
                 finally:
                     watcher_stop.set()
                     app.close()
