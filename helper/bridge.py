@@ -200,28 +200,37 @@ class App:
 
     def close(self):
         try:
-            if self.proc.poll() is None:
+            try:
+                signal.signal(signal.SIGTERM, signal.SIG_IGN)
+                signal.signal(signal.SIGINT, signal.SIG_IGN)
+                if self.proc.poll() is None:
+                    try:
+                        self.interrupt()
+                        if self.interrupt_id is not None:
+                            deadline = time.monotonic() + 1
+                            while True:
+                                remaining = deadline - time.monotonic()
+                                if remaining <= 0: break
+                                response = self.queue.get(timeout=remaining)
+                                if response is None or response.get('id') == self.interrupt_id: break
+                    except (OSError, ValueError, queue.Empty, AttributeError, BridgeError): pass
+            finally:
                 try:
-                    self.interrupt()
-                    if self.interrupt_id is not None:
-                        deadline = time.monotonic() + 1
-                        while True:
-                            remaining = deadline - time.monotonic()
-                            if remaining <= 0: break
-                            response = self.queue.get(timeout=remaining)
-                            if response is None or response.get('id') == self.interrupt_id: break
-                except (OSError, ValueError, queue.Empty, AttributeError, BridgeError): pass
-                if os.name == 'posix':
-                    try: os.killpg(self.proc.pid, signal.SIGTERM)
-                    except ProcessLookupError: pass
-                else: self.proc.terminate()
-                try: self.proc.wait(timeout=3)
-                except subprocess.TimeoutExpired:
                     if os.name == 'posix':
-                        try: os.killpg(self.proc.pid, signal.SIGKILL)
+                        try: os.killpg(self.proc.pid, signal.SIGTERM)
                         except ProcessLookupError: pass
-                    else: self.proc.kill()
-                    self.proc.wait(timeout=3)
+                    elif self.proc.poll() is None: self.proc.terminate()
+                finally:
+                    try: self.proc.wait(timeout=3)
+                    except subprocess.TimeoutExpired:
+                        try:
+                            if os.name == 'posix':
+                                try: os.killpg(self.proc.pid, signal.SIGKILL)
+                                except ProcessLookupError: pass
+                            else: self.proc.kill()
+                        finally:
+                            try: self.proc.wait(timeout=3)
+                            except subprocess.TimeoutExpired: pass
             self.stderr_thread.join(timeout=1)
         finally:
             for stream in (self.proc.stdin, self.proc.stdout, self.proc.stderr):
@@ -447,6 +456,7 @@ def main():
                             globals()['emit'] = tracked
                         messages(args, app, prepared, cwd)
                 finally:
+                    watcher_stop.set()
                     app.close()
         status = 200
     except InvalidRequest as e:

@@ -57,7 +57,7 @@ for line in sys.stdin:
     elif method == 'turn/start':
         send({'id': ident, 'result': {'turn': {'id': 'turn1', 'items': [{'type': 'fileChange'}] if mode == 'forbidden_response' else []}}})
         event('item/agentMessage/delta', {'delta': 'hello'})
-        if mode in ('abort', 'chatty'): continue
+        if mode in ('abort', 'chatty', 'stubborn'): continue
         if mode == 'forbidden_after': event('item/started', {'item': {'type': 'webSearch'}}); continue
         if mode == 'miderror':
             event('error', {'error': {'message': 'upstream error'}, 'willRetry': False})
@@ -68,6 +68,11 @@ for line in sys.stdin:
             event('thread/tokenUsage/updated', {'tokenUsage': {'total': {'inputTokens': 100, 'cachedInputTokens': 40, 'outputTokens': 9}}})
             event('turn/completed', {'turn': {'id': 'turn1', 'status': 'completed'}})
     elif method == 'turn/interrupt':
+        if mode == 'stubborn':
+            while True:
+                try: event('item/agentMessage/delta', {'delta': 'hello'})
+                except BrokenPipeError: pass
+                time.sleep(0.05)
         if mode == 'chatty':
             while True:
                 event('item/agentMessage/delta', {'delta': 'hello'})

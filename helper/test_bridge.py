@@ -100,6 +100,7 @@ class Contract(unittest.TestCase):
             with self.assertRaises(ProcessLookupError): os.kill(pid, 0)
             self.assertTrue(any(c.get('method') == 'turn/interrupt' for c in records))
             log.unlink()
+            Path(tmp, 'fake_config.json').write_text(json.dumps({'mode': 'stubborn', 'log': str(log)}))
             p = subprocess.Popen([sys.executable, str(BRIDGE), 'messages', '--codex-home', tmp, '--codex-bin', str(FAKE), '--model-map', 'test=gpt-6.1-terra'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
             p.stdin.write(json.dumps(BASE)); p.stdin.close()
             while True:
@@ -107,11 +108,22 @@ class Contract(unittest.TestCase):
                 if not line: self.fail('stream ended before SIGTERM')
                 if line.startswith('event: content_block_delta'): break
             p.send_signal(signal.SIGTERM)
-            p.wait(timeout=10)
-            p.stdout.close(); p.stderr.close()
-            records = [json.loads(x) for x in log.read_text().splitlines()]
-            with self.assertRaises(ProcessLookupError): os.kill(records[0]['pid'], 0)
-            self.assertTrue(any(c.get('method') == 'turn/interrupt' for c in records))
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                records = [json.loads(x) for x in log.read_text().splitlines()]
+                if any(c.get('method') == 'turn/interrupt' for c in records): break
+                time.sleep(0.01)
+            pid = records[0]['pid']
+            try:
+                self.assertTrue(any(c.get('method') == 'turn/interrupt' for c in records))
+                p.send_signal(signal.SIGTERM)
+                p.wait(timeout=10)
+                with self.assertRaises(ProcessLookupError): os.killpg(pid, 0)
+            finally:
+                if p.poll() is None: p.kill(); p.wait()
+                try: os.killpg(pid, signal.SIGKILL)
+                except ProcessLookupError: pass
+                p.stdout.close(); p.stderr.close()
 
     def test_timeout(self):
         for extra in (['--idle-seconds', '0.2'], ['--idle-seconds', '5', '--max-seconds', '0.2']):
