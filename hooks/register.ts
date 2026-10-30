@@ -341,7 +341,7 @@ function optionsCandidate(o: PluginOptions): Record<string, unknown> | undefined
   return { baseUrl: validKey ? baseUrl : DEFAULT_BASE_URL, key: validKey ? key : undefined, apiInvalid: hasKey && !validKey, accounts: codexValid ? accounts : [], codexModels: codexValid ? codexModels : [],
     accountsDir: dir || undefined, codexBin: bin, pythonBin: python, models: validKey ? text('models').split(/[\s,]+/).filter(Boolean) : [], maxTokens: number('maxTokens', 32_000),
     effortMode: text('effortMode') === 'none' ? 'none' : 'suffix', imageModel: text('imageModel') !== 'none' ? text('imageModel') || undefined : undefined, imageAuto: text('imageModel') === '',
-    defaultWindow: number('contextWindow', 272_000), contextWindowExplicit: o.contextWindow !== undefined, sideModel: side === 'none' ? undefined : side || 'claude-haiku-5-5',
+    defaultWindow: number('contextWindow', 272_000), contextWindowExplicit: typeof o.contextWindow === 'number', sideModel: side === 'none' ? undefined : side || 'claude-haiku-5-5',
     keepThinking: o.keepThinking !== false, localTitle: o.localTitle !== false, localContext: o.localContext !== false,
     toolSearch: text('toolSearch') || 'auto', toolSearchPercent: number('toolSearchPercent', 10),
     fallbackModel: text('fallbackModel'), fallbackPercent: number('fallbackPercent', 100), workerModel: text('workerModel'), promptsDir: text('promptsDir') }
