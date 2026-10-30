@@ -100,12 +100,56 @@ class DelegateTest(unittest.TestCase):
         other = self.root / 'other'
         subprocess.run(['git', 'clone', '-q', str(self.repo), str(other)], check=True)
         (other / 'file').write_text('wrong repository\n')
-        with patch.dict(os.environ, {'GIT_DIR': str(other / '.git'), 'SECRET_TOKEN': 'secret'}):
+        with patch.dict(os.environ, {'GIT_DIR': str(other / '.git'), 'GIT_WORK_TREE': str(other),
+                                    'GIT_EXTERNAL_DIFF': str(script), 'SECRET_TOKEN': 'secret'}):
             diff = delegate.diff_for(str(self.repo), None)
             self.assertNotIn('SECRET_TOKEN', delegate.git_env())
             self.assertNotIn('GIT_DIR', delegate.git_env())
         self.assertIn(b'expected diff', diff)
         self.assertNotIn(b'wrong repository', diff)
+        self.assertFalse(flag.exists())
+
+        with patch.dict(os.environ, {'GIT_EXTERNAL_DIFF': str(script)}):
+            diff = delegate.diff_for(str(self.repo), None)
+        self.assertIn(b'expected diff', diff)
+        self.assertFalse(flag.exists())
+
+        for key in ('diff.external', 'diff.x.command'):
+            subprocess.run(['git', '-C', str(self.repo), 'config', key, str(script)], check=True)
+            (self.repo / '.gitattributes').write_text('* filter=x diff=x\n')
+            self.assertIn(b'expected diff', delegate.diff_for(str(self.repo), None))
+            self.assertFalse(flag.exists())
+            subprocess.run(['git', '-C', str(self.repo), 'config', '--unset', key], check=True)
+
+        subprocess.run(['git', '-C', str(self.repo), 'config', 'filter.a.clean\x0bfilter.b.clean', str(script)], check=True)
+        (self.repo / '.gitattributes').write_text('* filter=a.clean\x0bfilter.b\n')
+        with self.assertRaisesRegex(delegate.Failure, 'Unsupported Git filter name'):
+            delegate.diff_for(str(self.repo), None)
+        self.assertFalse(flag.exists())
+
+        super_repo = self.root / 'super'
+        subprocess.run(['git', 'init', '-q', str(super_repo)], check=True)
+        def super_git(*args):
+            subprocess.run(['git', '-C', str(super_repo), *args], check=True, stdout=subprocess.DEVNULL)
+        super_git('config', 'user.name', 'Test')
+        super_git('config', 'user.email', 'test@example.invalid')
+        super_git('commit', '--allow-empty', '-qm', 'initial')
+        super_git('-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', str(other), 'sub')
+        super_git('commit', '-qm', 'add submodule')
+        sub = super_repo / 'sub'
+        subprocess.run(['git', '-C', str(sub), 'config', 'user.name', 'Test'], check=True)
+        subprocess.run(['git', '-C', str(sub), 'config', 'user.email', 'test@example.invalid'], check=True)
+        (sub / 'file').write_text('committed\n')
+        subprocess.run(['git', '-C', str(sub), 'commit', '-qam', 'change'], check=True)
+        super_git('add', 'sub')
+        subprocess.run(['git', '-C', str(sub), 'config', 'filter.x.clean', str(script)], check=True)
+        (sub / '.gitattributes').write_text('* filter=x\n')
+        (sub / 'file').write_text('different\n')
+        self.assertIn(b'Subproject commit', delegate.diff_for(str(super_repo), None))
+        self.assertFalse(flag.exists())
+        super_git('branch', 'baseline')
+        super_git('commit', '-qm', 'update submodule')
+        self.assertIn(b'Subproject commit', delegate.diff_for(str(super_repo), 'baseline'))
         self.assertFalse(flag.exists())
 
     def test_blocked_stdin_times_out(self):

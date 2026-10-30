@@ -73,12 +73,13 @@ def validate_ref(cwd, base):
 def diff_for(cwd, base):
     if base:
         validate_ref(cwd, base)
-        args = ['diff', '--no-ext-diff', '--no-textconv', base + '...HEAD', '--']
+        args = ['diff', '--no-ext-diff', '--no-textconv', '--ignore-submodules=dirty', base + '...HEAD', '--']
     else:
-        args = ['diff', '--no-ext-diff', '--no-textconv', 'HEAD', '--']
+        args = ['diff', '--no-ext-diff', '--no-textconv', '--ignore-submodules=dirty', 'HEAD', '--']
     names = git(cwd, ['config', '--name-only', '--get-regexp', r'^filter\.'], allow_no_match=True)
     overrides = []
-    for key in names.decode('utf-8', 'replace').splitlines():
+    for key in names.decode('utf-8', 'replace').split('\n'):
+        if not key: continue
         match = re.fullmatch(r'filter\.([A-Za-z0-9_-]+)\.[A-Za-z0-9-]+', key)
         if not match:
             raise Failure('Unsupported Git filter name; remove or rename the filter before reviewing.')
