@@ -623,7 +623,7 @@ const PRIVATE_FETCH = 'web_fetch does not fetch local or private addresses; use 
 const IPV4_ADDRESS = /^(?:0|[1-9]\d{0,2})(?:\.(?:0|[1-9]\d{0,2})){3}$/
 
 // DNS answers are untrusted too. URL canonicalises IPv6 (including dotted mapped IPv4); malformed answers fail closed.
-function privateAddress(address: string): boolean {
+export function privateAddress(address: string): boolean {
   if (/^\d+\.\d+\.\d+\.\d+$/.test(address)) {
     const bytes = address.split('.').map(Number)
     if (!IPV4_ADDRESS.test(address) || bytes.some(b => b > 255)) return true

@@ -1,7 +1,7 @@
 import { test, expect, mock } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
-import { loopbackHost } from './register.ts'
+import { loopbackHost, privateAddress } from './register.ts'
 
 // What the compliance rules in docs/COMPLIANCE.md turn on: a model the bridge does not own always goes down the
 // chain (`next`), a bridge model never does, and the mod stays inert on a config that names a subscription host or a
@@ -1428,4 +1428,14 @@ test('/model: PostModelSwitch applies the local window and restores it for Claud
   expect(w.envSet).toContainEqual(['CLAUDE_CODE_MAX_CONTEXT_TOKENS', '272000'])
   await $.classic.PostModelSwitch({ from_model: LOCAL, to_model: 'claude-sonnet-5-5' } as never)
   expect(w.envSet).toContainEqual(['CLAUDE_CODE_MAX_CONTEXT_TOKENS', undefined])
+})
+
+test('web_fetch classifies embedded IPv4 addresses in DNS answers', () => {
+  for (const address of ['::ffff:0:127.0.0.1', '::FFFF:0:127.0.0.1', '::5efe:127.0.0.1']) {
+    expect(privateAddress(address)).toBe(true)
+  }
+  for (const address of ['::ffff:0:8.8.8.8', '::5efe:8.8.8.8', '2001:db8::5efe:127.0.0.1']) {
+    expect(privateAddress(address)).toBe(false)
+  }
+  expect(privateAddress('fe80::5efe:8.8.8.8')).toBe(true)
 })
