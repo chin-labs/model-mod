@@ -1402,10 +1402,53 @@ test('Codex login: status and setup preserve the separate upstream', { options: 
   expect(w.saved).toEqual([{ key: 'model-mod.codexModels', value: 'gpt-6.1-terra' }, { key: 'model-mod.codexAccounts', value: '' }, { key: 'model-mod.codexModels', value: '' }])
 })
 
+test('Codex login: device setup and manual fallback', async ($, on) => {
+  let loggedIn = false
+  const w = world(on, null, 'claude-sonnet-5-5', { stdout: JSON.stringify({ url: 'https://example.test/device', code: 'ABCD-EFGHI' }) + '\n', code: 0 }, argv => {
+    if (argv[1] === '--version') return { exitCode: 0, stdout: argv[0] === 'python3' ? 'Python 3.12.0' : 'codex-cli 0.165.0' }
+    if (argv.includes('prepare-home')) return { exitCode: 0, stdout: '{"created":true}' }
+    if (argv.includes('check')) { const status = loggedIn; loggedIn = true; return { exitCode: status ? 0 : 68, stdout: '{}' } }
+    if (argv.includes('models')) return { exitCode: 0, stdout: '{"models":[{"id":"gpt-6.1-terra"}]}' }
+    return { exitCode: 0, stdout: '{}' }
+  })
+  w.chooseUpstream = true
+  w.answers = ['Codex login (recommended)', 'main', 'Continue (after logging in)', 'All (recommended)']
+  expect((await $.command.run(SETUP)).text).toContain('1 models configured')
+  expect(w.questions.some(q => q.question.includes('https://example.test/device'))).toBe(true)
+})
+
+test('Codex login: cancelling device setup closes the child', async ($, on) => {
+  const w = world(on, null, 'claude-sonnet-5-5', { stdout: JSON.stringify({ url: 'https://example.test/device', code: 'ABCD-EFGHI' }) + '\n', code: 0, hang: true }, argv => {
+    if (argv[1] === '--version') return { exitCode: 0, stdout: argv[0] === 'python3' ? 'Python 3.12.0' : 'codex-cli 0.165.0' }
+    if (argv.includes('prepare-home')) return { exitCode: 0, stdout: '{"created":true}' }
+    if (argv.includes('check')) return { exitCode: 68, stdout: '{}' }
+    return { exitCode: 0, stdout: '{}' }
+  })
+  w.chooseUpstream = true
+  w.answers = ['Codex login (recommended)', 'main', null]
+  expect((await $.command.run(SETUP)).text).toContain('then run /model-mod:setup again')
+  expect(w.killed).toBe(1)
+  expect(w.ran.some(argv => argv.includes('cleanup-home'))).toBe(true)
+})
+
+test('Codex login: unavailable device output falls back to manual login', async ($, on) => {
+  const w = world(on, null, 'claude-sonnet-5-5', { stdout: '', code: 1 }, argv => {
+    if (argv[1] === '--version') return { exitCode: 0, stdout: argv[0] === 'python3' ? 'Python 3.12.0' : 'codex-cli 0.165.0' }
+    if (argv.includes('prepare-home')) return { exitCode: 0, stdout: '{"created":true}' }
+    if (argv.includes('check')) return { exitCode: 68, stdout: '{}' }
+    return { exitCode: 0, stdout: '{}' }
+  })
+  w.chooseUpstream = true
+  w.answers = ['Codex login (recommended)', 'main']
+  expect((await $.command.run(SETUP)).text).toContain('then run /model-mod:setup again')
+  expect(w.ran.some(argv => argv.includes('cleanup-home'))).toBe(true)
+})
+
 test('Codex login: setup and status explain unsupported versions', { options: CODEX_OPTIONS }, async ($, on) => {
   let version = '0.164.0'
   const w = world(on, null, CODEX_MODEL, { stdout: '', code: 0 }, argv => {
     if (argv[1] === '--version') return { exitCode: 0, stdout: argv[0] === 'python3' ? 'Python 3.12.0' : 'codex-cli ' + version }
+    if (argv.includes('prepare-home')) return { exitCode: 0, stdout: JSON.stringify({ created: false }) }
     if (argv.includes('check')) return { exitCode: 67, stdout: JSON.stringify({ pythonVersion: '3.12.0', codexVersion: version, versionStatus: 'too_old' }) }
     return { exitCode: 1, stdout: '' }
   })
