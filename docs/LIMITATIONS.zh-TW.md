@@ -2,7 +2,7 @@
 
 [English](LIMITATIONS.md)
 
-本頁說明你的模型與訂閱模型有何不同、哪些行為尚未驗證，以及哪些客戶端請求仍可能送到你的訂閱。適用範圍是由 model-mod 路由的模型；訂閱模型維持客戶端原本的路徑。已測試的上游是 CLIProxyAPI 搭配你自己登入的 Codex。設定方式見 [README](../README.zh-TW.md)。
+本頁說明你的模型與訂閱模型有何不同、哪些行為尚未驗證，以及哪些客戶端請求仍可能送到你的訂閱。適用範圍是由 model-mod 路由的模型；訂閱模型維持客戶端原本的路徑。已測試的 API 上游是 CLIProxyAPI ；Codex 登入是另一種上游。設定方式見 [README](../README.zh-TW.md)。
 
 ## 已測試版本
 
@@ -10,17 +10,26 @@ model-mod 在客戶端 **2.1.299 至 2.1.310** 測試過；在 2.1.310 檢查了
 
 Marketplace 安裝已用本機 clone 與使用標準 HTTP 協定的 Git 伺服器測試過。客戶端不支援從單純（dumb）HTTP 的 Git 伺服器安裝，且解除安裝後會留下插件快取。
 
+## Codex 登入的限制
+
+- 最近實測的 Codex CLI 版本為 **0.165.0**，也是最低版本；更舊的版本會被拒絕。較新版本會照常執行，但未逐版驗證。更新已測版本紀錄前，應對新版本執行手動 live 契約測試。
+- 這是**軟隔離，不是嚴格的工具白名單**。helper 使用專用家目錄、唯讀 sandbox、不允許核准並關閉部分功能，但兩個 MCP 資源清單工具仍可能執行。執行期項目檢查遇到不允許或未知的項目時，會終止回合並顯示固定的 `unsupported codex behavior: <type>` 訊息。開始 thread 前，`config/read` 會檢查有效設定；新版若改變設定或協定，helper 會 fail closed 並回報原因。重試前請檢查設定與 Codex 相容性。
+- `max_tokens` 會接受但忽略；`tool_choice`、`temperature`、`top_p`、`stop_sequences`、`cache_control`、thinking 預算與簽章會被忽略並記錄診斷；歷史 thinking 區塊會丟棄。不要依賴這些控制項生效。
+- Codex 模型不提供 `generate_image` 與 `web_search`，但保留 `web_fetch`。Codex 自動壓縮項目不受支援，因此 使用者未明設 `contextWindow` 時，Codex 模型採保守的 128,000 token 預設視窗。目前明設 272,000 也會被視為預設值；其他有效值可覆寫。這不會停用 model-mod 自己的壓縮。
+- 每個步驟都會啟動一個 helper 與 `codex app-server` 程序，啟動延遲約數秒。Windows 在設計上支援，但**未驗證**。
+- Codex 的額度與速率限制取決於你自己的訂閱；達到限制時 model-mod 不會輪替帳號。
+
 ## 已知限制
 
 | 項目 | 會發生什麼 | 變通方法 |
 |---|---|---|
-| 輸出長度與 context | `maxTokens` 預設 32000；CLIProxyAPI 搭配 Codex 未強制較小的值，實際最大輸出未知。預設 context 視窗為 272000（可設 `contextWindow`，最小 32000）。視窗過小時，客戶端的自動壓縮門檻會變負值，造成反覆壓縮。 | 把 `contextWindow` 設為模型的實際上限。 |
+| 輸出長度與 context | `maxTokens` 預設 32000；CLIProxyAPI 搭配 Codex 未強制較小的值，實際最大輸出未知。API 模型的預設 context 視窗為 272000（可設 `contextWindow`，最小 32000）。視窗過小時，客戶端的自動壓縮門檻會變負值，造成反覆壓縮。 | 把 `contextWindow` 設為模型的實際上限。 |
 | 請求內容 | 對話請求帶 `model`、`max_tokens`、`stream`、`messages`、`system` 及選用的 `tools`；客戶端的其他請求欄位不會送出。 | 無需處理。 |
-| 推理 | 只在工具迴圈內交回 Codex 形式的加密推理簽章；其他 thinking 與 server-tool 區塊會移除。簽章被拒時，去除後重試一次。 | 上游拒絕簽章時，設 `keepThinking: false`。 |
-| Effort | 五個等級以模型後綴（如 `model(high)`）送出。這只確認名稱有送到上游，不代表推理強度會改變。Ultracode 是獨立開關，不改變等級；`/effort ultra` 由客戶端自己拒絕。 | 上游拒絕後綴時，設 `effortMode: none`。 |
+| 推理 | API 路徑只在工具迴圈內交回 Codex 形式的加密推理簽章；其他 thinking 與 server-tool 區塊會移除。簽章被拒時，去除後重試一次。 | 上游拒絕簽章時，設 `keepThinking: false`。 |
+| Effort | API 路徑以模型後綴（如 `model(high)`）送出五個等級；Codex 登入路徑由 helper 將後綴對映成 app-server effort。這只確認名稱有送到上游，不代表推理強度會改變。Ultracode 是獨立開關，不改變等級；`/effort ultra` 由客戶端自己拒絕。 | 上游拒絕後綴時，設 `effortMode: none`。 |
 | 失敗處理 | 尚未有任何輸出前，HTTP 429、502、503、504、529 與可辨識的暫時性錯誤（含早期的 `overloaded_error` 事件）會在 2、6、15 秒後重試（最多三次）。整數 `Retry-After` 為 0–15 秒時，下一次等待至少採用該值；超過 15 秒則立即以 HTTP 狀態與要求的等待秒數結束回合。無效值與 HTTP 日期一律忽略。輸出開始後串流中斷，該回合直接結束，不會重播。失敗的回合不會改用其他模型或訂閱重試。 | 重新送出訊息，或用 `/model` 換模型。 |
 | 壓縮 | 只使用 `prompts/` 內的提示檔；缺檔時略過本地壓縮。摘要品質取決於模型。送去摘要的逐字稿有上限（總計 600000 字元、每則 20000、每個工具結果 1500）。代理內的壓縮尚未驗證。 | 重要事項寫進專案指示，不要只留在對話裡。 |
-| 工具 | 工具 schema 為開放式（只有名稱與描述）。在你的模型上，`web_search`、`web_fetch` 取代原生 WebSearch、WebFetch，且 `web_fetch` 回傳頁面內容，不做模型摘要。四個 mod 工具（`web_search`、`web_fetch`、`generate_image`、`tool_search`）在訂閱模型下拒絕呼叫，請改用內建工具。`web_fetch` 會拒絕部分公開 IPv6 literal，特殊 IPv6 過渡形式也未完整涵蓋。 | 改用其他網址形式，或用其他工具擷取。 |
+| 工具 | 工具 schema 為開放式（只有名稱與描述）。在 API 模型上，`web_search`、`web_fetch` 取代原生 WebSearch、WebFetch；Codex 模型保留 `web_fetch`，但不提供 `web_search`，且 `web_fetch` 回傳頁面內容，不做模型摘要。四個 mod 工具（`web_search`、`web_fetch`、`generate_image`、`tool_search`）在訂閱模型下拒絕呼叫，請改用內建工具。`web_fetch` 會拒絕部分公開 IPv6 literal，特殊 IPv6 過渡形式也未完整涵蓋。 | 改用其他網址形式，或用其他工具擷取。 |
 | 子代理與 Workflow | 子代理取得工作階段系統提示加上委派備註。訂閱工作階段的 Agent 呼叫不能直接指定你的模型 ID；請用 `model-mod:local-worker` 代理類型或 Workflow agent。context 視窗覆寫跟隨主工作階段。 | 設定 `workerModel` 並使用 `model-mod:local-worker`。 |
 | 圖片與 PDF | 圖片可用。單頁 PDF 會轉成圖片。原生 document 區塊與多頁 PDF 尚未驗證。 | 把頁面轉成圖片。 |
 | 用量顯示 | 送往你上游的請求不會更新訂閱用量顯示，CLIProxyAPI 的回覆也不帶 rate-limit 欄位。 | 查看上游自己的用量頁面。 |

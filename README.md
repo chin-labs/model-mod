@@ -1,6 +1,6 @@
 # model-mod
 
-Use your own API models in Claude Code.
+Use your own Codex login or API models in Claude Code.
 
 [![Version](https://img.shields.io/github/v/release/chin-labs/model-mod)](https://github.com/chin-labs/model-mod/releases)
 [![License](https://img.shields.io/github/license/chin-labs/model-mod)](LICENSE)
@@ -8,17 +8,24 @@ Use your own API models in Claude Code.
 
 [繁體中文](README.zh-TW.md)
 
-model-mod is a plugin (a "mod") for Claude Code that puts models from your own Messages-compatible API alongside the built-in models—for example, CLIProxyAPI with your own Codex login. Pick one with `/model-mod:model` to route that session to your upstream; use `/model` to go back to a subscription model. Subscription models, `ANTHROPIC_BASE_URL` and Remote Control keep Claude Code's normal connection.
+model-mod is a plugin (a "mod") for Claude Code that puts models from your own Codex login or Messages-compatible API alongside the built-in models. Both upstreams can be configured together. Pick one with `/model-mod:model` to route that session to your upstream; use `/model` to go back to a subscription model. Subscription models, `ANTHROPIC_BASE_URL` and Remote Control keep Claude Code's normal connection.
 
 ## Requirements
 
 - Claude Code with mod support, tested on **Claude Code 2.1.299 to 2.1.310**; other versions are untested.
-- Your own running Messages-compatible upstream and its API key. CLIProxyAPI is the tested upstream; model-mod does not install or run it.
+- Codex login: Python 3.9 or newer and an installed `codex` CLI. Or use your own running Messages-compatible API and its API key; CLIProxyAPI is the tested API upstream. model-mod does not install or run the API server.
 - `curl` and `bash`; web fetch and image generation need additional system tools listed in [Configuration](docs/CONFIGURATION.md#set-up-your-upstream-first).
 
 ## Quick start
 
-[Prepare your upstream](docs/CONFIGURATION.md#set-up-your-upstream-first) first, then run these in an interactive Claude Code session:
+Choose either or both upstreams. For Codex login, install Python 3.9+ and the official `codex` CLI. In your terminal, create a dedicated home and log in yourself (example for macOS/Linux):
+
+```bash
+mkdir -p ~/.config/model-mod/accounts/main
+CODEX_HOME="$HOME/.config/model-mod/accounts/main" codex login
+```
+
+For an API server, [prepare your upstream](docs/CONFIGURATION.md#set-up-your-upstream-first) and its API key. Then run these in an interactive Claude Code session:
 
 ```text
 /plugin marketplace add chin-labs/model-mod
@@ -28,7 +35,7 @@ model-mod is a plugin (a "mod") for Claude Code that puts models from your own M
 /model-mod:model
 ```
 
-Enter your upstream API key in the configuration dialog; it is stored as a secret and never typed into chat. `/model-mod:setup` confirms the upstream URL and lets you choose models; `/model-mod:model` lists them. If the plugin is not active after configuring, run `/reload-plugins` or restart Claude Code.
+`/model-mod:setup` first asks which upstream to configure. For Codex, select the account and models; if login is missing, follow the displayed terminal commands and run setup again. For an API server, enter its API key in the configuration dialog, where it is stored as a secret rather than typed into chat; setup confirms the URL and lets you choose models. `/model-mod:model` lists both kinds. If the plugin is not active after configuring, run `/reload-plugins` or restart Claude Code.
 
 Alternatively, add and install from a shell:
 
@@ -46,7 +53,7 @@ Run `/model-mod:status` to check activation, then select your model and send a s
 
 - Your models alongside subscription models, switched per session with `/model-mod:model`.
 - Streaming, tool calls, Skills, MCP servers, subagents and Workflow agents.
-- Web search, web fetch, image generation and tool search for your models.
+- Web fetch and tool search for both upstreams; web search and image generation for API models only.
 - Automatic retry of transient upstream errors with bounded `Retry-After` handling, and Claude Code's five effort levels.
 - Compaction through your selected model and optional automatic switching at your subscription's usage limit.
 
@@ -54,9 +61,9 @@ Run `/model-mod:status` to check activation, then select your model and send a s
 
 | Command | What it does |
 |---|---|
-| `/model-mod:setup` | Confirm the upstream URL and choose the models to offer. Cancelling changes nothing. |
+| `/model-mod:setup` | Choose an upstream, then configure its account or URL and select models. Cancelling changes nothing. |
 | `/model-mod:model` | List your models and switch to the one you pick (↑↓ to move, Enter to select, Esc to close). On a short terminal, Remote Control or mobile, a paged menu is used instead. |
-| `/model-mod:refresh` | Re-read the prompts and the upstream's model list. |
+| `/model-mod:refresh` | Re-read prompts and configuration; refresh the API model list when configured. |
 | `/model-mod:status` | Show activation, model count and tool setup. Loopback hostnames are shown; other hosts appear as `host=remote`. Warns when plain HTTP sends the API key unencrypted to a non-loopback host. |
 | `/model` | Claude Code's own command, unchanged: subscription models. Typing one of your model IDs (`/model <id>`) also works. |
 | `/btw <question>` | With one of your models selected, answered through your upstream with read-only context and no tools. |

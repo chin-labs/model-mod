@@ -2,11 +2,15 @@
 
 [English](CONFIGURATION.md) · [README](../README.zh-TW.md)
 
+## 選擇上游
+
+Codex 登入與 Messages 相容 API 伺服器是同等的選擇，也可並存。使用 Codex 時，先安裝 Python 3.9 以上版本與官方 `codex` CLI，再執行 `/model-mod:setup`，第一步選 **Codex login**。需要登入時，setup 會顯示建立專用帳號家目錄及在終端機執行 `codex login` 的命令；登入後重新執行 setup。使用 API 伺服器時，請依下一節準備，並在 setup 選 **Compatible API server**。
+
 ## 先準備好你的上游
 
 你自己的上游需在 `/v1/messages` 提供 Messages 相容的串流 API，並備好 API 金鑰。已測試的上游是 CLIProxyAPI。上游若提供 `/v1/models`，setup 可自動探索模型；否則請手動輸入模型 ID。
 
-model-mod 本身沒有模型。它把工作階段送往一個*上游*：接受 Messages 風格串流請求（`/v1/messages`）並驗證 API 金鑰的伺服器。安裝前：
+API 伺服器路徑會把工作階段送往接受 Messages 風格串流請求（`/v1/messages`）並驗證 API 金鑰的伺服器。安裝前：
 
 1. **取得上游。** 已測試的是 CLIProxyAPI。依其文件安裝，並用你自己的供應商帳號登入；model-mod 不會安裝、啟動或設定它。
 2. **確認它正在執行**，且從執行 Claude Code 的機器連得到。下列檢查讀取的是 `/model-mod:setup` 使用的同一份模型清單（請先在 shell 設好金鑰並換成你的位址）；回傳 `200` 表示位址與金鑰可用：
@@ -25,12 +29,12 @@ model-mod 本身沒有模型。它把工作階段送往一個*上游*：接受 M
 
 下列選項出現在設定對話框（`/plugin configure model-mod@model-mod`）。
 
-只有 `apiKey` 與 `baseUrl` 是必要的：沒有金鑰 mod 就不啟用；除非上游正好在預設位址，否則要調整 `baseUrl`。其他選項都是選用。
+有效的 `apiKey` 或有效的 `codexAccounts` 與 `codexModels` 組合，任一即可啟用 mod；兩者可並存。無效的 API 金鑰只停用 API 端，不會停用有效的 Codex 設定。使用 API 路徑且伺服器不在預設位址時，請調整 `baseUrl`。
 
 | 選項 | 用途 | 預設值 |
 |---|---|---|
 | `baseUrl` | 你的上游基底網址，不含 `/v1`。僅限 HTTP／HTTPS；含帳密、查詢參數、fragment 的網址，以及 `anthropic.com`、`claude.ai` 主機會被拒絕。 | `http://127.0.0.1:8317` |
-| `apiKey` | 你的上游 API 金鑰（機密）。未設定時 mod 不啟用。 | 無 |
+| `apiKey` | API 上游的金鑰（機密）。API 路徑需要此欄位。 | 無 |
 | `models` | 以逗號分隔的模型 ID，mod 只接管這些。空白：上游列出的所有 chat 模型。 | 空白 |
 | `imageModel` | `generate_image` 使用的模型。空白：`gpt-image-2`，或上游列出的第一個 `gpt-image*`。`none` 關閉此工具。 | 空白 |
 | `contextWindow` | 對未知視窗大小的模型所假設的輸入 token 數（最小 32000）。 | `272000` |
@@ -39,12 +43,24 @@ model-mod 本身沒有模型。它把工作階段送往一個*上游*：接受 M
 | `workerModel` | `model-mod:local-worker` 代理類型使用的模型。空白：用 fallback 模型；兩者都空白則不提供 worker 代理類型。 | 空白 |
 | `promptsDir` | 存放自訂 `compact.md`、`title.md`、`subagent-note.md`、`worker.md` 的絕對路徑目錄。空白：使用插件內的 `prompts/`。 | 空白 |
 
+### Codex 登入選項
+
+| 選項 | 格式與預設值 |
+|---|---|
+| `codexAccounts` | 以逗號分隔帳號名稱，預設空白。每個名稱 1–32 字元，首字元為 `[a-z0-9]`，其餘使用 `[a-z0-9-]`。 |
+| `codexModels` | 以逗號分隔模型名稱，預設空白。每個名稱 1–64 字元，首字元為 `[A-Za-z0-9]`，其餘使用 `[A-Za-z0-9._-]`；含 `claude` 或 `anthropic` 的名稱不分大小寫均會拒絕。 |
+| `codexAccountsDir` | 絕對目錄；預設 `~/.config/model-mod/accounts`，Windows 為 `%APPDATA%\model-mod\accounts`（未驗證）。每個帳號使用獨立子目錄。 |
+| `codexBin` | 執行檔名稱或絕對路徑；預設 `codex`。 |
+| `pythonBin` | 執行檔名稱或絕對路徑；預設 `python3`。Windows 請設為 `python`（未驗證）。 |
+
+路徑與命令不得包含 NUL 或換行；單純命令名稱只能包含英文字母、數字、`.`、`_`、`-`。帳號與模型組成 ID `<帳號>/<模型>`，顯示為 `<模型> @ <帳號>`。每個帳號都會搭配每個已設定的模型。API 模型 ID 相同時，Codex 優先。setup 會合併並去重帳號，但會以選定模型**覆寫**適用於所有帳號的 `codexModels`；新增帳號時請重新選取完整所需模型清單。`fallbackModel` 與 `workerModel` 可指向有效的 Codex ID。
+
 進階選項不會出現在對話框，請寫在 Claude Code 設定檔 `pluginConfigs` 下該插件的 `options` 物件（鍵為 `model-mod@model-mod`；以 `--plugin-dir` 載入時為 `model-mod@inline`）。API 金鑰仍放在機密欄位。
 
 | 進階選項 | 用途 | 預設值 |
 |---|---|---|
 | `maxTokens` | 以 `max_tokens` 送出。 | `32000` |
-| `effortMode` | `suffix` 依目前 effort 等級送出 `model(level)`；`none` 送純模型 ID，適用於拒絕後綴的上游。 | `suffix` |
+| `effortMode` | 僅適用 API 路徑：`suffix` 依目前 effort 等級送出 `model(level)`；`none` 送純模型 ID，適用於拒絕後綴的上游。 | `suffix` |
 | `sideModel` | 選了你的模型時，Claude Code 自己的側請求所用的官方模型。`none` 不設定；環境中已有的值優先。 | `claude-haiku-5-5` |
 | `keepThinking` | 在工具迴圈內交回 Codex 形式的加密推理簽章。上游不接受時設為 `false`。 | `true` |
 | `localTitle` | 經你的上游依第一個提示命名工作階段。`false` 則把該提示送到官方 `sideModel`。 | `true` |
@@ -54,7 +70,7 @@ model-mod 本身沒有模型。它把工作階段送往一個*上游*：接受 M
 
 ### 進階：外部設定檔
 
-給腳本與測試環境使用：mod 可改從 JSON 檔讀取設定，不用插件選項。啟動 Claude Code 前，把環境變數 `MODEL_MOD_CONFIG` 設為該檔的絕對路徑。插件選項優先：只有選項中沒有設定 `apiKey` 時才會讀此檔；`apiKey` 若無法使用，mod 會停用，不會退回讀檔。mod 絕不讀取 Claude Code 自己的憑證檔。
+給腳本與測試環境使用：mod 可改從 JSON 檔讀取設定，不用插件選項。啟動 Claude Code 前，把環境變數 `MODEL_MOD_CONFIG` 設為該檔的絕對路徑。插件選項優先：只有插件選項沒有可用的上游設定時才會讀檔；`apiKey` 若無法使用，mod 會停用，不會退回讀檔。mod 絕不讀取 Claude Code 自己的憑證檔。
 
 檔案中不放 `apiKey`，而是指定 `headerFile`：一個給你的上游用的 HTTP 標頭行檔案（授權那一行），mod 以 `-H @file` 交給 curl。程序參數中只會出現該檔的路徑，不會出現金鑰本身。
 

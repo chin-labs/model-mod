@@ -1,6 +1,6 @@
 # model-mod
 
-在 Claude Code 中使用你自己的 API 模型。
+在 Claude Code 中使用你自己的 Codex 登入或 API 模型。
 
 [![Version](https://img.shields.io/github/v/release/chin-labs/model-mod)](https://github.com/chin-labs/model-mod/releases)
 [![License](https://img.shields.io/github/license/chin-labs/model-mod)](LICENSE)
@@ -8,17 +8,24 @@
 
 [English](README.md)
 
-model-mod 是供 Claude Code 使用的插件（mod），讓你把自己的 Messages 相容 API 模型放在內建模型旁邊，例如 CLIProxyAPI 搭配自己登入的 Codex。用 `/model-mod:model` 選你的模型，該工作階段就改走你的上游；用 `/model` 回到訂閱模型。訂閱模型、`ANTHROPIC_BASE_URL` 與 Remote Control 維持 Claude Code 原本的連線。
+model-mod 是供 Claude Code 使用的插件（mod），讓你把自己的 Codex 登入或 Messages 相容 API 模型放在內建模型旁邊。兩種上游可同時設定。用 `/model-mod:model` 選你的模型，該工作階段就改走你的上游；用 `/model` 回到訂閱模型。訂閱模型、`ANTHROPIC_BASE_URL` 與 Remote Control 維持 Claude Code 原本的連線。
 
 ## 需求
 
 - 支援 mod 的 Claude Code，已在 **Claude Code 2.1.299 至 2.1.310** 測試；其他版本未測。
-- 你自己已啟動的 Messages 相容上游及其 API 金鑰。已測試的上游是 CLIProxyAPI；model-mod 不會安裝或啟動它。
+- Codex 登入：Python 3.9 以上版本及已安裝的 `codex` CLI。或使用你自己已啟動的 Messages 相容 API 與其金鑰；已測試的 API 上游是 CLIProxyAPI ，model-mod 不會安裝或啟動該伺服器。
 - `curl` 與 `bash`；網頁擷取與圖片生成另需[設定說明](docs/CONFIGURATION.zh-TW.md#先準備好你的上游)列出的系統工具。
 
 ## 快速開始
 
-先[準備好你的上游](docs/CONFIGURATION.zh-TW.md#先準備好你的上游)，再於 Claude Code 的互動工作階段中執行：
+可選擇其中一種或同時使用兩種上游。使用 Codex 登入時，先安裝 Python 3.9 以上版本與官方 `codex` CLI，再於終端機建立專用家目錄並自行登入（以下為 macOS／Linux 範例）：
+
+```bash
+mkdir -p ~/.config/model-mod/accounts/main
+CODEX_HOME="$HOME/.config/model-mod/accounts/main" codex login
+```
+
+使用 API 伺服器時，先[準備好上游](docs/CONFIGURATION.zh-TW.md#先準備好你的上游)及其 API 金鑰。接著在 Claude Code 的互動工作階段中執行：
 
 ```text
 /plugin marketplace add chin-labs/model-mod
@@ -28,7 +35,7 @@ model-mod 是供 Claude Code 使用的插件（mod），讓你把自己的 Messa
 /model-mod:model
 ```
 
-上游 API 金鑰請在設定對話框填入；它會當作機密儲存，不必在對話中輸入。`/model-mod:setup` 會確認上游網址，並讓你選擇模型；`/model-mod:model` 隨後列出這些模型。設定完成後若插件尚未啟用，請執行 `/reload-plugins` 或重新啟動 Claude Code。
+`/model-mod:setup` 第一步會詢問要設定哪種上游。Codex 登入路徑可選帳號與模型；若尚未登入，請依畫面指示在終端機執行命令，再重新執行 setup。API 伺服器的金鑰請在設定對話框填入，會當作機密儲存，不必在對話中輸入；setup 會確認網址並讓你選模型。`/model-mod:model` 會列出兩種模型。設定完成後若插件尚未啟用，請執行 `/reload-plugins` 或重新啟動 Claude Code。
 
 也可從 shell 加入 marketplace 並安裝：
 
@@ -46,7 +53,7 @@ claude plugin configure model-mod@model-mod
 
 - 你的模型與訂閱模型並存，用 `/model-mod:model` 依工作階段切換。
 - 支援串流、工具呼叫、Skills、MCP 伺服器、子代理與 Workflow agent。
-- 提供給你的模型使用的網頁搜尋、網頁擷取、圖片生成與工具搜尋。
+- 兩種上游都可使用網頁擷取與工具搜尋；網頁搜尋與圖片生成僅供 API 模型使用。
 - 暫時性上游錯誤自動重試，採用有上限的 `Retry-After` 處理，並支援 Claude Code 的五級 effort。
 - 以你選的模型壓縮上下文，也可選擇在訂閱用量達上限時自動切換模型。
 
@@ -54,9 +61,9 @@ claude plugin configure model-mod@model-mod
 
 | 指令 | 用途 |
 |---|---|
-| `/model-mod:setup` | 確認上游網址並選擇要提供的模型。取消不會更動設定。 |
+| `/model-mod:setup` | 選擇上游，再設定帳號或網址並選擇模型。取消不會更動設定。 |
 | `/model-mod:model` | 列出你的模型並切換到所選的那個（↑↓ 移動、Enter 選取、Esc 關閉）。終端機太矮、或來自 Remote Control／手機時，改用分頁選單。 |
-| `/model-mod:refresh` | 重新讀取提示檔與上游的模型清單。 |
+| `/model-mod:refresh` | 重新讀取提示檔與設定；若有設定 API 上游則更新其模型清單。 |
 | `/model-mod:status` | 顯示是否啟用、模型數量及工具設定。回送位址顯示主機名，其他主機顯示 `host=remote`；明文 HTTP 將 API 金鑰以未加密形式送至非回送主機時會提出警告。 |
 | `/model` | Claude Code 原本的指令，維持不變：訂閱模型。直接輸入你的模型 ID（`/model <id>`）也可以。 |
 | `/btw <question>` | 選了你的模型時，經你的上游以唯讀上下文回答，不使用工具。 |

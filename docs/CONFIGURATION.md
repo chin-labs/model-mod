@@ -2,11 +2,15 @@
 
 [繁體中文](CONFIGURATION.zh-TW.md) · [README](../README.md)
 
+## Choose an upstream
+
+Codex login and a Messages-compatible API server are equal alternatives and can coexist. For Codex, install Python 3.9+ and the official `codex` CLI, then use `/model-mod:setup` and select **Codex login** first. Setup displays commands to create a dedicated account home and run `codex login` in your terminal if needed; run setup again after login. For an API server, follow the next section and choose **Compatible API server** in setup.
+
 ## Set up your upstream first
 
 Your own upstream must offer a Messages-compatible streaming API at `/v1/messages`, and you need its API key. CLIProxyAPI is the tested upstream. A `/v1/models` list lets setup discover models; without it you enter model IDs by hand.
 
-model-mod has no models of its own. It sends a session to an *upstream*: a server that accepts Messages-style streaming requests at `/v1/messages` and checks an API key. Before you install:
+For the API-server path, model-mod sends a session to a server that accepts Messages-style streaming requests at `/v1/messages` and checks an API key. Before you install:
 
 1. **Get an upstream.** CLIProxyAPI is the tested one. Install it and sign in to your own provider account as its documentation describes; model-mod does not install, start or configure it.
 2. **Make sure it is running** and reachable from the machine where you run Claude Code. This check reads the same model list that `/model-mod:setup` uses (replace the address and set the key in your shell first); `200` means the address and key work:
@@ -25,12 +29,12 @@ model-mod has no models of its own. It sends a session to an *upstream*: a serve
 
 These options appear in the configuration dialog (`/plugin configure model-mod@model-mod`).
 
-Only `apiKey` and `baseUrl` are essential: without a key the mod stays inactive, and `baseUrl` needs changing unless your upstream listens at its default address. Every other option is optional.
+The mod activates with either a valid `apiKey` or a valid combination of `codexAccounts` and `codexModels`. Both can coexist. An invalid API key disables the API side, not a valid Codex configuration. For the API path, change `baseUrl` if your server does not use the default address.
 
 | Option | What it does | Default |
 |---|---|---|
 | `baseUrl` | Base URL of your upstream, without `/v1`. HTTP or HTTPS only; URLs with credentials, queries or fragments, and `anthropic.com` or `claude.ai` hosts, are refused. | `http://127.0.0.1:8317` |
-| `apiKey` | Your upstream's API key (secret). Without it the mod stays inactive. | none |
+| `apiKey` | Your API upstream's key (secret). Required for the API path. | none |
 | `models` | Comma-separated model IDs the mod answers for. Empty: every chat model the upstream lists. | empty |
 | `imageModel` | Model for `generate_image`. Empty: `gpt-image-2`, or the first `gpt-image*` the upstream lists. `none` turns the tool off. | empty |
 | `contextWindow` | Input tokens assumed for a model whose window is unknown (minimum 32000). | `272000` |
@@ -39,12 +43,24 @@ Only `apiKey` and `baseUrl` are essential: without a key the mod stays inactive,
 | `workerModel` | Model for the `model-mod:local-worker` agent type. Empty: the fallback model; if both are empty there is no worker type. | empty |
 | `promptsDir` | Absolute directory with your own `compact.md`, `title.md`, `subagent-note.md` and `worker.md`. Empty: the plugin's `prompts/` directory. | empty |
 
+### Codex login options
+
+| Option | Format and default |
+|---|---|
+| `codexAccounts` | Comma-separated account names; empty by default. Each is 1–32 characters, starts with `[a-z0-9]`, and otherwise uses `[a-z0-9-]`. |
+| `codexModels` | Comma-separated model names; empty by default. Each is 1–64 characters, starts with `[A-Za-z0-9]`, and otherwise uses `[A-Za-z0-9._-]`; names containing `claude` or `anthropic` are rejected, case-insensitively. |
+| `codexAccountsDir` | Absolute directory; default `~/.config/model-mod/accounts`, or `%APPDATA%\model-mod\accounts` on Windows (unverified). Each account has a separate subdirectory. |
+| `codexBin` | Executable name or absolute path; default `codex`. |
+| `pythonBin` | Executable name or absolute path; default `python3`. On Windows use `python` (unverified). |
+
+Paths and commands cannot contain NUL or newline; a command name may contain only letters, digits, `.`, `_` and `-`. An account and a model form ID `<account>/<model>`, displayed as `<model> @ <account>`. Every account is paired with every configured model. When an API model has the same ID, Codex takes precedence. Setup merges and deduplicates accounts but **replaces** `codexModels` with the selected models for all accounts; reselect the complete desired model set when adding an account. `fallbackModel` and `workerModel` may refer to a valid Codex ID.
+
 Advanced options are not shown in the dialog. Set them in the plugin's `options` object under `pluginConfigs` in your Claude Code settings (key `model-mod@model-mod`, or `model-mod@inline` when loaded with `--plugin-dir`). Keep the API key itself in the secret field.
 
 | Advanced option | What it does | Default |
 |---|---|---|
 | `maxTokens` | Sent as `max_tokens`. | `32000` |
-| `effortMode` | `suffix` sends `model(level)` for the effort level in use; `none` sends the plain model ID, for an upstream that rejects the suffix. | `suffix` |
+| `effortMode` | API path only: `suffix` sends `model(level)` for the effort level in use; `none` sends the plain model ID, for an upstream that rejects the suffix. | `suffix` |
 | `sideModel` | Official model for Claude Code's own side requests while one of your models is selected. `none` leaves it alone; a value already in your environment wins. | `claude-haiku-5-5` |
 | `keepThinking` | Hands Codex-style encrypted reasoning back within a tool loop. Set `false` for an upstream that does not accept it. | `true` |
 | `localTitle` | Names the session from the first prompt through your upstream. `false` sends that prompt to the official `sideModel`. | `true` |
@@ -54,7 +70,7 @@ Advanced options are not shown in the dialog. Set them in the plugin's `options`
 
 ### Advanced: external configuration file
 
-For scripts and test setups, the mod can read its settings from a JSON file instead of the plugin options. Set the environment variable `MODEL_MOD_CONFIG` to the file's absolute path before starting Claude Code. The plugin options take precedence: the file is read only when `apiKey` is not set in them, and an `apiKey` that cannot be used leaves the mod inactive instead of falling back to the file. The mod never reads credentials from Claude Code's own credential files.
+For scripts and test setups, the mod can read its settings from a JSON file instead of the plugin options. Set the environment variable `MODEL_MOD_CONFIG` to the file's absolute path before starting Claude Code. The plugin options take precedence: the file is read only when neither usable plugin-option upstream is configured, and an `apiKey` that cannot be used leaves the mod inactive instead of falling back to the file. The mod never reads credentials from Claude Code's own credential files.
 
 Instead of `apiKey`, the file names a `headerFile`: a file of HTTP header lines for your upstream (the authorization line) that the mod hands to curl with `-H @file`. Only the file's path appears in process arguments; the key itself does not.
 
