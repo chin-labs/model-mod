@@ -1378,14 +1378,14 @@ test('Codex login: status and setup preserve the separate upstream', { options: 
     return { exitCode: 0, stdout: JSON.stringify({ primary: { remainingPercent: 80, resetsAt: 1800000000 }, secondary: { remainingPercent: 70, resetsAt: 1800003600 }, ordinaryUsageAllowed: true }) }
   })
   const status = await $.command.run({ command: 'model-mod:status', args: '', origin: { kind: 'composer' } } as never)
-  expect(status.text).toContain('account=main; python=3.12.0; codex=0.166.0; login=ok')
+  expect(status.text).toContain('account=main; dir=/fake-home/.config/model-mod/accounts/main; python=3.12.0; codex=0.166.0; login=ok')
   expect(status.text).toContain('limits=80%/70%')
   expect(status.text).not.toContain('untested')
   expect(status.text).toContain('invalid apiKey')
   w.chooseUpstream = true
   w.answers = ['Codex login (recommended)', 'main', 'All (recommended)']
   const setup = await $.command.run(SETUP)
-  expect(setup.text).toContain('1 models configured')
+  expect(setup.text).toContain('1 models configured; dir=/fake-home/.config/model-mod/accounts/main')
   expect(w.questions[0]!.labels).toEqual(['Codex login (recommended)', 'Compatible API server'])
   expect(w.saved).toEqual([{ key: 'model-mod.codexModels', value: 'gpt-6.1-terra' }, { key: 'model-mod.codexAccounts', value: 'main' }])
   w.saved = []

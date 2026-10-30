@@ -1185,7 +1185,7 @@ async function setupCodex($: EngineInterface, c?: Config): Promise<string> {
       try { rollbackFailed = 'deny' in await $.config.set({ key: modelsRow.key, value: oldModels }) || rollbackFailed } catch { rollbackFailed = true }
       return rollbackFailed ? 'model-mod: Codex login: account configuration failed and rollback failed; restore the previous settings in /plugin.' : 'model-mod: Codex login: account configuration refused; previous settings restored.'
     }
-    return `model-mod: Codex login (${account}): ${selected.length} models configured.`
+    return `model-mod: Codex login (${account}): ${selected.length} models configured; dir=${accountHome}.`
   } catch (err) {
     if (err instanceof Cancelled) return 'model-mod: setup cancelled, nothing changed'
     return 'model-mod: Codex login: setup failed; check Python and Codex installation.'
@@ -1221,7 +1221,7 @@ async function codexStatus($: EngineInterface, c: Config): Promise<string[]> {
         if (typeof data.ordinaryUsageAllowed === 'boolean') ordinary = String(data.ordinaryUsageAllowed)
       }
     } catch { /* limits remain unavailable */ }
-    return `upstream=Codex login; account=${item.account}; python=${python}; codex=${version}; login=${login}; limits=${limits}, resets ${resets}, ordinaryUsageAllowed=${ordinary}${warnings.map(w => '; warning: ' + w).join('')}`
+    return `upstream=Codex login; account=${item.account}; dir=${item.directory}; python=${python}; codex=${version}; login=${login}; limits=${limits}, resets ${resets}, ordinaryUsageAllowed=${ordinary}${warnings.map(w => '; warning: ' + w).join('')}`
   }))
 }
 
