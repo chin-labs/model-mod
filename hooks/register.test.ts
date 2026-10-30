@@ -1236,12 +1236,22 @@ test('/model-mod:model: sdk is refused and an empty local list points to setup',
 const CODEX_MODEL = 'main/gpt-6.1-terra'
 const CODEX_OPTIONS = { codexAccounts: 'main', codexModels: 'gpt-6.1-terra', promptsDir: PROMPTS_DIR }
 
+for (const apiKey of [KEY, 'bad key']) {
+  test('Codex login: status names invalid fields without exposing values', { options: { ...CODEX_OPTIONS, apiKey, codexAccounts: 'Bad Account' } }, async ($, on) => {
+    world(on, null, LOCAL, { stdout: '', code: 0 })
+    const status = await $.command.run({ ...SETUP, command: 'model-mod:status' })
+    expect(status.text).toContain('invalid codexAccounts')
+    expect(status.text).not.toContain('Bad Account')
+  })
+}
+
 test('Codex login: streaming and auxiliary requests use the helper without an API key', { options: CODEX_OPTIONS }, async ($, on) => {
   const w = world(on, null, CODEX_MODEL, { stdout: SSE_OK, code: 0 }, { exitCode: 0, stdout: '{"content":[{"type":"text","text":"summary"}]}' })
   const { chunks, result } = await drain($.turn.step(STEP(CODEX_MODEL)))
   expect(result.answer).toBe('local answer')
   expect(chunks.map(chunk => chunk.kind)).toEqual(['text', 'stop'])
   expect(w.spawned[0]!.argv[0]).toBe('python3')
+  expect(w.spawned[0]!.argv.slice(1, 3)).toEqual(['-E', '-s'])
   expect(w.spawned[0]!.argv).toContain('messages')
   expect(w.spawned[0]!.argv).toContain('main/gpt-6.1-terra=gpt-6.1-terra')
   expect(w.spawned[0]!.input).not.toContain(KEY)
@@ -1346,6 +1356,12 @@ test('Codex login: status and setup preserve the separate upstream', { options: 
   const refused = await $.command.run(SETUP)
   expect(refused.text).toContain('previous settings restored')
   expect(w.saved).toEqual([{ key: 'model-mod.codexModels', value: 'gpt-6.1-terra' }, { key: 'model-mod.codexModels', value: '' }])
+  w.saved = []
+  let thrown = false
+  w.configSet = key => { if (key.endsWith('.codexAccounts') && !thrown) { thrown = true; throw new Error('failed') } return undefined }
+  w.answers = ['Codex login (recommended)', 'main', 'All (recommended)']
+  expect((await $.command.run(SETUP)).text).toContain('previous settings restored')
+  expect(w.saved).toEqual([{ key: 'model-mod.codexModels', value: 'gpt-6.1-terra' }, { key: 'model-mod.codexAccounts', value: '' }, { key: 'model-mod.codexModels', value: '' }])
 })
 
 test('/model: PostModelSwitch applies the local window and restores it for Claude', { options: { ...OPTIONS, models: LOCAL } }, async ($, on) => {

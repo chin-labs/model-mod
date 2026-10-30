@@ -303,6 +303,20 @@ async function refreshModels($: EngineInterface, c: Config): Promise<string> {
 // The configuration the plugin's `userConfig` fields give (set through `claude plugin install --config`, `claude plugin
 // configure` or the configuration dialog). undefined: no key is set; null: a key is set but cannot be used, which
 // leaves the mod inert (it does not fall back to a configuration file).
+function invalidCodexFields(o: PluginOptions): string[] {
+  const text = (name: string) => typeof o[name] === 'string' ? (o[name] as string).trim() : ''
+  const accounts = text('codexAccounts').split(',').map(s => s.trim()).filter(Boolean)
+  const models = text('codexModels').split(',').map(s => s.trim()).filter(Boolean)
+  if (!accounts.length && !models.length) return []
+  const fields: string[] = []
+  if (!accounts.length || !accounts.every(s => /^[a-z0-9][a-z0-9-]{0,31}$/.test(s))) fields.push('codexAccounts')
+  if (!models.length || !models.every(s => /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(s) && !/claude|anthropic/i.test(s))) fields.push('codexModels')
+  for (const name of ['codexAccountsDir', 'codexBin', 'pythonBin']) {
+    const value = text(name), raw = o[name]
+    if ((typeof raw === 'string' && /[\0\r\n]/.test(raw)) || (value && !(name === 'codexAccountsDir' ? /^(?:\/|[A-Za-z]:[\\/])/.test(value) : /^(?:\/|[A-Za-z]:[\\/])/.test(value) || /^[A-Za-z0-9._-]+$/.test(value)))) fields.push(name)
+  }
+  return fields
+}
 function optionsCandidate(o: PluginOptions): Record<string, unknown> | undefined | null {
   const text = (name: string) => typeof o[name] === 'string' ? (o[name] as string).trim() : ''
   const baseUrl = text('baseUrl') || DEFAULT_BASE_URL
@@ -403,16 +417,18 @@ async function loadNow($: EngineInterface) {
       const home = await $.env.get('HOME')
       const appdata = await $.env.get('APPDATA')
       const dir = candidate.accountsDir ?? (appdata ? appdata.replace(/[\\/]+$/, '') + '\\model-mod\\accounts' : home ? home.replace(/\/+$/, '') + '/.config/model-mod/accounts' : undefined)
-      if (!dir) return undefined
-      built.accountsDir = dir
-      built.codex = new Map()
-      const sep = dir.includes('\\') && !dir.includes('/') ? '\\' : '/'
-      for (const account of candidate.accounts as string[]) for (const model of candidate.codexModels as string[]) {
-        const id = `${account}/${model}`
-        if (!MODEL_ID.test(id)) continue
-        built.codex.set(id, { account, model, directory: dir.replace(/[\\/]+$/, '') + sep + account })
-        built.excluded?.delete(id)
-        addModels(built, [id])
+      if (!dir) $.ui.status('model-mod: Codex login: accounts directory unavailable; configure codexAccountsDir.')
+      if (dir) {
+        built.accountsDir = dir
+        built.codex = new Map()
+        const sep = dir.includes('\\') && !dir.includes('/') ? '\\' : '/'
+        for (const account of candidate.accounts as string[]) for (const model of candidate.codexModels as string[]) {
+          const id = `${account}/${model}`
+          if (!MODEL_ID.test(id)) continue
+          built.codex.set(id, { account, model, directory: dir.replace(/[\\/]+$/, '') + sep + account })
+          built.excluded?.delete(id)
+          addModels(built, [id])
+        }
       }
     }
     if (built.apiInvalid) $.ui.status('model-mod: API server apiKey contains invalid characters; configure a valid key.')
@@ -885,7 +901,7 @@ function helperArgs($: EngineInterface, c: Config, command: string, home: string
   if (typeof root !== 'string' || !root || /[\0\r\n]/.test(root)) throw new Error('plugin root unavailable')
   const sep = root.includes('\\') && !root.includes('/') ? '\\' : '/'
   const script = root.replace(/[\\/]+$/, '') + sep + 'helper' + sep + 'bridge.py'
-  const args = [c.pythonBin ?? 'python3', script, command, '--codex-home', home, '--codex-bin', c.codexBin ?? 'codex']
+  const args = [c.pythonBin ?? 'python3', '-E', '-s', script, command, '--codex-home', home, '--codex-bin', c.codexBin ?? 'codex']
   if (command === 'messages') args.push('--model-map', `${wire ?? model}=${model}`, '--idle-seconds', '300', '--max-seconds', '900')
   return args
 }
@@ -1071,7 +1087,7 @@ async function autoFallback($: EngineInterface, c: Config): Promise<string | und
 // The paged ask menu, three models a page; undefined when nothing was chosen (cancelled or no way to ask).
 function modelLabel(c: Config, id: string): string {
   const item = c.codex?.get(id)
-  return item ? `${item.model} @ ${item.account} (Codex login)` : c.codex?.size ? `${id} (API)` : id
+  return item ? `${item.model} @ ${item.account} (Codex login)` : c.codex?.size && c.models.includes(id) && (c.key !== undefined || c.headerFile !== undefined) ? `${id} (API)` : id
 }
 async function menuPick($: EngineInterface, c: Config, current: string): Promise<string | undefined> {
   try { return await pickModel($, c.models, current, id => modelLabel(c, id)) } catch { return undefined }
@@ -1140,12 +1156,21 @@ async function setupCodex($: EngineInterface, c?: Config): Promise<string> {
     if (!accountsRow || accountsRow.isLocked || !modelsRow || modelsRow.isLocked) return 'model-mod: Codex login: writable config unavailable; nothing changed.'
     const accounts = [...new Set([...(typeof pluginOptions.codexAccounts === 'string' ? pluginOptions.codexAccounts.split(',').map(s => s.trim()).filter(Boolean) : []), account])]
     const oldModels = typeof modelsRow.value === 'string' ? modelsRow.value : ''
-    const first = await $.config.set({ key: modelsRow.key, value: selected.join(',') })
+    let first: Awaited<ReturnType<EngineInterface['config']['set']>>
+    try { first = await $.config.set({ key: modelsRow.key, value: selected.join(',') }) } catch {
+      try { await $.config.set({ key: modelsRow.key, value: oldModels }) } catch { /* report uncertainty */ }
+      return 'model-mod: Codex login: model configuration failed; check the previous setting in /plugin.'
+    }
     if ('deny' in first) return 'model-mod: Codex login: model configuration refused; nothing changed.'
-    const second = await $.config.set({ key: accountsRow.key, value: accounts.join(',') })
-    if ('deny' in second) {
-      const rollback = await $.config.set({ key: modelsRow.key, value: oldModels })
-      return 'deny' in rollback ? 'model-mod: Codex login: account configuration refused and rollback failed; restore the previous model setting in /plugin.' : 'model-mod: Codex login: account configuration refused; previous settings restored.'
+    let refused = false, failed = false
+    try { refused = 'deny' in await $.config.set({ key: accountsRow.key, value: accounts.join(',') }) } catch { failed = true }
+    if (refused || failed) {
+      let rollbackFailed = false
+      if (failed) {
+        try { rollbackFailed = 'deny' in await $.config.set({ key: accountsRow.key, value: accountsRow.value }) } catch { rollbackFailed = true }
+      }
+      try { rollbackFailed = 'deny' in await $.config.set({ key: modelsRow.key, value: oldModels }) || rollbackFailed } catch { rollbackFailed = true }
+      return rollbackFailed ? 'model-mod: Codex login: account configuration failed and rollback failed; restore the previous settings in /plugin.' : 'model-mod: Codex login: account configuration refused; previous settings restored.'
     }
     return `model-mod: Codex login (${account}): ${selected.length} models configured.`
   } catch (err) {
@@ -1189,6 +1214,8 @@ async function codexStatus($: EngineInterface, c: Config): Promise<string[]> {
 
 async function admin($: EngineInterface, e: { origin: { kind: string } }, arg: 'setup' | 'status' | 'refresh') {
   const c = await load($)
+  const invalidCodex = invalidCodexFields(pluginOptions)
+  const codexWarning = invalidCodex.length ? `\nCodex login: invalid ${invalidCodex.join(', ')}; configure these fields.` : ''
   if (arg === 'setup') {
     const interactive = e.origin.kind === 'composer' || e.origin.kind === 'bridge'
     const status = `picker=${c ? 'active' : 'inactive'}; models=${c?.models.length ?? 0}`
@@ -1201,7 +1228,7 @@ async function admin($: EngineInterface, e: { origin: { kind: string } }, arg: '
       return { text: await configurePicker($, c ?? { baseUrl: typeof pluginOptions.baseUrl === 'string' ? pluginOptions.baseUrl : DEFAULT_BASE_URL, models: [] }, true, interactive, status) }
     } catch { return { text: 'model-mod: setup cancelled, nothing changed' } }
   }
-  if (!c) return { text: `model-mod: inactive; picker=inactive; models=0. ${await configHint($)}` }
+  if (!c) return { text: `model-mod: inactive; picker=inactive; models=0. ${await configHint($)}${arg === 'status' ? codexWarning : ''}` }
   if (arg === 'refresh') {
     c.prompts = await loadPrompts($, c.promptsDir)
     await registerWorker($, c)
@@ -1227,14 +1254,14 @@ async function admin($: EngineInterface, e: { origin: { kind: string } }, arg: '
     open = (await $.tool.list()).filter(tool => tool.mcp && !tool.name.startsWith('mcp__model-mod__') && !known.has(tool.name)).length
   }
   const codex = c.codex?.size ? await codexStatus($, c) : []
-  if (!c.key && !c.headerFile) return { text: ['model-mod 0.1.2: picker=active', ...(c.apiInvalid ? ['API server: invalid apiKey; configure a valid key'] : []), ...codex].join('; ') }
+  if (!c.key && !c.headerFile) return { text: ['model-mod 0.1.2: picker=active', ...(c.apiInvalid ? ['API server: invalid apiKey; configure a valid key'] : []), ...codex].join('; ') + codexWarning }
   const url = new URL(c.baseUrl)
   const loopback = loopbackHost(url.hostname)
   const warnings: string[] = []
   if (c.headerFile !== undefined && !await $.fs.exists(c.headerFile)) warnings.push('headerFile not found')
   if (!loopback && url.protocol === 'http:') warnings.push('plain http to a non-loopback host sends the API key unencrypted')
   return { text: `model-mod 0.1.2: picker=active${warnings.map(w => `; warning: ${w}`).join('')}; host=${loopback ? url.hostname : 'remote'}; config=${c.source}; models=${c.models.length}; tools=${captured ? (c.toolsFile ? 'captured' : 'listed') : 'missing'}` +
-    `; ${promptStatus(c.prompts)}; tool search=${c.toolSearch ?? 'auto'}; MCP tools without a captured schema=${open}${open && c.refresh ? ' (/model-mod:refresh captures them)' : ''}${codex.length ? '\n' + codex.join('\n') : ''}` }
+    `; ${promptStatus(c.prompts)}; tool search=${c.toolSearch ?? 'auto'}; MCP tools without a captured schema=${open}${open && c.refresh ? ' (/model-mod:refresh captures them)' : ''}${codex.length ? '\n' + codex.join('\n') : ''}${codexWarning}` }
 }
 
 export const register: Register = (on, options) => {
@@ -1693,7 +1720,7 @@ export const register: Register = (on, options) => {
       return { messages: [{ role: 'user' as const, toolUses: [], text }] }
     } catch (err) {
       const item = model === undefined ? undefined : c.codex?.get(model)
-      if (item) return { skip: `model-mod: Codex login (${item.account}): helper could not start; check Python and Codex installation` }
+      if (item) return { skip: `model-mod: Codex login (${item.account}): request could not complete; check Codex and try again` }
       const why = err instanceof Error ? `${err.name}: ${err.message}` : String(err)
       return { skip: `model-mod: summary failed (${scrub(c, why).slice(0, 160)})` }
     }
@@ -1712,6 +1739,7 @@ export const register: Register = (on, options) => {
     if (!c.models.includes(e.model)) return yield* next(e)
     const codex = c.codex?.get(e.model)
     let parser = new MessagesStream(e.model)
+    let spawnFailed = false
     try {
       const own = await trackedOf($, e.agentId)
       let history: readonly Turn[]
@@ -1768,7 +1796,7 @@ export const register: Register = (on, options) => {
         try {
           child = $.process.spawn({ argv: call.argv, ...(call.env ? { env: call.env } : {}),
             input: JSON.stringify(sendThinking ? { ...body, messages: withThinking } : body) })
-        } catch (err) { release?.(); throw err }
+        } catch (err) { spawnFailed = true; release?.(); throw err }
         let finished = false
         let rawError = ''
         let statusTail = ''
@@ -1845,7 +1873,7 @@ export const register: Register = (on, options) => {
               if (errorCode === 'codex_not_logged_in' || exit.code === 68) return yield* failure(e, prefix + `not logged in; run ${loginCommand(c, codex)} in your terminal`, parser.nextIndex)
               if (errorCode === 'invalid_home' || exit.code === 69) return yield* failure(e, prefix + 'account directory missing; run /model-mod:setup', parser.nextIndex)
               if (exit.code === 78) return yield* failure(e, prefix + 'Python too old; install Python 3.9 or newer', parser.nextIndex)
-              reason = prefix + (httpStatus === 429 ? 'rate limited' : httpStatus === 504 ? 'app-server timed out' : 'app-server request failed')
+              reason = prefix + (httpStatus === 429 ? 'rate limited; check the account quota or try again later' : httpStatus === 504 ? 'app-server timed out; try again in a moment' : 'app-server request failed; check Codex and try again')
             }
             const transient = codex
               ? (errorCode === undefined || errorCode === 'bridge_error' || errorCode === 'timeout') && (RETRYABLE_HTTP_STATUS.includes(httpStatus) || httpStatus >= 500)
@@ -1903,7 +1931,7 @@ export const register: Register = (on, options) => {
     } catch (err) {
       const why = err instanceof Error ? scrub(c, `${err.name}: ${err.message}`).slice(0, 160) : 'unknown'
       return yield* failure(e, next.signal.aborted ? 'cancelled' : codex
-        ? `Codex login (${codex.account}): helper could not start; install Python 3.9 or newer and check pythonBin`
+        ? `Codex login (${codex.account}): ${spawnFailed ? 'helper could not start; install Python 3.9 or newer and check pythonBin' : 'request could not complete; check Codex and try again'}`
         : `local request failed (${why})`, parser.nextIndex)
     }
   }).catch(async function* ($, e, next) {

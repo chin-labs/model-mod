@@ -8,7 +8,7 @@ import time
 import unittest
 from pathlib import Path
 
-from mapping import InvalidRequest, names, prepare, usage_delta
+from mapping import InvalidRequest, classify, names, prepare, usage_delta
 
 ROOT = Path(__file__).resolve().parent
 BRIDGE = ROOT / 'bridge.py'
@@ -68,6 +68,9 @@ class Contract(unittest.TestCase):
         with self.assertRaises(InvalidRequest): names(tools + [{'name': encoded, 'input_schema': {}}])
 
     def test_errors_and_version(self):
+        self.assertEqual(classify({'message': 'not a rate limit; 429 in user input'}), (500, 'api_error'))
+        self.assertEqual(classify({'codexErrorInfo': 'usageLimit'}), (429, 'rate_limit_error'))
+        self.assertEqual(classify({'code': -32602}), (500, 'api_error'))
         for mode, code, kind in [('bad', '400', 'invalid_request_error'), ('rate', '429', 'rate_limit_error'), ('version', '500', 'api_error')]:
             r = self.run_bridge(mode=mode)
             self.assertNotEqual(r.returncode, 0)
@@ -112,7 +115,7 @@ class Contract(unittest.TestCase):
                 line = p.stdout.readline()
                 if not line: self.fail('stream ended before SIGTERM')
                 if line.startswith('event: content_block_delta'): break
-            p.send_signal(signal.SIGTERM)
+            p.send_signal(getattr(signal, 'SIGHUP', signal.SIGTERM))
             deadline = time.monotonic() + 5
             while time.monotonic() < deadline:
                 records = [json.loads(x) for x in log.read_text().splitlines()]
