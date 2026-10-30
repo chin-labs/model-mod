@@ -20,6 +20,33 @@
       "description": "Base URL of your Messages-compatible upstream, without /v1. CLIProxyAPI with your own Codex login is the tested upstream.",
       "default": "http://127.0.0.1:8317"
     },
+    "codexAccounts": {
+      "type": "string",
+      "title": "Codex login accounts",
+      "description": "Comma-separated account names."
+    },
+    "codexModels": {
+      "type": "string",
+      "title": "Codex login models",
+      "description": "Comma-separated model IDs."
+    },
+    "codexAccountsDir": {
+      "type": "string",
+      "title": "Codex accounts directory",
+      "description": "Absolute accounts directory. Windows default: %APPDATA%\\model-mod\\accounts (not verified)."
+    },
+    "codexBin": {
+      "type": "string",
+      "title": "Codex executable",
+      "description": "Executable name or absolute path.",
+      "default": "codex"
+    },
+    "pythonBin": {
+      "type": "string",
+      "title": "Python executable",
+      "description": "Python 3.9 or newer. On Windows set this to python (not verified).",
+      "default": "python3"
+    },
     "apiKey": {
       "type": "string",
       "title": "Upstream API key",

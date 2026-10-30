@@ -14,15 +14,15 @@ const baseConfig = {
   models: [LOCAL], maxTokens: 32000, effortMode: 'none', promptsDir: PROMPTS_DIR,
 }
 
-type RunReply = { exitCode: number; stdout: string; isStdoutTruncated?: boolean }
+type RunReply = { exitCode: number; stdout: string; stderr?: string; isStdoutTruncated?: boolean }
 // `wait`: mock-clock milliseconds between the last stdout piece and the first stderr piece (curl's write-out comes when the transfer ends);
 // `hang`: the child writes its pieces and then neither ends nor writes again until it is closed.
 type SpawnReply = { stdout: string | readonly string[]; stderr?: string | readonly string[]; code: number; wait?: number; hang?: boolean }
-type World = { system: string; spawned: { argv: readonly string[]; input?: string; env?: Record<string, string> }[]; ran: (readonly string[])[]
+type World = { system: string; killed: number; toolsList?: string[]; spawned: { argv: readonly string[]; input?: string; env?: Record<string, string> }[]; ran: (readonly string[])[]
   ranEnv: (Record<string, string> | undefined)[]; reached: string[]; envSet: [string, string | undefined][]; messagesRead: number; failEnvSets: number; failEnvName?: string
   // The upstream's model list (null: unreachable), what the store holds, the picker rows of the settings, the requests
   // `$.http.fetch` made (the authorization header is reduced to its first 6 characters).
-  answers: (string | null)[]; questions: { question: string; header: string; labels: string[]; multiSelect: boolean }[];
+  chooseUpstream?: boolean; answers: (string | null)[]; questions: { question: string; header: string; labels: string[]; multiSelect: boolean }[];
   scopes: Record<string, Record<string, unknown>>; files: Record<string, string>; writes: string[]; saved: { key: string; value: unknown }[]; registered: string[];
   toolDescriptions: Record<string, string>; httpStatus?: number; httpStatuses?: number[]; httpBody?: string; configSet?: (key: string) => { deny: string } | undefined; switchEnv: (string | undefined)[];
   models: string[] | null; store: Record<string, unknown>; picker: unknown[]; fetched: { url: string; auth?: string }[]
@@ -34,7 +34,7 @@ type World = { system: string; spawned: { argv: readonly string[]; input?: strin
 // which stand for the engine (the subscription path).
 function world(on: On, config: Record<string, unknown> | null, model: string, spawn: SpawnReply | SpawnReply[],
   run?: RunReply | ((argv: readonly string[], stdin?: string) => RunReply), env: Record<string, string> = {}): World {
-  const w: World = { system: 'Linux', spawned: [], ran: [], ranEnv: [], reached: [], envSet: [], messagesRead: 0, failEnvSets: 0,
+  const w: World = { system: 'Linux', killed: 0, spawned: [], ran: [], ranEnv: [], reached: [], envSet: [], messagesRead: 0, failEnvSets: 0,
     switchEnv: [], toolDescriptions: {}, answers: ['Keep (recommended)', 'All (recommended)'], questions: [], scopes: {}, files: {}, writes: [], saved: [], registered: [], models: null, store: {}, picker: [], fetched: [], current: model, agents: [], modelRuns: [], limits: [], clock: undefined as never }
   // The test engine has no plugin.root; supply prompt files explicitly instead of built-in text.
   for (const name of ['compact', 'title', 'subagent-note', 'worker']) w.files[PROMPTS_DIR + '/' + name + '.md'] = 'TEST ' + name + ' prompt\n'
@@ -56,7 +56,7 @@ function world(on: On, config: Record<string, unknown> | null, model: string, sp
   on('session.cwd', async () => ({ value: '/work' }))
   on('fs.exists', async (_$, e) => ({ value: e.path in w.files }))
   on('fs.write', async (_$, e) => { w.files[e.path] = e.text; w.writes.push(e.path); return { value: undefined } })
-  on('config.list', async () => ({ value: [{ key: 'model', label: 'Model', kind: 'choice' as const, value: 'Default', options: ['default', 'sonnet', 'opus', 'haiku', 'best'], provider: { plugin: 'engine', tier: 'core' as const }, isLocked: false }, ...['baseUrl', 'models'].map(field => ({ key: 'model-mod.' + field, label: field,
+  on('config.list', async () => ({ value: [{ key: 'model', label: 'Model', kind: 'choice' as const, value: 'Default', options: ['default', 'sonnet', 'opus', 'haiku', 'best'], provider: { plugin: 'engine', tier: 'core' as const }, isLocked: false }, ...['baseUrl', 'models', 'codexAccounts', 'codexModels'].map(field => ({ key: 'model-mod.' + field, label: field,
     kind: 'text' as const, value: '', provider: { plugin: 'model-mod', tier: 'user' as const }, isLocked: false }))] }))
   on('config.set', async (_$, e) => {
     const refused = w.configSet?.(e.key)
@@ -65,6 +65,7 @@ function world(on: On, config: Record<string, unknown> | null, model: string, sp
   })
   on('tool.call', { tool: 'AskUserQuestion' }, async (_$, e) => {
     const q = e.questions[0]!
+    if (q.question.startsWith('Choose an upstream.') && !w.chooseUpstream) return { result: { questions: e.questions, answers: { [q.question]: 'Compatible API server' } } }
     w.questions.push({ question: q.question, header: q.header, labels: q.options.map(o => o.label), multiSelect: q.multiSelect })
     const answer = w.answers.shift()
     if (answer === null || answer === undefined) return { deny: 'dismissed' }
@@ -82,7 +83,7 @@ function world(on: On, config: Record<string, unknown> | null, model: string, sp
     w.messagesRead++
     return { value: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }] }
   })
-  on('tool.list', async () => ({ value: [] }))
+  on('tool.list', async () => ({ value: (w.toolsList ?? []).map(name => ({ name, description: name, mcp: true })) as never }))
   on('env.set', async (_$, e) => {
     if (w.failEnvName === e.name) { w.failEnvName = undefined; throw new Error('env write failed') }
     if (w.failEnvSets > 0) { w.failEnvSets--; throw new Error('env write failed') }
@@ -94,7 +95,7 @@ function world(on: On, config: Record<string, unknown> | null, model: string, sp
     w.spawned.push({ argv: e.argv, input: e.input, env: e.env })
     const reply = Array.isArray(spawn) ? spawn[Math.min(w.spawned.length - 1, spawn.length - 1)]! : spawn
     // Closing the stream kills the child: its waits end then.
-    const killed = new Promise<void>(resolve => { if (next.signal.aborted) resolve(); else next.signal.addEventListener('abort', () => resolve(), { once: true }) })
+    const killed = new Promise<void>(resolve => { if (next.signal.aborted) { w.killed++; resolve() } else next.signal.addEventListener('abort', () => { w.killed++; resolve() }, { once: true }) })
     for (const text of typeof reply.stdout === 'string' ? [reply.stdout] : reply.stdout) if (text) yield { stream: 'stdout' as const, text }
     if (reply.wait) await Promise.race([w.clock.sleep(reply.wait), killed])
     for (const text of typeof reply.stderr === 'string' ? [reply.stderr] : reply.stderr ?? []) yield { stream: 'stderr' as const, text }
@@ -105,7 +106,7 @@ function world(on: On, config: Record<string, unknown> | null, model: string, sp
     w.ran.push(e.argv)
     w.ranEnv.push(e.init?.env)
     const reply: RunReply | undefined = e.argv[0] === 'uname' ? { exitCode: 0, stdout: w.system + '\n' } : typeof run === 'function' ? run(e.argv, e.init?.stdin) : run
-    return { value: { exitCode: reply?.exitCode ?? 1, stdout: reply?.stdout ?? '', stderr: '', isStdoutTruncated: reply?.isStdoutTruncated ?? false, isStderrTruncated: false } }
+    return { value: { exitCode: reply?.exitCode ?? 1, stdout: reply?.stdout ?? '', stderr: reply?.stderr ?? '', isStdoutTruncated: reply?.isStdoutTruncated ?? false, isStderrTruncated: false } }
   })
   on('turn.step', async function* (_$, e) {
     w.reached.push('turn.step')
@@ -1230,6 +1231,121 @@ test('/model-mod:model: sdk is refused and an empty local list points to setup',
   expect((await $.command.run({ ...PICK, origin: { kind: 'sdk' } })).text).toContain('interactive session')
   expect((await $.command.run(PICK)).text).toContain('/model-mod:setup')
   expect(w.questions).toEqual([]); expect(w.modelRuns).toEqual([])
+})
+
+const CODEX_MODEL = 'main/gpt-6.1-terra'
+const CODEX_OPTIONS = { codexAccounts: 'main', codexModels: 'gpt-6.1-terra', promptsDir: PROMPTS_DIR }
+
+test('Codex login: streaming and auxiliary requests use the helper without an API key', { options: CODEX_OPTIONS }, async ($, on) => {
+  const w = world(on, null, CODEX_MODEL, { stdout: SSE_OK, code: 0 }, { exitCode: 0, stdout: '{"content":[{"type":"text","text":"summary"}]}' })
+  const { chunks, result } = await drain($.turn.step(STEP(CODEX_MODEL)))
+  expect(result.answer).toBe('local answer')
+  expect(chunks.map(chunk => chunk.kind)).toEqual(['text', 'stop'])
+  expect(w.spawned[0]!.argv[0]).toBe('python3')
+  expect(w.spawned[0]!.argv).toContain('messages')
+  expect(w.spawned[0]!.argv).toContain('main/gpt-6.1-terra=gpt-6.1-terra')
+  expect(w.spawned[0]!.input).not.toContain(KEY)
+  expect(w.spawned[0]!.env).toBeUndefined()
+  expect(w.envSet).toContainEqual(['CLAUDE_CODE_MAX_CONTEXT_TOKENS', '128000'])
+  const compact = await $.session.compact({ trigger: 'manual', messages: [{ role: 'user', text: 'hi', toolUses: [] }] } as never)
+  expect('messages' in compact).toBe(true)
+  expect(w.ran.some(argv => argv[0] === 'python3' && argv.includes('messages'))).toBe(true)
+  expect(w.store.models).toBeUndefined()
+})
+
+test('Codex login: message_start before a 429 respects Retry-After and retries', { options: CODEX_OPTIONS }, async ($, on) => {
+  const start = 'event: message_start\ndata: {"message":{"usage":{}}}\n\n'
+  const error = 'event: error\ndata: {"type":"error","error":{"type":"api_error"}}\n\n'
+  const w = world(on, null, CODEX_MODEL, [
+    { stdout: start + error, stderr: 'model-mod-http:429\nmodel-mod-retry-after:3\n', code: 1 },
+    { stdout: SSE_OK, code: 0 },
+  ])
+  const { result } = await drain($.turn.step(STEP(CODEX_MODEL)))
+  expect(result.answer).toBe('local answer')
+  expect(w.spawned.length).toBe(2)
+  expect(w.ran.filter(argv => argv[0] === 'sleep')).toEqual([['sleep', '3']])
+})
+
+test('Codex login: startup and unsupported behavior failures do not retry', { options: CODEX_OPTIONS }, async ($, on) => {
+  const reply: SpawnReply = { stdout: '', code: 67 }
+  const w = world(on, null, CODEX_MODEL, reply, argv => argv.includes('check') ? { exitCode: 68, stdout: '{"loggedIn":false}' } : { exitCode: 0, stdout: '' })
+  for (const [code, expected] of [[67, 'codex too old'], [68, 'not logged in'], [66, 'codex unavailable'], [78, 'Python too old']] as const) {
+    reply.code = code; reply.stdout = ''
+    const before = w.spawned.length
+    const { result } = await drain($.turn.step(STEP(CODEX_MODEL)))
+    expect(result.answer).toContain(`Codex login (main): ${expected}`)
+    expect(w.spawned.length - before).toBe(1)
+  }
+  reply.code = 1
+  reply.stdout = 'event: error\ndata: {"error":{"type":"api_error","code":"unsupported_item","message":"Codex login: unsupported codex behavior: commandExecution"}}\n\n'
+  reply.stderr = 'model-mod-http:502\n'
+  const before = w.spawned.length
+  const { result } = await drain($.turn.step(STEP(CODEX_MODEL)))
+  expect(result.answer).toContain('unsupported codex behavior: commandExecution')
+  expect(w.spawned.length - before).toBe(1)
+  reply.stdout = '{"error":{"type":"api_error"}}'
+  reply.stderr = 'model-mod-http:500\n'
+  const prior = w.spawned.length
+  const unauthenticated = await drain($.turn.step(STEP(CODEX_MODEL)))
+  expect(unauthenticated.result.answer).toContain('not logged in')
+  expect(w.spawned.length - prior).toBe(3)
+  expect(w.ran.filter(argv => argv.includes('check')).length).toBe(1)
+})
+
+test('Codex login: cancellation closes the helper and never forwards API-only tools', { options: { ...CODEX_OPTIONS, imageModel: 'gpt-image-2' } }, async ($, on) => {
+  const w = world(on, null, CODEX_MODEL, { stdout: SSE_OK, code: 0, hang: true })
+  w.toolsList = ['mcp__model-mod__generate_image', 'mcp__model-mod__web_search', 'mcp__model-mod__web_fetch']
+  const stream = $.turn.step(STEP(CODEX_MODEL))
+  const first = await stream.next()
+  expect(first.done).toBe(false)
+  const body = JSON.parse(w.spawned[0]!.input!) as { tools?: { name: string }[] }
+  expect((body.tools ?? []).map(tool => tool.name)).toEqual(['mcp__model-mod__web_fetch'])
+  await stream.return(undefined as never)
+  expect(w.killed).toBe(1)
+  for (const name of ['generate_image', 'web_search']) {
+    const outcome = await $.tool.call({ tool: `mcp__model-mod__${name}` } as never).then(value => JSON.stringify(value), error => String(error))
+    expect(outcome).toContain('unavailable for Codex login')
+  }
+})
+
+test('Codex login: at most four helpers run concurrently', { options: CODEX_OPTIONS }, async ($, on) => {
+  const w = world(on, null, CODEX_MODEL, { stdout: SSE_OK, code: 0, hang: true })
+  const streams = Array.from({ length: 5 }, () => $.turn.step(STEP(CODEX_MODEL)))
+  await Promise.all(streams.slice(0, 4).map(stream => stream.next()))
+  expect(w.spawned.length).toBe(4)
+  const fifth = streams[4]!.next()
+  for (let i = 0; i < 50; i++) await Promise.resolve()
+  expect(w.spawned.length).toBe(4)
+  await streams[0]!.return(undefined as never)
+  await fifth
+  expect(w.spawned.length).toBe(5)
+  for (const stream of streams.slice(1)) await stream.return(undefined as never)
+})
+
+test('Codex login: status and setup preserve the separate upstream', { options: { ...CODEX_OPTIONS, apiKey: 'bad key' } }, async ($, on) => {
+  const w = world(on, null, CODEX_MODEL, { stdout: '', code: 0 }, argv => {
+    if (argv[1] === '--version') return { exitCode: 0, stdout: argv[0] === 'python3' ? 'Python 3.12.0' : 'codex-cli 0.166.0' }
+    if (argv.includes('check')) return { exitCode: 0, stdout: JSON.stringify({ pythonVersion: '3.12.0', codexVersion: '0.166.0', versionStatus: 'untested', loggedIn: true, warnings: ['untested codex version'] }) }
+    if (argv.includes('models')) return { exitCode: 0, stdout: JSON.stringify({ models: [{ id: 'gpt-6.1-terra' }] }) }
+    return { exitCode: 0, stdout: JSON.stringify({ primary: { remainingPercent: 80, resetsAt: 1800000000 }, secondary: { remainingPercent: 70, resetsAt: 1800003600 }, ordinaryUsageAllowed: true }) }
+  })
+  const status = await $.command.run({ command: 'model-mod:status', args: '', origin: { kind: 'composer' } } as never)
+  expect(status.text).toContain('account=main; python=3.12.0; codex=0.166.0; login=ok')
+  expect(status.text).toContain('limits=80%/70%')
+  expect(status.text).not.toContain('untested')
+  expect(status.text).toContain('invalid apiKey')
+  w.chooseUpstream = true
+  w.answers = ['Codex login (recommended)', 'main', 'All (recommended)']
+  const setup = await $.command.run(SETUP)
+  expect(setup.text).toContain('1 models configured')
+  expect(w.questions[0]!.labels).toEqual(['Codex login (recommended)', 'Compatible API server'])
+  expect(w.saved).toEqual([{ key: 'model-mod.codexModels', value: 'gpt-6.1-terra' }, { key: 'model-mod.codexAccounts', value: 'main' }])
+  w.saved = []
+  w.configSet = key => key.endsWith('.codexAccounts') ? { deny: 'locked' } : undefined
+  w.answers = ['Codex login (recommended)', 'main', 'All (recommended)']
+  const refused = await $.command.run(SETUP)
+  expect(refused.text).toContain('previous settings restored')
+  expect(w.saved).toEqual([{ key: 'model-mod.codexModels', value: 'gpt-6.1-terra' }, { key: 'model-mod.codexModels', value: '' }])
 })
 
 test('/model: PostModelSwitch applies the local window and restores it for Claude', { options: { ...OPTIONS, models: LOCAL } }, async ($, on) => {

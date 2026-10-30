@@ -51,10 +51,10 @@ async function ask($: EngineInterface, question: string, options: Parameters<Eng
 }
 
 // ui.ask exposes labels only; include the current-model description in its label.
-async function pickModel($: EngineInterface, ids: readonly string[], current: string): Promise<string> {
+async function pickModel($: EngineInterface, ids: readonly string[], current: string, label: (id: string) => string = id => id): Promise<string> {
   for (let page = 0;; page = (page + 1) % Math.ceil(ids.length / 3)) {
     const listed = ids.slice(page * 3, page * 3 + 3)
-    const labels = listed.map(id => id === current ? `${id} (current)` : id)
+    const labels = listed.map(id => id === current ? `${label(id)} (current)` : label(id))
     const options = [...labels]
     if ((page + 1) * 3 < ids.length) options.push('More…')
     if (options.length < 2) options.push('[Cancel]')
@@ -66,9 +66,9 @@ async function pickModel($: EngineInterface, ids: readonly string[], current: st
   }
 }
 
-async function chooseModels($: EngineInterface, ids: string[], notes: string[]): Promise<{ selected: string[]; all: boolean }> {
-  $.ui.log('Local API chat models: ' + ids.join(', '))
-  const choice = await ask($, 'Which local API models should /model-mod:model offer?', ['All (recommended)', 'Choose a subset'])
+async function chooseModels($: EngineInterface, ids: string[], notes: string[], upstream = 'local API'): Promise<{ selected: string[]; all: boolean }> {
+  $.ui.log((upstream === 'local API' ? 'Local API' : upstream) + ' chat models: ' + ids.join(', '))
+  const choice = await ask($, `Which ${upstream} models should /model-mod:model offer?`, ['All (recommended)', 'Choose a subset'])
   if (choice === 'All (recommended)') return { selected: ids, all: true }
   if (ids.includes(choice)) return { selected: [choice], all: false }
   if (choice !== 'Choose a subset') notes.push('Ignored text that did not match a listed model ID.')
@@ -91,7 +91,7 @@ async function chooseModels($: EngineInterface, ids: string[], notes: string[]):
   }
 }
 
-async function configurePicker($: EngineInterface, c: { baseUrl: string; key?: string; models: string[]; explicitModels?: boolean }, setup: boolean, interactive: boolean, status: string): Promise<string> {
+async function configurePicker($: EngineInterface, c: { baseUrl: string; key?: string; models: string[]; explicitModels?: boolean; codex?: Map<string, CodexAccount> }, setup: boolean, interactive: boolean, status: string): Promise<string> {
   if (setup && !c.key) return 'model-mod: apiKey is not configured. Open /plugin → model-mod configure, set the upstream API key there, then run /model-mod:setup.'
   if (setup && !interactive) return 'model-mod setup is interactive. ' + status
   if (!c.key) return 'model-mod: no apiKey in the plugin options; picker refresh is unavailable.'
@@ -153,7 +153,7 @@ async function configurePicker($: EngineInterface, c: { baseUrl: string; key?: s
     const cached = { models: [] as string[] }
     if (Array.isArray(known)) addModels(cached, known.filter(id => typeof id === 'string' && !NOT_CHAT.test(id) && !selected.includes(id)))
     addModels(cached, selected)
-    await $.store.set('models', cached.models.slice(-MODEL_CACHE_CAP))
+    await $.store.set('models', cached.models.filter(id => !c.codex?.has(id)).slice(-MODEL_CACHE_CAP))
     if (!c.explicitModels) addModels(c, selected)
     const text = [`model-mod: ${selected.length} local models selected. /model-mod:model offers these models.`, ...notes].join('\n')
     $.ui.log(text)
@@ -170,7 +170,8 @@ async function configurePicker($: EngineInterface, c: { baseUrl: string; key?: s
   }
 }
 
-type Config = { prompts: Prompts; promptsDir?: string; baseUrl: string; headerFile?: string; key?: string; models: string[]; toolsFile?: string; defaultWindow?: number; explicitModels?: boolean; excluded?: Set<string>; imageAuto?: boolean; source?: 'options' | 'file'; maxTokens: number; effortMode: 'suffix' | 'none'; imageModel?: string; contextWindows?: Record<string, number>; sideModel?: string; keepThinking?: boolean; localTitle?: boolean; localContext?: boolean; toolSearch?: 'auto' | 'on' | 'off'; toolSearchPercent?: number; refresh?: string[]; fallbackModel?: string; fallbackPercent?: number; workerModel?: string }
+type CodexAccount = { account: string; model: string; directory: string }
+type Config = { codex?: Map<string, CodexAccount>; pythonBin?: string; codexBin?: string; accountsDir?: string; apiInvalid?: boolean; prompts: Prompts; promptsDir?: string; baseUrl: string; headerFile?: string; key?: string; models: string[]; toolsFile?: string; defaultWindow?: number; explicitModels?: boolean; excluded?: Set<string>; imageAuto?: boolean; source?: 'options' | 'file'; maxTokens: number; effortMode: 'suffix' | 'none'; imageModel?: string; contextWindows?: Record<string, number>; sideModel?: string; keepThinking?: boolean; localTitle?: boolean; localContext?: boolean; toolSearch?: 'auto' | 'on' | 'off'; toolSearchPercent?: number; refresh?: string[]; fallbackModel?: string; fallbackPercent?: number; workerModel?: string }
 type Tool = { name: string; description: string; input_schema: Record<string, unknown> }
 
 let config: Config | undefined
@@ -241,7 +242,7 @@ let pluginOptions: PluginOptions = {}
 
 // The window of a bridge model: the configured one, else the known one, else the default of the options.
 function windowOf(c: Config, model: string): number | undefined {
-  return c.contextWindows?.[model] ?? (c.defaultWindow === undefined ? undefined : KNOWN_WINDOWS[model] ?? c.defaultWindow)
+  return c.contextWindows?.[model] ?? (c.defaultWindow === undefined ? undefined : c.codex?.has(model) && c.defaultWindow === 272_000 ? 128_000 : KNOWN_WINDOWS[model] ?? c.defaultWindow)
 }
 function addModels(c: Pick<Config, 'models'>, ids: readonly unknown[], validateId = true): void {
   for (const id of ids) {
@@ -287,7 +288,7 @@ async function refreshModels($: EngineInterface, c: Config): Promise<string> {
     const { ids, chat } = fetched
     if (!c.explicitModels) {
       addModels(c, chat)
-      await $.store.set('models', c.models.slice(-MODEL_CACHE_CAP))
+      await $.store.set('models', c.models.filter(id => !c.codex?.has(id)).slice(-MODEL_CACHE_CAP))
     }
     if (c.imageModel === undefined && c.imageAuto) {
       c.imageModel = ids.find(id => id === 'gpt-image-2') ?? ids.find(id => /^gpt-image/.test(id))
@@ -306,13 +307,24 @@ function optionsCandidate(o: PluginOptions): Record<string, unknown> | undefined
   const text = (name: string) => typeof o[name] === 'string' ? (o[name] as string).trim() : ''
   const baseUrl = text('baseUrl') || DEFAULT_BASE_URL
   const key = o.apiKey
-  if (key === undefined || key === null || key === '') return undefined
-  // The key reaches curl in a configuration line; keep it to what cannot break out of it. It is not trimmed:
-  // surrounding whitespace or a newline is refused, not silently removed.
-  if (typeof key !== 'string' || key.length > 512 || !/^[\x21\x23-\x5b\x5d-\x7e]+$/.test(key)) return null
+  const accounts = text('codexAccounts').split(',').map(s => s.trim()).filter(Boolean)
+  const codexModels = text('codexModels').split(',').map(s => s.trim()).filter(Boolean)
+  const pathOrCommand = (s: string) => !/[\0\r\n]/.test(s) && (/^(?:\/|[A-Za-z]:[\\/])/.test(s) || /^[A-Za-z0-9._-]+$/.test(s))
+  const dir = text('codexAccountsDir'), bin = text('codexBin') || 'codex', python = text('pythonBin') || 'python3'
+  const rawPathsValid = ['codexAccountsDir', 'codexBin', 'pythonBin'].every(name => typeof o[name] !== 'string' || !/[\0\r\n]/.test(o[name] as string))
+  const codexValid = rawPathsValid && accounts.length > 0 && codexModels.length > 0 &&
+    accounts.every(s => /^[a-z0-9][a-z0-9-]{0,31}$/.test(s)) &&
+    codexModels.every(s => /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(s) && !/claude|anthropic/i.test(s)) &&
+    (!dir || (/^(?:\/|[A-Za-z]:[\\/])/.test(dir) && pathOrCommand(dir))) && pathOrCommand(bin) && pathOrCommand(python)
+  const hasKey = key !== undefined && key !== null && key !== ''
+  // A rejected API key cannot disable an independently configured Codex upstream.
+  const validKey = typeof key === 'string' && key.length <= 512 && /^[\x21\x23-\x5b\x5d-\x7e]+$/.test(key)
+  if (hasKey && !validKey && !codexValid) return null
+  if (!validKey && !codexValid) return undefined
   const number = (name: string, fallback: number) => typeof o[name] === 'number' && Number.isFinite(o[name]) ? o[name] as number : fallback
   const side = text('sideModel')
-  return { baseUrl, key, models: text('models').split(/[\s,]+/).filter(Boolean), maxTokens: number('maxTokens', 32_000),
+  return { baseUrl: validKey ? baseUrl : DEFAULT_BASE_URL, key: validKey ? key : undefined, apiInvalid: hasKey && !validKey, accounts: codexValid ? accounts : [], codexModels: codexValid ? codexModels : [],
+    accountsDir: dir || undefined, codexBin: bin, pythonBin: python, models: validKey ? text('models').split(/[\s,]+/).filter(Boolean) : [], maxTokens: number('maxTokens', 32_000),
     effortMode: text('effortMode') === 'none' ? 'none' : 'suffix', imageModel: text('imageModel') !== 'none' ? text('imageModel') || undefined : undefined, imageAuto: text('imageModel') === '',
     defaultWindow: number('contextWindow', 272_000), sideModel: side === 'none' ? undefined : side || 'claude-haiku-5-5',
     keepThinking: o.keepThinking !== false, localTitle: o.localTitle !== false, localContext: o.localContext !== false,
@@ -345,7 +357,7 @@ async function loadNow($: EngineInterface) {
       if (!path) return undefined
       candidate = JSON.parse(await $.fs.read(path))
     }
-    if (typeof candidate.baseUrl !== 'string' || typeof (fromOptions ? candidate.key : candidate.headerFile) !== 'string' ||
+    if (typeof candidate.baseUrl !== 'string' || (!fromOptions && typeof candidate.headerFile !== 'string') ||
         (candidate.toolsFile !== undefined && typeof candidate.toolsFile !== 'string') || !Array.isArray(candidate.models) ||
         !candidate.models.every((m: unknown) => typeof m === 'string' && m.length > 0 && !/claude|anthropic/i.test(m)) ||
         !Number.isInteger(candidate.maxTokens) || candidate.maxTokens <= 0) return undefined
@@ -386,14 +398,31 @@ async function loadNow($: EngineInterface) {
         .filter(([id, n]) => candidate.models.includes(id) && Number.isInteger(n) && n >= 32_000 && n <= 4_000_000)) }
     // Config IDs already passed the validation above; preserve their existing accepted syntax.
     addModels(built, candidate.models, false)
-    await seedModels($, built)
+    if (built.key !== undefined || built.headerFile !== undefined) await seedModels($, built)
+    if (fromOptions && candidate.accounts.length) {
+      const home = await $.env.get('HOME')
+      const appdata = await $.env.get('APPDATA')
+      const dir = candidate.accountsDir ?? (appdata ? appdata.replace(/[\\/]+$/, '') + '\\model-mod\\accounts' : home ? home.replace(/\/+$/, '') + '/.config/model-mod/accounts' : undefined)
+      if (!dir) return undefined
+      built.accountsDir = dir
+      built.codex = new Map()
+      const sep = dir.includes('\\') && !dir.includes('/') ? '\\' : '/'
+      for (const account of candidate.accounts as string[]) for (const model of candidate.codexModels as string[]) {
+        const id = `${account}/${model}`
+        if (!MODEL_ID.test(id)) continue
+        built.codex.set(id, { account, model, directory: dir.replace(/[\\/]+$/, '') + sep + account })
+        built.excluded?.delete(id)
+        addModels(built, [id])
+      }
+    }
+    if (built.apiInvalid) $.ui.status('model-mod: API server apiKey contains invalid characters; configure a valid key.')
     // The models the mod switches the session to when the subscription's limit is reached (`fallbackModel`) and runs the
     // `local-worker` agent type on (`workerModel`, else the fallback model). Options only; off when empty. Each must be
     // one of this mod's own models: inside the allowlist when there is one, never a Claude ID.
     const usable = (name: string): string | undefined => {
       const id = fromOptions && typeof candidate[name] === 'string' ? candidate[name] : ''
       if (id === '') return undefined
-      if (!built.explicitModels) addModels(built, [id])
+      if (!built.explicitModels && (built.key !== undefined || built.headerFile !== undefined)) addModels(built, [id])
       if (!MODEL_ID.test(id) || !built.models.includes(id)) {
         $.ui.status(`model-mod: ${name} is not a model of this mod (it must be in the allowlist); that feature is off.`)
         return undefined
@@ -465,17 +494,19 @@ async function tools($: EngineInterface, c: Config, model: string, history: read
   const enabled = new Set(live.map(tool => tool.name))
   // The built-in WebSearch/WebFetch run a side request that names the session model; for a local model it
   // would go to the subscription endpoint, so the bridge's own two tools replace them.
-  const offered: Tool[] = captured.filter(tool => enabled.has(tool.name) && tool.name !== 'WebSearch' && tool.name !== 'WebFetch').map(({ name, description, input_schema }) =>
+  const offered: Tool[] = captured.filter(tool => enabled.has(tool.name) && tool.name !== 'WebSearch' && tool.name !== 'WebFetch' &&
+    !(c.codex?.has(model) && (tool.name === IMAGE_TOOL || tool.name === WEB_SEARCH_TOOL))).map(({ name, description, input_schema }) =>
     ({ name, description, input_schema }))
   // The engine gives a plugin no input schema for an MCP tool; one in the capture file is used, any other is
   // offered with its description and an open object schema (the server's own validation names the arguments).
   const have = new Set(offered.map(tool => tool.name))
-  if (c.imageModel && enabled.has(IMAGE_TOOL)) {
+  if (!c.codex?.has(model) && c.imageModel && enabled.has(IMAGE_TOOL)) {
     offered.push({ name: IMAGE_TOOL, description: IMAGE_SPEC.description, input_schema: IMAGE_SPEC.inputSchema })
     have.add(IMAGE_TOOL)
   }
+  if (c.codex?.has(model)) have.add(IMAGE_TOOL)
   for (const [name, spec] of [[WEB_SEARCH_TOOL, WEB_SEARCH_SPEC], [WEB_FETCH_TOOL, WEB_FETCH_SPEC]] as const) {
-    if (enabled.has(name)) offered.push({ name, description: spec.description, input_schema: spec.inputSchema })
+    if (enabled.has(name) && !(name === WEB_SEARCH_TOOL && c.codex?.has(model))) offered.push({ name, description: spec.description, input_schema: spec.inputSchema })
     have.add(name)
   }
   have.add(TOOL_SEARCH_TOOL)  // offered only when MCP tools are listed by name (below)
@@ -506,7 +537,7 @@ async function tools($: EngineInterface, c: Config, model: string, history: read
 // `thinking.budget_tokens` were measured to have no effect). It clamps a level the model does not declare, so the
 // client's level is sent as it is, `max` included.
 function wireModel(c: Config, e: TurnStepInput): string {
-  if (c.effortMode !== 'suffix' || typeof e.effort !== 'string') return e.model
+  if ((!c.codex?.has(e.model) && c.effortMode !== 'suffix') || typeof e.effort !== 'string') return e.model
   return ['low', 'medium', 'high', 'xhigh', 'max'].includes(e.effort) ? `${e.model}(${e.effort})` : e.model
 }
 
@@ -822,11 +853,82 @@ function scrub(c: Config | undefined, text: string, escaped = true): string {
 }
 function curlCall(c: Config, args: readonly string[]): { argv: string[]; env?: Record<string, string> } {
   if (c.key !== undefined) return { argv: ['bash', '-c', KEY_CURL, 'bash', ...args], env: { MODEL_MOD_KEY: c.key } }
-  return { argv: ['curl', '-g', '-H', '@' + c.headerFile, ...args] }
+  if (c.headerFile !== undefined) return { argv: ['curl', '-g', '-H', '@' + c.headerFile, ...args] }
+  throw new Error('API server is not configured')
 }
 function curlRun($: EngineInterface, c: Config, args: readonly string[], init: { stdin?: string; timeoutMs?: number }) {
   const call = curlCall(c, args)
   return $.process.run(call.argv, { ...init, ...(call.env ? { env: call.env } : {}) })
+}
+
+// All bridge processes, including auxiliary calls, share the same resource limit.
+let codexRunning = 0
+const loginChecks = new Map<string, number>()
+const codexWaiters: (() => void)[] = []
+async function codexSlot(signal?: AbortSignal): Promise<() => void> {
+  while (codexRunning >= 4) {
+    if (signal?.aborted) throw new Cancelled()
+    await new Promise<void>(resolve => {
+      const wake = () => { signal?.removeEventListener('abort', wake); const i = codexWaiters.indexOf(wake); if (i >= 0) codexWaiters.splice(i, 1); resolve() }
+      codexWaiters.push(wake)
+      signal?.addEventListener('abort', wake, { once: true })
+      if (signal?.aborted) wake()
+    })
+  }
+  if (signal?.aborted) throw new Cancelled()
+  codexRunning++
+  let held = true
+  return () => { if (held) { held = false; codexRunning--; codexWaiters.shift()?.() } }
+}
+function helperArgs($: EngineInterface, c: Config, command: string, home: string, model?: string, wire?: string): string[] {
+  const root = $.plugin.root
+  if (typeof root !== 'string' || !root || /[\0\r\n]/.test(root)) throw new Error('plugin root unavailable')
+  const sep = root.includes('\\') && !root.includes('/') ? '\\' : '/'
+  const script = root.replace(/[\\/]+$/, '') + sep + 'helper' + sep + 'bridge.py'
+  const args = [c.pythonBin ?? 'python3', script, command, '--codex-home', home, '--codex-bin', c.codexBin ?? 'codex']
+  if (command === 'messages') args.push('--model-map', `${wire ?? model}=${model}`, '--idle-seconds', '300', '--max-seconds', '900')
+  return args
+}
+async function helperRun($: EngineInterface, c: Config, command: string, home: string, timeoutMs: number, model?: string, body?: object) {
+  const controller = new AbortController()
+  const timer = $.clock.after(timeoutMs, () => controller.abort())
+  const started = await $.clock.now()
+  let release: (() => void) | undefined
+  try {
+    release = await codexSlot(controller.signal)
+    const remaining = Math.max(1, timeoutMs - ((await $.clock.now()) - started))
+    const wire = body && 'model' in body ? String(body.model) : model
+    const run = await $.process.run(helperArgs($, c, command, home, model, wire), { ...(body ? { stdin: JSON.stringify(body) } : {}), timeoutMs: remaining })
+    for (const line of run.stderr.split(/\r?\n/)) if (line.startsWith('model-mod-note:')) $.ui.log(line)
+    return run
+  } finally { timer.cancel(); release?.() }
+}
+function shellQuote(value: string): string { return "'" + value.replace(/'/g, "'\\''") + "'" }
+function powershellQuote(value: string): string { return "'" + value.replace(/'/g, "''") + "'" }
+function loginCommand(c: Config, item: CodexAccount): string {
+  if (/^[A-Za-z]:[\\/]/.test(item.directory)) return `$env:CODEX_HOME = ${powershellQuote(item.directory)}; & ${powershellQuote(c.codexBin ?? 'codex')} login`
+  return `CODEX_HOME=${shellQuote(item.directory)} ${shellQuote(c.codexBin ?? 'codex')} login`
+}
+function codexRunError(c: Config, item: CodexAccount, run: { stdout: string; stderr: string; exitCode: number }): string {
+  let code = '', message = ''
+  try { const error = JSON.parse(run.stdout).error; code = error?.code ?? ''; message = error?.message ?? '' } catch { /* no structured error */ }
+  const prefix = `model-mod: Codex login (${item.account}): `
+  if (code === 'unsupported_item') return prefix + `unsupported codex behavior: ${/unsupported codex behavior: ([A-Za-z0-9_-]{1,64})/.exec(message)?.[1] ?? 'unknown'}; update or check Codex`
+  if (code === 'protocol' || code === 'incompatible_protocol' || run.exitCode === 65) return prefix + 'incompatible app-server protocol; update or check Codex'
+  if (code === 'codex_unavailable' || run.exitCode === 66) return prefix + 'codex unavailable; install Codex or configure codexBin'
+  if (code === 'codex_too_old' || run.exitCode === 67) return prefix + 'codex too old; upgrade to 0.165.0 or newer'
+  if (code === 'codex_not_logged_in' || run.exitCode === 68) return prefix + `not logged in; run ${loginCommand(c, item)} in your terminal`
+  if (code === 'invalid_home' || run.exitCode === 69) return prefix + 'account directory missing; run /model-mod:setup'
+  if (run.exitCode === 78) return prefix + 'Python too old; install Python 3.9 or newer'
+  if (/model-mod-http:429\b/.test(run.stderr)) return prefix + 'rate limited; try again later'
+  return prefix + 'app-server request failed; check Codex and try again'
+}
+async function messagesOnce($: EngineInterface, c: Config, model: string, body: object, maxTime: string, timeoutMs: number) {
+  const codex = c.codex?.get(model)
+  if (codex) return helperRun($, c, 'messages', codex.directory, timeoutMs, codex.model, body)
+  return curlRun($, c, ['-sS', '--fail-with-body', '--max-time', maxTime,
+    '-H', 'content-type: application/json', '-H', 'anthropic-version: 2023-06-01',
+    '--data-binary', '@-', c.baseUrl + '/v1/messages'], { stdin: JSON.stringify(body), timeoutMs })
 }
 
 function* failure(e: TurnStepInput, reason: string, index = 0): Generator<TurnStepChunk, TurnStepResult> {
@@ -967,8 +1069,12 @@ async function autoFallback($: EngineInterface, c: Config): Promise<string | und
 }
 
 // The paged ask menu, three models a page; undefined when nothing was chosen (cancelled or no way to ask).
-async function menuPick($: EngineInterface, models: readonly string[], current: string): Promise<string | undefined> {
-  try { return await pickModel($, models, current) } catch { return undefined }
+function modelLabel(c: Config, id: string): string {
+  const item = c.codex?.get(id)
+  return item ? `${item.model} @ ${item.account} (Codex login)` : c.codex?.size ? `${id} (API)` : id
+}
+async function menuPick($: EngineInterface, c: Config, current: string): Promise<string | undefined> {
+  try { return await pickModel($, c.models, current, id => modelLabel(c, id)) } catch { return undefined }
 }
 
 // URL canonicalises the host: IPv4 is dotted-quad and IPv4-mapped IPv6 is hex (::ffff:7f00:1); anything else is not loopback.
@@ -990,15 +1096,121 @@ function commandText(reply: { text: string }): { text: string } {
   return { text: reply.text.replace(/^model-mod(?:: ?| )/, '') }
 }
 
+async function setupCodex($: EngineInterface, c?: Config): Promise<string> {
+  try {
+    const python = typeof pluginOptions.pythonBin === 'string' && pluginOptions.pythonBin.trim() || 'python3'
+    const bin = typeof pluginOptions.codexBin === 'string' && pluginOptions.codexBin.trim() || 'codex'
+    const validCommand = (s: string) => !/[\0\r\n]/.test(s) && (/^(?:\/|[A-Za-z]:[\\/])/.test(s) || /^[A-Za-z0-9._-]+$/.test(s))
+    if (['codexAccountsDir', 'codexBin', 'pythonBin'].some(name => typeof pluginOptions[name] === 'string' && /[\0\r\n]/.test(pluginOptions[name] as string)) ||
+        !validCommand(python) || !validCommand(bin)) return 'model-mod: Codex login: invalid path; configure codexAccountsDir, pythonBin and codexBin.'
+    const py = await $.process.run([python, '--version'], { timeoutMs: 15_000 })
+    const pv = /Python\s+(\d+)\.(\d+)/.exec(py.stdout + py.stderr)
+    if (py.exitCode !== 0 || !pv || Number(pv[1]) < 3 || (Number(pv[1]) === 3 && Number(pv[2]) < 9)) return 'model-mod: Codex login: Python 3.9 or newer required; install Python.'
+    const cv = await $.process.run([bin, '--version'], { timeoutMs: 15_000 })
+    const v = /^codex-cli (\d+)\.(\d+)\.(\d+)(?:[-+][A-Za-z0-9.+-]+)?$/.exec(cv.stdout.trim())
+    if (cv.exitCode !== 0 || !v) return 'model-mod: Codex login: codex unavailable; install Codex or configure codexBin.'
+    if (Number(v[1]) === 0 && Number(v[2]) < 165) return 'model-mod: Codex login: codex too old (minimum 0.165.0); upgrade Codex.'
+    const account = await ask($, 'Choose an account name or enter one under Other.', ['main', 'Cancel'])
+    if (account === 'Cancel') throw new Cancelled()
+    if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(account)) return 'model-mod: Codex login: invalid account name; nothing changed.'
+    const home = await $.env.get('HOME'), appdata = await $.env.get('APPDATA')
+    const configured = typeof pluginOptions.codexAccountsDir === 'string' ? pluginOptions.codexAccountsDir.trim() : ''
+    const dir = configured || (appdata ? appdata.replace(/[\\/]+$/, '') + '\\model-mod\\accounts' : home ? home.replace(/\/+$/, '') + '/.config/model-mod/accounts' : '')
+    if (!dir || !/^(?:\/|[A-Za-z]:[\\/])/.test(dir) || /[\0\r\n]/.test(dir)) return 'model-mod: Codex login: invalid accounts directory; configure codexAccountsDir.'
+    const sep = dir.includes('\\') && !dir.includes('/') ? '\\' : '/'
+    const accountHome = dir.replace(/[\\/]+$/, '') + sep + account
+    const bridge = c ?? { prompts: { text: {}, files: [] }, baseUrl: DEFAULT_BASE_URL, models: [], maxTokens: 32000, effortMode: 'suffix' as const }
+    const check = await helperRun($, { ...bridge, pythonBin: python, codexBin: bin }, 'check', accountHome, 15_000)
+    if (check.exitCode === 68 || check.exitCode === 69) {
+      const windows = /^[A-Za-z]:[\\/]/.test(accountHome)
+      const mkdir = windows ? `New-Item -ItemType Directory -Force -LiteralPath ${powershellQuote(accountHome)}` : `mkdir -p -- ${shellQuote(accountHome)}`
+      const login = loginCommand({ ...bridge, codexBin: bin }, { account, model: '', directory: accountHome })
+      return `model-mod: Codex login (${account}): create the account directory and log in from your ${windows ? 'PowerShell' : 'terminal'}, then run /model-mod:setup again:\n${mkdir}\n${login}`
+    }
+    if (check.exitCode !== 0) return `model-mod: Codex login (${account}): check failed; verify Python and Codex installation.`
+    const listed = await helperRun($, { ...bridge, pythonBin: python, codexBin: bin }, 'models', accountHome, 15_000)
+    if (listed.exitCode !== 0) return `model-mod: Codex login (${account}): model list unavailable; check Codex and try again.`
+    const parsed = JSON.parse(listed.stdout) as { models?: { id?: unknown }[] }
+    const ids = [...new Set((parsed.models ?? []).map(m => m.id).filter((id): id is string => typeof id === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(id) && !NOT_CHAT.test(id)))]
+    if (!ids.length) return 'model-mod: Codex login: no chat models available; nothing changed.'
+    const { selected } = await chooseModels($, ids, [], 'Codex login')
+    const rows = await $.config.list()
+    const row = (field: string) => rows.find(r => r.key.endsWith('.' + field) && r.provider.plugin.split('@')[0] === $.plugin.name.split('@')[0])
+    const accountsRow = row('codexAccounts'), modelsRow = row('codexModels')
+    if (!accountsRow || accountsRow.isLocked || !modelsRow || modelsRow.isLocked) return 'model-mod: Codex login: writable config unavailable; nothing changed.'
+    const accounts = [...new Set([...(typeof pluginOptions.codexAccounts === 'string' ? pluginOptions.codexAccounts.split(',').map(s => s.trim()).filter(Boolean) : []), account])]
+    const oldModels = typeof modelsRow.value === 'string' ? modelsRow.value : ''
+    const first = await $.config.set({ key: modelsRow.key, value: selected.join(',') })
+    if ('deny' in first) return 'model-mod: Codex login: model configuration refused; nothing changed.'
+    const second = await $.config.set({ key: accountsRow.key, value: accounts.join(',') })
+    if ('deny' in second) {
+      const rollback = await $.config.set({ key: modelsRow.key, value: oldModels })
+      return 'deny' in rollback ? 'model-mod: Codex login: account configuration refused and rollback failed; restore the previous model setting in /plugin.' : 'model-mod: Codex login: account configuration refused; previous settings restored.'
+    }
+    return `model-mod: Codex login (${account}): ${selected.length} models configured.`
+  } catch (err) {
+    if (err instanceof Cancelled) return 'model-mod: setup cancelled, nothing changed'
+    return 'model-mod: Codex login: setup failed; check Python and Codex installation.'
+  }
+}
+
+async function codexStatus($: EngineInterface, c: Config): Promise<string[]> {
+  const accounts = new Map<string, CodexAccount>()
+  for (const item of c.codex?.values() ?? []) accounts.set(item.account, item)
+  return Promise.all([...accounts.values()].map(async item => {
+    let python = 'unavailable', version = 'unavailable', login = 'unavailable', limits = 'unavailable', resets = 'unavailable', ordinary = 'unavailable'
+    const warnings: string[] = []
+    try {
+      const result = await helperRun($, c, 'check', item.directory, 15_000)
+      const check = JSON.parse(result.stdout) as { pythonVersion?: unknown; codexVersion?: unknown; versionStatus?: unknown; loggedIn?: unknown; warnings?: unknown }
+      if (typeof check.pythonVersion === 'string' && /^\d+\.\d+\.\d+/.test(check.pythonVersion)) python = check.pythonVersion
+      if (typeof check.codexVersion === 'string') version = /\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?/.exec(check.codexVersion)?.[0] ?? 'unavailable'
+      if (check.versionStatus === 'too_old') version += ' too old (minimum 0.165.0)'
+      if (result.exitCode === 0) login = check.loggedIn === true ? 'ok' : 'missing'
+      else if (result.exitCode === 68 || result.exitCode === 69) login = 'missing'
+      if (Array.isArray(check.warnings)) for (const warning of check.warnings) {
+        if (typeof warning === 'string' && /^Codex login: inspect account home file (AGENTS\.md|AGENTS\.override\.md|config\.toml|\.mcp\.json|mcp\.json) for instructions or MCP settings$/.test(warning)) warnings.push(warning)
+      }
+    } catch { /* one unavailable field does not stop status */ }
+    try {
+      const result = await helperRun($, c, 'rate-limits', item.directory, 15_000)
+      if (result.exitCode === 0) {
+        const data = JSON.parse(result.stdout) as { primary?: { remainingPercent?: number; resetsAt?: number }; secondary?: { remainingPercent?: number; resetsAt?: number }; ordinaryUsageAllowed?: boolean }
+        const pct = (n: unknown) => typeof n === 'number' && Number.isFinite(n) ? `${n}%` : 'unavailable'
+        const time = (n: unknown) => typeof n === 'number' && Number.isFinite(n) ? new Date(n * 1000).toISOString() : 'unavailable'
+        limits = `${pct(data.primary?.remainingPercent)}/${pct(data.secondary?.remainingPercent)}`
+        resets = `${time(data.primary?.resetsAt)}/${time(data.secondary?.resetsAt)}`
+        if (typeof data.ordinaryUsageAllowed === 'boolean') ordinary = String(data.ordinaryUsageAllowed)
+      }
+    } catch { /* limits remain unavailable */ }
+    return `upstream=Codex login; account=${item.account}; python=${python}; codex=${version}; login=${login}; limits=${limits}, resets ${resets}, ordinaryUsageAllowed=${ordinary}${warnings.map(w => '; warning: ' + w).join('')}`
+  }))
+}
+
 async function admin($: EngineInterface, e: { origin: { kind: string } }, arg: 'setup' | 'status' | 'refresh') {
   const c = await load($)
-  if (arg === 'setup') return { text: await configurePicker($, c ?? { baseUrl: typeof pluginOptions.baseUrl === 'string' ? pluginOptions.baseUrl : DEFAULT_BASE_URL, models: [] }, true, e.origin.kind === 'composer' || e.origin.kind === 'bridge', `picker=${c ? 'active' : 'inactive'}; models=${c?.models.length ?? 0}`) }
+  if (arg === 'setup') {
+    const interactive = e.origin.kind === 'composer' || e.origin.kind === 'bridge'
+    const status = `picker=${c ? 'active' : 'inactive'}; models=${c?.models.length ?? 0}`
+    if (!interactive) return { text: 'model-mod setup is interactive. ' + status }
+    try {
+      const configured = [c?.codex?.size ? 'Codex login configured' : '', c?.key || c?.headerFile ? 'API server configured' : ''].filter(Boolean).join('; ')
+      const choice = await ask($, `Choose an upstream.${configured ? ' ' + configured + '.' : ''}`, ['Codex login (recommended)', 'Compatible API server'])
+      if (choice === 'Codex login (recommended)') return { text: await setupCodex($, c) }
+      if (choice !== 'Compatible API server') return { text: 'model-mod: setup cancelled, nothing changed' }
+      return { text: await configurePicker($, c ?? { baseUrl: typeof pluginOptions.baseUrl === 'string' ? pluginOptions.baseUrl : DEFAULT_BASE_URL, models: [] }, true, interactive, status) }
+    } catch { return { text: 'model-mod: setup cancelled, nothing changed' } }
+  }
   if (!c) return { text: `model-mod: inactive; picker=inactive; models=0. ${await configHint($)}` }
   if (arg === 'refresh') {
     c.prompts = await loadPrompts($, c.promptsDir)
     await registerWorker($, c)
     const prompts = promptStatus(c.prompts)
-    if (!c.refresh) return { text: (await configurePicker($, c, false, e.origin.kind === 'composer' || e.origin.kind === 'bridge', '')) + '; ' + prompts }
+    const codex = c.codex?.size ? await codexStatus($, c) : []
+    if (!c.refresh) {
+      const api = c.key || c.headerFile ? await configurePicker($, c, false, e.origin.kind === 'composer' || e.origin.kind === 'bridge', '') : ''
+      return { text: [api, ...codex, prompts].filter(Boolean).join('; ') }
+    }
     const before = await capturedTools($, c)
     const run = await $.process.run(c.refresh, { timeoutMs: 240_000 })
     const after = await capturedTools($, c)
@@ -1014,13 +1226,15 @@ async function admin($: EngineInterface, e: { origin: { kind: string } }, arg: '
     const known = new Set(captured.map(tool => tool.name))
     open = (await $.tool.list()).filter(tool => tool.mcp && !tool.name.startsWith('mcp__model-mod__') && !known.has(tool.name)).length
   }
+  const codex = c.codex?.size ? await codexStatus($, c) : []
+  if (!c.key && !c.headerFile) return { text: ['model-mod 0.1.2: picker=active', ...(c.apiInvalid ? ['API server: invalid apiKey; configure a valid key'] : []), ...codex].join('; ') }
   const url = new URL(c.baseUrl)
   const loopback = loopbackHost(url.hostname)
   const warnings: string[] = []
   if (c.headerFile !== undefined && !await $.fs.exists(c.headerFile)) warnings.push('headerFile not found')
   if (!loopback && url.protocol === 'http:') warnings.push('plain http to a non-loopback host sends the API key unencrypted')
   return { text: `model-mod 0.1.2: picker=active${warnings.map(w => `; warning: ${w}`).join('')}; host=${loopback ? url.hostname : 'remote'}; config=${c.source}; models=${c.models.length}; tools=${captured ? (c.toolsFile ? 'captured' : 'listed') : 'missing'}` +
-    `; ${promptStatus(c.prompts)}; tool search=${c.toolSearch ?? 'auto'}; MCP tools without a captured schema=${open}${open && c.refresh ? ' (/model-mod:refresh captures them)' : ''}` }
+    `; ${promptStatus(c.prompts)}; tool search=${c.toolSearch ?? 'auto'}; MCP tools without a captured schema=${open}${open && c.refresh ? ' (/model-mod:refresh captures them)' : ''}${codex.length ? '\n' + codex.join('\n') : ''}` }
 }
 
 export const register: Register = (on, options) => {
@@ -1060,6 +1274,8 @@ export const register: Register = (on, options) => {
       if (!c || !c.imageModel) return answer('Image generation is not configured.', true)
       // Only a turn that already runs on a bridge model may use the image endpoint.
       const model = await bridgeModel($, e, c)
+      if (model && c.codex?.has(model)) return answer('generate_image is unavailable for Codex login models.', true)
+      if (model !== undefined && c.key === undefined && c.headerFile === undefined) return answer('API server is not configured.', true)
       if (model === undefined) {
         return answer('generate_image is only available while a local model is selected. Select a local model to use this tool.', true)
       }
@@ -1141,6 +1357,7 @@ export const register: Register = (on, options) => {
       if (!c) return answer('Web search is not configured.', true)
       const model = await bridgeModel($, e, c)
       if (model === undefined) return answer('web_search is only available while a local model is selected. With this model, use the built-in WebSearch tool instead.', true)
+      if (c.codex?.has(model)) return answer('web_search is unavailable for Codex login models.', true)
       const input = e as unknown as Record<string, unknown>
       const query = typeof input.query === 'string' ? input.query.trim() : ''
       if (!query || query.length > 500) return answer('query must be 1-500 characters.', true)
@@ -1154,9 +1371,7 @@ export const register: Register = (on, options) => {
         tools: [{ type: 'web_search_20250305', name: 'web_search', max_uses: 5,
           ...(domains.length ? { allowed_domains: domains } : {}) }],
         messages: [{ role: 'user', content: `Search the web for: ${query}\nAnswer with the facts found and name the sources.` }] }
-      const run = await curlRun($, c, ['-sS', '--fail-with-body', '--max-time', '280',
-        '-H', 'content-type: application/json', '-H', 'anthropic-version: 2023-06-01',
-        '--data-binary', '@-', c.baseUrl + '/v1/messages'], { stdin: JSON.stringify(body), timeoutMs: 300_000 })
+      const run = await messagesOnce($, c, model, body, '280', 300_000)
       if (run.exitCode !== 0) return answer(`Search request failed (${scrub(c, run.stdout.trim()).slice(0, 100) || 'no output'}).`, true)
       const reply = JSON.parse(run.stdout) as { content?: { type: string; text?: string; content?: unknown }[] }
       const parts = reply.content ?? []
@@ -1246,9 +1461,7 @@ export const register: Register = (on, options) => {
         const body = { model: c.effortMode === 'suffix' ? `${model}(low)` : model, max_tokens: 64, stream: false,
           system: c.prompts.text.title,
           messages: [{ role: 'user', content: [{ type: 'text', text: prompt }] }] }
-        const run = await curlRun($, c, ['-sS', '--fail-with-body', '--max-time', '15',
-          '-H', 'content-type: application/json', '-H', 'anthropic-version: 2023-06-01',
-          '--data-binary', '@-', c.baseUrl + '/v1/messages'], { stdin: JSON.stringify(body), timeoutMs: 20_000 })
+        const run = await messagesOnce($, c, model, body, '15', 20_000)
         if (run.exitCode === 0) {
           const reply = JSON.parse(run.stdout) as { content?: { type: string; text?: string }[] }
           title = scrub(c, (reply.content ?? []).filter(b => b.type === 'text').map(b => b.text ?? '').join(' '), false)
@@ -1292,10 +1505,8 @@ export const register: Register = (on, options) => {
       const body = { model, max_tokens: c.maxTokens, stream: false, messages,
         system: [...prompt.sections.map(section => section.text),
           'Answer only the side question using the conversation as read-only context. Give one reply. Do not use tools or perform actions.'].join('\n\n') }
-      const run = await curlRun($, c, ['-sS', '--fail-with-body', '--max-time', '280',
-        '-H', 'content-type: application/json', '-H', 'anthropic-version: 2023-06-01',
-        '--data-binary', '@-', c.baseUrl + '/v1/messages'], { stdin: JSON.stringify(body), timeoutMs: 300_000 })
-      if (run.exitCode !== 0) return { text: 'model-mod: side-question request failed.' }
+      const run = await messagesOnce($, c, model, body, '280', 300_000)
+      if (run.exitCode !== 0) return { text: c.codex?.has(model) ? codexRunError(c, c.codex.get(model)!, run) : 'model-mod: side-question request failed.' }
       const reply = JSON.parse(run.stdout) as { content?: { type: string; text?: string }[] }
       const text = scrub(c, (reply.content ?? []).filter(block => block.type === 'text').map(block => block.text ?? '').join('').trim(), false)
       return { text: text || 'model-mod: side question returned no text.' }
@@ -1384,13 +1595,14 @@ export const register: Register = (on, options) => {
     // choices are applied from its handlers and reported as a toast.
     if (e.origin.kind === 'composer') {
       const toast = (text?: string) => { if (text) void $.ui.toast(text).catch(() => {}) }
-      const shown = await openPane($, { local: c.models, current }, {
-        pick: async id => toast(await apply(id)),
-        fallback: async () => toast(await apply(await menuPick($, c.models, current))),
+      const labels = new Map(c.models.map(id => [modelLabel(c, id), id]))
+      const shown = await openPane($, { local: [...labels.keys()], current: modelLabel(c, current) }, {
+        pick: async label => toast(await apply(labels.get(label))),
+        fallback: async () => toast(await apply(await menuPick($, c, current))),
       })
       if (shown === 'shown') return {}
     }
-    const text = await apply(await menuPick($, c.models, current))
+    const text = await apply(await menuPick($, c, current))
     return text ? { text } : {}
   })
 
@@ -1466,10 +1678,8 @@ export const register: Register = (on, options) => {
         `${renderTranscript(e.messages)}\n</transcript>`
       const body = { model, max_tokens: c.maxTokens, stream: false, system: c.prompts.text.compact,
         messages: [{ role: 'user', content: [{ type: 'text', text: ask }] }] }
-      const run = await curlRun($, c, ['-sS', '--fail-with-body', '--max-time', '590',
-        '-H', 'content-type: application/json', '-H', 'anthropic-version: 2023-06-01',
-        '--data-binary', '@-', c.baseUrl + '/v1/messages'], { stdin: JSON.stringify(body), timeoutMs: 600_000 })
-      if (run.exitCode !== 0) return { skip: 'model-mod: summary request failed' }
+      const run = await messagesOnce($, c, model, body, '590', 600_000)
+      if (run.exitCode !== 0) return { skip: c.codex?.has(model) ? codexRunError(c, c.codex.get(model)!, run) : 'model-mod: summary request failed' }
       const reply = JSON.parse(run.stdout) as { content?: { type: string; text?: string }[] }
       const summary = scrub(c, (reply.content ?? []).filter(b => b.type === 'text').map(b => b.text ?? '').join('').trim(), false)
       if (!summary) return { skip: 'model-mod: empty summary' }
@@ -1482,6 +1692,8 @@ export const register: Register = (on, options) => {
       }
       return { messages: [{ role: 'user' as const, toolUses: [], text }] }
     } catch (err) {
+      const item = model === undefined ? undefined : c.codex?.get(model)
+      if (item) return { skip: `model-mod: Codex login (${item.account}): helper could not start; check Python and Codex installation` }
       const why = err instanceof Error ? `${err.name}: ${err.message}` : String(err)
       return { skip: `model-mod: summary failed (${scrub(c, why).slice(0, 160)})` }
     }
@@ -1498,6 +1710,7 @@ export const register: Register = (on, options) => {
     }
     if (c.excluded?.has(e.model)) return yield* failure(e, 'model is not in the allowlist')
     if (!c.models.includes(e.model)) return yield* next(e)
+    const codex = c.codex?.get(e.model)
     let parser = new MessagesStream(e.model)
     try {
       const own = await trackedOf($, e.agentId)
@@ -1519,7 +1732,7 @@ export const register: Register = (on, options) => {
       }) })).filter(message => message.content.length > 0)
       while (messages.length && messages[0]!.role !== 'user') messages.shift()
       let withThinking: typeof messages | undefined
-      if (c.keepThinking !== false && thinkingStash.size > 0) {
+      if (!codex && c.keepThinking !== false && thinkingStash.size > 0) {
         let any = false
         withThinking = messages.map(message => {
           if (message.role !== 'assistant') return message
@@ -1546,12 +1759,16 @@ export const register: Register = (on, options) => {
         parser = new MessagesStream(e.model)
         // Retry-After comes back through --write-out, which curl writes to fd 2 itself: a header file opened on the stderr device
         // fails when the client hands the child a socket there. %header{} needs curl 7.84; an older curl prints nothing and the plain backoff applies.
-        const call = curlCall(c, ['-sN', '--fail-with-body', '--max-time', '900', '--speed-limit', '1', '--speed-time', String(STREAM_IDLE_SECONDS),
+        const call = codex ? { argv: helperArgs($, c, 'messages', codex.directory, codex.model, body.model), env: undefined } : curlCall(c, ['-sN', '--fail-with-body', '--max-time', '900', '--speed-limit', '1', '--speed-time', String(STREAM_IDLE_SECONDS),
           '--write-out', '%{stderr}\nmodel-mod-http:%{http_code}\nmodel-mod-retry-after:%header{retry-after}\n',
           '-H', 'content-type: application/json',
           '-H', 'anthropic-version: 2023-06-01', '--data-binary', '@-', c.baseUrl + '/v1/messages'])
-        const child = $.process.spawn({ argv: call.argv, ...(call.env ? { env: call.env } : {}),
-          input: JSON.stringify(sendThinking ? { ...body, messages: withThinking } : body) })
+        const release = codex ? await codexSlot(next.signal) : undefined
+        let child: ReturnType<EngineInterface['process']['spawn']>
+        try {
+          child = $.process.spawn({ argv: call.argv, ...(call.env ? { env: call.env } : {}),
+            input: JSON.stringify(sendThinking ? { ...body, messages: withThinking } : body) })
+        } catch (err) { release?.(); throw err }
         let finished = false
         let rawError = ''
         let statusTail = ''
@@ -1572,8 +1789,9 @@ export const register: Register = (on, options) => {
             if (next.signal.aborted) return yield* failure(e, 'cancelled', parser.nextIndex)
             if (piece.stream !== 'stdout') {
               const lines = (statusTail + piece.text).split('\n')
-              statusTail = lines.pop()!.slice(-64)
+              statusTail = lines.pop()!.slice(-4096)
               for (const line of lines) {
+                if (codex && line.startsWith('model-mod-note:')) $.ui.log(line)
                 const status = /^model-mod-http:(\d{3})\r?$/.exec(line)
                 if (status) httpStatus = Number(status[1])
                 if (line.startsWith('model-mod-retry-after:')) {
@@ -1585,10 +1803,12 @@ export const register: Register = (on, options) => {
             }
             if (parser.error) continue
             // Preserve a small error JSON prefix without ever displaying its message.
-            if (rawError.length < 4096) rawError += piece.text.slice(0, 4096 - rawError.length)
+            if (codex) rawError = (rawError + piece.text).slice(-8192)
+            else if (rawError.length < 4096) rawError += piece.text.slice(0, 4096 - rawError.length)
             for (const chunk of parser.push(piece.text)) { streamed = true; yield chunk }
             if (parser.error) grace.lapsed = new Promise(resolve => { grace.timer = $.clock.after(WRITE_OUT_GRACE_MS, () => resolve(undefined)) })
           }
+          if (next.signal.aborted) return yield* failure(e, 'cancelled', parser.nextIndex)
           const exit = parser.error ? { code: 0 } : await child.result
           if (parser.error) {
             try { await child.return({ code: null, signal: 'SIGTERM' }) } catch { /* the stream already closed the child */ }
@@ -1605,9 +1825,33 @@ export const register: Register = (on, options) => {
             }
             if (['api_error', 'authentication_error', 'permission_error', 'not_found_error',
               'invalid_request_error', 'rate_limit_error', 'overloaded_error'].includes(type as string)) reason += ` (${type})`
-            const transient = parser.error || exit.code === 22
-              ? RETRYABLE_HTTP_STATUS.includes(httpStatus) || ['rate_limit_error', 'overloaded_error', 'api_error'].includes(type as string)
-              : exit.code === 0 || (exit.code !== null && [6, 7, 18, 28, 35, 52, 55, 56].includes(exit.code))
+            let errorCode: string | undefined
+            let errorMessage = ''
+            if (codex) {
+              try {
+                const match = /event: error\r?\n(?:[^\n]*\n)*?data: ([^\n]+)/.exec(rawError)
+                const value = JSON.parse(match ? match[1]! : rawError)
+                errorCode = value.error?.code
+                errorMessage = typeof value.error?.message === 'string' ? value.error.message : ''
+              } catch { /* no structured error */ }
+              const prefix = `Codex login (${codex.account}): `
+              if (errorCode === 'unsupported_item') {
+                const kind = /unsupported codex behavior: ([A-Za-z0-9_-]{1,64})/.exec(errorMessage)?.[1] ?? 'unknown'
+                return yield* failure(e, prefix + `unsupported codex behavior: ${kind}; update or check Codex`, parser.nextIndex)
+              }
+              if (errorCode === 'protocol' || errorCode === 'incompatible_protocol' || exit.code === 65) return yield* failure(e, prefix + 'incompatible app-server protocol; update or check Codex', parser.nextIndex)
+              if (errorCode === 'codex_unavailable' || exit.code === 66) return yield* failure(e, prefix + 'codex unavailable; install Codex or configure codexBin', parser.nextIndex)
+              if (errorCode === 'codex_too_old' || exit.code === 67) return yield* failure(e, prefix + 'codex too old; upgrade to 0.165.0 or newer', parser.nextIndex)
+              if (errorCode === 'codex_not_logged_in' || exit.code === 68) return yield* failure(e, prefix + `not logged in; run ${loginCommand(c, codex)} in your terminal`, parser.nextIndex)
+              if (errorCode === 'invalid_home' || exit.code === 69) return yield* failure(e, prefix + 'account directory missing; run /model-mod:setup', parser.nextIndex)
+              if (exit.code === 78) return yield* failure(e, prefix + 'Python too old; install Python 3.9 or newer', parser.nextIndex)
+              reason = prefix + (httpStatus === 429 ? 'rate limited' : httpStatus === 504 ? 'app-server timed out' : 'app-server request failed')
+            }
+            const transient = codex
+              ? RETRYABLE_HTTP_STATUS.includes(httpStatus) || (httpStatus >= 500 && !errorCode)
+              : parser.error || exit.code === 22
+                ? RETRYABLE_HTTP_STATUS.includes(httpStatus) || ['rate_limit_error', 'overloaded_error', 'api_error'].includes(type as string)
+                : exit.code === 0 || (exit.code !== null && [6, 7, 18, 28, 35, 52, 55, 56].includes(exit.code))
             // Only an answer that is itself a rate limit or overload carries a meaningful Retry-After; on a 200 whose stream broke it is ignored.
             if (!RETRYABLE_HTTP_STATUS.includes(httpStatus)) retryAfter = undefined
             if (!streamed && transient && retryAfter !== undefined && retryAfter > 15) {
@@ -1620,7 +1864,18 @@ export const register: Register = (on, options) => {
               continue
             }
             if (!streamed && transient && attempt < RETRY_DELAYS.length) {
-              $.ui.status(`model-mod: ${reason}; retrying (${attempt + 1}/${RETRY_DELAYS.length})`)
+              if (codex && attempt === RETRY_DELAYS.length - 1 && !(httpStatus >= 400 && httpStatus < 500)) {
+                release?.()
+                const now = await $.clock.now()
+                if (now - (loginChecks.get(codex.directory) ?? -Infinity) >= 60_000) {
+                  loginChecks.set(codex.directory, now)
+                  try {
+                    const check = await helperRun($, c, 'check', codex.directory, 15_000)
+                    if (check.exitCode === 68) return yield* failure(e, `Codex login (${codex.account}): not logged in; run ${loginCommand(c, codex)} in your terminal`, parser.nextIndex)
+                  } catch { /* the original failure remains */ }
+                }
+              }
+              if (!codex) $.ui.status(`model-mod: ${reason}; retrying (${attempt + 1}/${RETRY_DELAYS.length})`)
               // $.clock.sleep is paid out of the hook's own time budget (about 10 s); a process wait is not.
               for (let left = Math.max(RETRY_DELAYS[attempt]!, (retryAfter ?? 0) * 1000); left > 0 && !next.signal.aborted; left -= 3000) {
                 await $.process.run(['sleep', String(Math.min(left, 3000) / 1000)])
@@ -1629,7 +1884,7 @@ export const register: Register = (on, options) => {
             }
             return yield* failure(e, reason, parser.nextIndex)
           }
-          if (c.keepThinking !== false) stashThinking(parser.firstToolId(), parser.thinkingBlocks())
+          if (!codex && c.keepThinking !== false) stashThinking(parser.firstToolId(), parser.thinkingBlocks())
           if (own) {
             own.turns.push({ role: 'assistant', content: parser.blocks() })
             own.pending = parser.blocks().filter(b => b.type === 'tool_use').map(b => String(b.id))
@@ -1642,11 +1897,14 @@ export const register: Register = (on, options) => {
           if (!finished) {
             try { await child.return({ code: null, signal: 'SIGTERM' }) } catch { /* abort already killed it */ }
           }
+          release?.()
         }
       }
     } catch (err) {
       const why = err instanceof Error ? scrub(c, `${err.name}: ${err.message}`).slice(0, 160) : 'unknown'
-      return yield* failure(e, next.signal.aborted ? 'cancelled' : `local request failed (${why})`, parser.nextIndex)
+      return yield* failure(e, next.signal.aborted ? 'cancelled' : codex
+        ? `Codex login (${codex.account}): helper could not start; install Python 3.9 or newer and check pythonBin`
+        : `local request failed (${why})`, parser.nextIndex)
     }
   }).catch(async function* ($, e, next) {
     // No engine calls in this handler: re-entry failures deny all $ operations.
