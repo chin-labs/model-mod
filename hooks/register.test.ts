@@ -18,7 +18,7 @@ type RunReply = { exitCode: number; stdout: string; stderr?: string; isStdoutTru
 // `wait`: mock-clock milliseconds between the last stdout piece and the first stderr piece (curl's write-out comes when the transfer ends);
 // `hang`: the child writes its pieces and then neither ends nor writes again until it is closed.
 type SpawnReply = { stdout: string | readonly string[]; stderr?: string | readonly string[]; code: number; wait?: number; hang?: boolean }
-type World = { runDelay?: number; rateStarted?: boolean; system: string; killed: number; toolsList?: string[]; spawned: { argv: readonly string[]; input?: string; env?: Record<string, string> }[]; ran: (readonly string[])[]
+type World = { runDelay?: number; rateStarted?: boolean; system: string; killed: number; toolsList?: string[]; toolListFailsAfter?: number; toolListCalls: number /* tool.list throws from the call after this many have succeeded */; spawned: { argv: readonly string[]; input?: string; env?: Record<string, string> }[]; ran: (readonly string[])[]
   ranEnv: (Record<string, string> | undefined)[]; reached: string[]; envSet: [string, string | undefined][]; messagesRead: number; failEnvSets: number; failEnvName?: string
   // The upstream's model list (null: unreachable), what the store holds, the picker rows of the settings, the requests
   // `$.http.fetch` made (the authorization header is reduced to its first 6 characters).
@@ -34,7 +34,7 @@ type World = { runDelay?: number; rateStarted?: boolean; system: string; killed:
 // which stand for the engine (the subscription path).
 function world(on: On, config: Record<string, unknown> | null, model: string, spawn: SpawnReply | SpawnReply[],
   run?: RunReply | ((argv: readonly string[], stdin?: string) => RunReply), env: Record<string, string> = {}): World {
-  const w: World = { system: 'Linux', killed: 0, spawned: [], ran: [], ranEnv: [], reached: [], envSet: [], messagesRead: 0, failEnvSets: 0,
+  const w: World = { system: 'Linux', killed: 0, spawned: [], ran: [], ranEnv: [], reached: [], envSet: [], messagesRead: 0, toolListCalls: 0, failEnvSets: 0,
     switchEnv: [], toolDescriptions: {}, answers: ['Keep (recommended)', 'All (recommended)'], questions: [], scopes: {}, files: {}, writes: [], saved: [], registered: [], configValues: {}, models: null, store: {}, picker: [], fetched: [], current: model, agents: [], modelRuns: [], limits: [], clock: undefined as never }
   // The test engine has no plugin.root; supply prompt files explicitly instead of built-in text.
   for (const name of ['compact', 'title', 'subagent-note', 'worker']) w.files[PROMPTS_DIR + '/' + name + '.md'] = 'TEST ' + name + ' prompt\n'
@@ -86,7 +86,10 @@ function world(on: On, config: Record<string, unknown> | null, model: string, sp
     w.messagesRead++
     return { value: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }] }
   })
-  on('tool.list', async () => ({ value: (w.toolsList ?? []).map(name => ({ name, description: name, mcp: name !== 'ToolSearch' })) as never }))
+  on('tool.list', async () => {
+    if (w.toolListFailsAfter !== undefined && w.toolListCalls++ >= w.toolListFailsAfter) throw new Error('tool list failed')
+    return { value: (w.toolsList ?? []).map(name => ({ name, description: name, mcp: name !== 'ToolSearch' })) as never }
+  })
   on('env.set', async (_$, e) => {
     if (w.failEnvName === e.name) { w.failEnvName = undefined; throw new Error('env write failed') }
     if (w.failEnvSets > 0) { w.failEnvSets--; throw new Error('env write failed') }
@@ -1502,6 +1505,20 @@ for (const [setting, hasWebSearch, enabled, status] of [
     if (setting === 'invalid') expect(result.text).toContain('invalid setting; using on')
   })
 }
+
+test('Codex native search stays off when the tool list cannot be read', { options: CODEX_OPTIONS }, async ($, on) => {
+  const w = world(on, null, CODEX_MODEL, { stdout: SSE_OK, code: 0 })
+  w.toolsList = ['WebSearch']
+  // The step reads the list twice for the tools it offers; the permission check is the third read.
+  w.toolListFailsAfter = 2
+  await drain($.turn.step(STEP(CODEX_MODEL)))
+  expect(w.spawned[0]!.argv.includes('--web-search')).toBe(false)
+  // Status reads it once for the captured tools; the permission check is the second read.
+  w.toolListFailsAfter = 1
+  w.toolListCalls = 0
+  const result = await $.command.run({ command: 'model-mod:status', args: '', origin: { kind: 'composer' } } as never)
+  expect(result.text).toContain('webSearch=blocked-by-permissions')
+})
 
 test('Codex image generation requests permission and validates PNG before writing', { options: CODEX_OPTIONS }, async ($, on) => {
   const good = JSON.stringify({ ok: true, bytes_b64: 'iVBORw0KGgppbWFnZQ==', size: 13 })

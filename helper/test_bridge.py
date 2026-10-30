@@ -118,6 +118,11 @@ class Contract(unittest.TestCase):
                 mismatch = self.run_bridge(mode='bad_web_search', extra=extra)
                 self.assertEqual(mismatch.returncode, 65)
                 self.assertIn('incompatible codex app-server protocol (web_search)', mismatch.stdout)
+        for mode in ('forbidden_unknown', 'forbidden_mcp', 'forbidden_before', 'forbidden_response'):
+            with self.subTest(mode=mode):
+                result = self.run_bridge(mode=mode, extra=['--web-search'])
+                self.assertEqual(result.returncode, 1)
+                self.assertIn('unsupported_item', result.stdout)
 
     def test_web_search_summaries(self):
         for stream in (False, True):
