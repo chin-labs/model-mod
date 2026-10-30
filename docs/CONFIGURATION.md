@@ -107,3 +107,9 @@ Never put a key in `--config` arguments (they can show up in process listings) o
 Codex status shows remaining percentages, reset times, credits, plan and `ordinaryUsageAllowed`; unavailable fields are marked unavailable. Codex quota is checked at most once per account every five minutes, or immediately after a quota error; no automatic switch occurs without a future reset time. API upstreams have no official rateLimits and are not covered. Accounts are not rotated automatically; configure a `fallbackModel` on another upstream or account.
 
 `codexServiceTier` is `default` (the default) or `priority`; invalid values use `default`. `priority` requires a supported Codex plan and may respond faster while consuming quota faster; actual tier and billing are unverified.
+
+## Background job storage and limits
+
+The SessionStart hook starts a local broker. After all sessions close, an idle broker can remain alive for up to 30 minutes. Up to 50 jobs are retained for seven days; each account can have at most two running and five queued. Background execution has a 30-minute total and five-minute inactivity limit; foreground delegation has five-minute total and two-minute inactivity limits. Use `/model-mod:jobs --clear` to remove terminal jobs and results for the current workspace.
+
+Job output is stored locally under `$XDG_STATE_HOME/model-mod/delegate/v1` (when unset, use the `state` directory inside the hidden `local` directory in the home directory) (directories 0700, files 0600). Results can contain your prompt or code fragments: redaction matches prompt or diff strings exactly only when they are at least 32 characters long, and cannot recognize model paraphrases. Local records are retained for seven days. Deleting local records does not delete Codex threads or provider-side records. Status records themselves do not store prompts, diffs, reasoning, account-directory paths, or environment variables.

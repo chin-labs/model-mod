@@ -92,3 +92,10 @@ SDK 與 `-p` 的呼叫端必須檢查結果文字是否以 `model-mod:` 開頭�
 | 繞過用量限制 | 選用的切換只改變下一則訊息使用的模型，不會重置或繞過訂閱限制。 |
 
 Codex 額度用完不輪流換帳號，可設備援模型（不同帳號或上游）。API 上游沒有官方 rateLimits，不適用 Codex fallback 機制。
+
+## 背景委派限制
+
+- Windows 不支援背景指令；前景委派仍可使用。Ctrl+C 與 `/reload-plugins` 對 broker 的影響尚未驗證。
+- broker 死亡時工作會中斷而不會繼續，復原後標為 `interrupted`。清理是盡力而為：macOS `ps lstart` 只有秒級精度，可能遇到 PID 重用與 TOCTOU 時間窗口，呼叫 `setsid` 的孫程序也可能逃過清理。無法確認清理時標示 `possible_leftover`。完成通知僅盡力提供。
+- 背景委派只支援預設帳號根目錄；自訂帳號根目錄請使用前景委派。`codexBin` 必須能在 broker 的環境中執行。
+- 唯讀 sandbox 不限制讀取範圍，命令可能讀取工作區以外的檔案；這與上方 Messages bridge 停用內建 shell 的情況不同。官方 `openai/codex-plugin-cc` 可與 model-mod 並存；兩者的 Stop gate 均不屬於本功能。

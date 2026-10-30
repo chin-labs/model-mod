@@ -17,3 +17,7 @@
 For Codex models, the tool list excludes `web_search` and `generate_image`; `web_fetch` and `tool_search` remain available. Codex automatic compaction items are unsupported; see [limitations](LIMITATIONS.md#codex-login-limitations).
 
 `web_search`, `web_fetch`, `generate_image` and `tool_search` are registered while model-mod is active (`generate_image` only with an image model, `tool_search` unless tool search is off), adding up to about 3 KB of tool definitions to requests on subscription models. They refuse calls on subscription models; use Claude Code's built-in tools there. They follow Claude Code's permission rules. How a model behaves is up to the model; this plugin does not make it equal to a subscription model.
+
+## Background Codex delegation
+
+Use `--background` with `/model-mod:review` or `/model-mod:rescue` to start a job without waiting. It makes no file writes; read-only commands may still run. `/model-mod:jobs [ID] [--all]` lists the current workspace or all workspaces, or inspects one job; `/model-mod:result ID` reads its output, `/model-mod:cancel ID` cancels it, and `/model-mod:jobs --clear` removes finished jobs and results for the current workspace. IDs may be unique hexadecimal prefixes of at least four characters. Completion notices are best effort.

@@ -90,3 +90,10 @@ Not triggered or inconclusive when checked, so treat them as unverified: tool-us
 | Getting around usage limits | The optional switch only changes which model the next message uses. It does not reset or bypass subscription limits. |
 
 Codex accounts are not rotated when quota is exhausted; configure a fallback model on another account or upstream. API upstreams have no official rateLimits and are not covered by Codex fallback.
+
+## Background delegation limitations
+
+- Background commands are unsupported on Windows; foreground delegation remains available. The effects of Ctrl+C and `/reload-plugins` on the broker have not been verified.
+- If the broker dies, jobs are interrupted rather than resumed and are marked `interrupted` on recovery. Cleanup is best effort: macOS `ps lstart` has second-level resolution, PID reuse and TOCTOU windows exist, and grandchildren that call `setsid` may escape cleanup. If cleanup cannot be confirmed, the error is `possible_leftover`. Completion notices are best effort.
+- Background delegation supports the default accounts root only; use foreground delegation for a custom accounts root. `codexBin` must be executable in the broker's environment.
+- The read-only sandbox does not confine reads to the workspace: commands may read files outside it. This differs from the Messages bridge above, where the built-in shell is disabled. The official `openai/codex-plugin-cc` can coexist with model-mod; neither plugin's Stop gate is part of this feature.

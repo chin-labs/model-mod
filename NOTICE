@@ -1,0 +1,3 @@
+model-mod
+
+The official openai/codex-plugin-cc project at commit db52e28f4d9d, licensed under Apache-2.0, was consulted as a design reference for background delegation. No code was copied from it.
