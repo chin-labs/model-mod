@@ -76,6 +76,14 @@ class Contract(unittest.TestCase):
             self.assertEqual(streamed.returncode, 0)
             self.assertLess(streamed.stdout.index('signature_delta'), streamed.stdout.index('tool_use'))
             self.assertNotIn('xxxxxxxxxxxxxxxx', streamed.stderr)
+            interleaved = self.run_bridge(body, mode='reasoning_interleaved')
+            self.assertEqual(interleaved.returncode, 0, interleaved.stderr)
+            blocks = json.loads(interleaved.stdout)['content']
+            kept = [decode_reasoning(block['signature'])['id'] for block in blocks if block['type'] == 'thinking']
+            self.assertEqual(kept, ['reason1', 'reason2'])
+            self.assertLess(max(i for i, block in enumerate(blocks) if block['type'] == 'thinking'),
+                            min(i for i, block in enumerate(blocks) if block['type'] == 'tool_use'))
+            self.assertIn('discarded reasoning items: 1', interleaved.stderr)
             off = self.run_bridge(body, mode='reasoning_tool', extra=['--no-keep-reasoning'])
             self.assertNotIn('thinking', [block['type'] for block in json.loads(off.stdout)['content']])
             unavailable = self.run_bridge(body, mode='reasoning_start_error')

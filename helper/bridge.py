@@ -415,7 +415,7 @@ def messages(args, app, prepared, cwd):
             emit('message_start', {'type': 'message_start', 'message': message})
             stream_started = True
     content, opened, calls, latest = [], False, [], {}
-    reasoning_size, reasoning_dropped = 0, 0
+    reasoning_size, reasoning_dropped, tool_seen = 0, 0, False
     batch_deadline, call_ids, search_ids = None, set(), set()
     if check_turn(result.get('turn'), app.web_search == 'live'):
         app.wait_interrupted = True
@@ -438,7 +438,11 @@ def messages(args, app, prepared, cwd):
             continue
         if method == 'rawResponseItem/completed' and not args.no_keep_reasoning:
             item = params.get('item') if isinstance(params, dict) else None
+            if isinstance(item, dict) and item.get('type') == 'function_call': tool_seen = True
             if not isinstance(item, dict) or item.get('type') != 'reasoning': continue
+            if tool_seen:
+                reasoning_dropped += 1
+                continue
             signature = encode_reasoning(item)
             if signature is None or reasoning_size + len(signature) > REASONING_RESPONSE_LIMIT:
                 reasoning_dropped += 1
@@ -481,6 +485,7 @@ def messages(args, app, prepared, cwd):
                 emit('content_block_delta', {'type': 'content_block_delta', 'index': idx, 'delta': {'type': 'text_delta', 'text': text}})
                 emit('content_block_stop', {'type': 'content_block_stop', 'index': idx})
         elif method == 'item/tool/call':
+            tool_seen = True
             name = p['reverse'].get(params.get('tool'))
             if name is None: raise BridgeError('Codex login: unknown dynamic tool')
             if opened:

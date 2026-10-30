@@ -118,11 +118,13 @@ for line in sys.stdin:
             if mode == 'reasoning_invalid_always' or count == 0:
                 event('turn/completed', {'turn': {'id': 'turn1', 'status': 'failed', 'error': {'message': 'invalid_encrypted_content', 'code': 400}}})
                 continue
-        if mode in ('reasoning_tool', 'reasoning_invalid_shape', 'reasoning_large'):
+        if mode in ('reasoning_tool', 'reasoning_interleaved', 'reasoning_invalid_shape', 'reasoning_large'):
             reasoning = {'type': 'reasoning', 'id': 'reason1', 'summary': [], 'content': None,
                          'encrypted_content': 'x' * (300000 if mode == 'reasoning_large' else 16)}
             if mode == 'reasoning_invalid_shape': reasoning['unexpected'] = 'private'
             event('rawResponseItem/completed', {'item': reasoning, 'threadId': '12345678-1234-4234-8234-123456789abc', 'turnId': 'turn1'})
+            if mode == 'reasoning_interleaved':
+                event('rawResponseItem/completed', {'item': dict(reasoning, id='reason2')})
         if mode == 'delegate_echo':
             text = params['input'][0]['text'] + '\n' + os.environ['CODEX_HOME']
         else:
@@ -175,8 +177,10 @@ for line in sys.stdin:
             event('item/completed', {'item': {'type': 'contextCompaction'}})
             event('thread/tokenUsage/updated', {'tokenUsage': {'modelContextWindow': 475000, 'total': {'inputTokens': 10}}})
             event('turn/completed', {'turn': {'id': 'turn1', 'status': 'completed'}})
-        elif mode in ('tools', 'reasoning_tool', 'reasoning_invalid_shape', 'reasoning_large'):
+        elif mode in ('tools', 'reasoning_tool', 'reasoning_interleaved', 'reasoning_invalid_shape', 'reasoning_large'):
             event('item/tool/call', {'callId': 'call1', 'tool': 'one', 'arguments': {'n': 1}})
+            if mode == 'reasoning_interleaved':
+                event('rawResponseItem/completed', {'item': {'type': 'reasoning', 'id': 'reason3', 'summary': [], 'encrypted_content': 'opaque'}})
             event('item/tool/call', {'callId': 'call2', 'tool': 'two', 'arguments': {'n': 2}})
         else:
             if mode == 'delegate_delay': time.sleep(1)
