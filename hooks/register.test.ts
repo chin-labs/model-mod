@@ -1245,6 +1245,14 @@ for (const apiKey of [KEY, 'bad key']) {
   })
 }
 
+test('Codex login: missing account directory leaves the API active and refuses Codex IDs', { options: { ...CODEX_OPTIONS, ...OPTIONS, models: LOCAL } }, async ($, on) => {
+  const w = world(on, null, LOCAL, { stdout: SSE_OK, code: 0 })
+  on('env.get', async (_$, e, next) => e.name === 'HOME' || e.name === 'APPDATA' ? { value: undefined } : next(e))
+  expect((await drain($.turn.step(STEP(LOCAL)))).result.answer).toBe('local answer')
+  expect((await drain($.turn.step(STEP(CODEX_MODEL)))).result.answer).toContain('not in the allowlist')
+  expect(w.reached).toEqual([])
+})
+
 test('Codex login: streaming and auxiliary requests use the helper without an API key', { options: CODEX_OPTIONS }, async ($, on) => {
   const note = 'model-mod-note:Codex login: ignored field max_tokens'
   const w = world(on, null, CODEX_MODEL, { stdout: SSE_OK, stderr: note + '\n', code: 0 }, { exitCode: 0, stdout: '{"content":[{"type":"text","text":"summary"}]}', stderr: note + '\n' })
