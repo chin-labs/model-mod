@@ -190,6 +190,15 @@ class DelegateTest(unittest.TestCase):
             self.assertFalse(flag.exists())
             subprocess.run(['git', '-C', str(sub), 'config', '--unset', key], check=True)
         super_git('commit', '-qm', 'update submodule')
+        (sub / '.gitattributes').write_text('* filter=x\n')
+        for setting in ('clean', 'smudge', 'process'):
+            subprocess.run(['git', '-C', str(sub), 'config', 'filter.x.' + setting, str(script)], check=True)
+            super_git('diff', 'baseline...HEAD')
+            self.assertFalse(flag.exists())
+            self.assertIn(b'Subproject commit', delegate.diff_for(str(super_repo), 'baseline'))
+            self.assertFalse(flag.exists())
+            subprocess.run(['git', '-C', str(sub), 'config', '--unset-all', 'filter.x.' + setting], check=True)
+        (sub / '.gitattributes').write_text('* diff=x\n')
         for key in ('diff.external', 'diff.x.textconv'):
             subprocess.run(['git', '-C', str(sub), 'config', key, str(script)], check=True)
             super_git('diff', 'baseline...HEAD')
