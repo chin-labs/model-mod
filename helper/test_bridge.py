@@ -120,6 +120,10 @@ class Contract(unittest.TestCase):
             self.assertIn('event: error', r.stdout)
             self.assertNotIn('message_stop', r.stdout)
             self.assertIn('model-mod-http:504', r.stderr)
+        started = time.monotonic()
+        r = self.run_bridge(mode='chatty', extra=['--idle-seconds', '0.2'])
+        self.assertIn('model-mod-http:504', r.stderr)
+        self.assertLess(time.monotonic() - started, 4)
 
     def test_effort_and_environment(self):
         with tempfile.TemporaryDirectory() as tmp:

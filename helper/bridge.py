@@ -204,8 +204,11 @@ class App:
                 try:
                     self.interrupt()
                     if self.interrupt_id is not None:
+                        deadline = time.monotonic() + 1
                         while True:
-                            response = self.queue.get(timeout=1)
+                            remaining = deadline - time.monotonic()
+                            if remaining <= 0: break
+                            response = self.queue.get(timeout=remaining)
                             if response is None or response.get('id') == self.interrupt_id: break
                 except (OSError, ValueError, queue.Empty, AttributeError, BridgeError): pass
                 if os.name == 'posix':
