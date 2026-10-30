@@ -1,3 +1,4 @@
+import multiprocessing
 import os
 import tempfile
 import threading
@@ -7,6 +8,10 @@ from unittest.mock import patch
 
 import job_process
 import jobs
+
+
+def complete_in_process(root, ident, state, outcomes):
+    outcomes.put(jobs.Store(root).transition(ident, state))
 
 
 class JobStoreTest(unittest.TestCase):
@@ -34,6 +39,19 @@ class JobStoreTest(unittest.TestCase):
         for thread in threads: thread.join()
         self.assertEqual(sorted(outcomes), [False, True])
         self.assertFalse(self.store.transition(ident, 'failed'))
+
+    def test_process_terminal_race(self):
+        ident = self.create()['id']
+        self.store.transition(ident, 'starting')
+        self.store.transition(ident, 'running')
+        self.store.transition(ident, 'cancelling')
+        outcomes = multiprocessing.Queue()
+        processes = [multiprocessing.Process(target=complete_in_process, args=(self.tmp.name, ident, state, outcomes))
+                     for state in ('completed', 'cancelled')]
+        for process in processes: process.start()
+        for process in processes: process.join(5)
+        self.assertEqual([p.exitcode for p in processes], [0, 0])
+        self.assertEqual(sorted(outcomes.get(timeout=1) for _ in processes), [False, True])
 
     def test_private_records_and_cleanup(self):
         record = self.create()

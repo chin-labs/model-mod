@@ -1,4 +1,6 @@
 """Private, versioned records for read-only background delegation."""
+import contextlib
+import fcntl
 import hashlib
 import json
 import os
@@ -19,7 +21,8 @@ TRANSITIONS = {
 }
 ID = re.compile(r'^[0-9a-f]{32}$')
 FIELDS = frozenset(('version', 'id', 'workspaceHash', 'account', 'model', 'effort', 'kind', 'mode',
-                    'createdAt', 'updatedAt', 'state', 'phase', 'errorCode', 'resultRef', 'brokerGeneration'))
+                    'createdAt', 'updatedAt', 'state', 'phase', 'errorCode', 'resultRef', 'brokerGeneration',
+                    'pgid', 'runner', 'appServer'))
 
 
 def workspace_hash(cwd):
@@ -50,6 +53,17 @@ class Store:
         os.makedirs(root, mode=0o700, exist_ok=True)
         os.chmod(root, 0o700)
 
+    @contextlib.contextmanager
+    def locked(self):
+        with self.lock:
+            fd = os.open(os.path.join(self.root, '.jobs.lock'), os.O_CREAT | os.O_RDWR, 0o600)
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX)
+                yield
+            finally:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+                os.close(fd)
+
     def path(self, ident, suffix):
         if not isinstance(ident, str) or not ID.fullmatch(ident): raise ValueError('Invalid job ID.')
         return os.path.join(self.root, ident + suffix)
@@ -79,18 +93,22 @@ class Store:
         atomic_write(self.path(record['id'], '.json'), json.dumps(record, ensure_ascii=False, separators=(',', ':')).encode('utf-8'))
 
     def create(self, cwd, account, model, effort, kind, mode, generation):
-        with self.lock:
-            if len(self.records()) >= MAX_JOBS: raise ValueError('Job limit reached; clear completed jobs.')
+        with self.locked():
+            records = self.records()
+            if len(records) >= MAX_JOBS: raise ValueError('Job limit reached; clear completed jobs.')
+            if sum(r['account'] == account and r['state'] == 'queued' for r in records) >= 5:
+                raise ValueError('Account queue is full; wait for a job to start.')
             now = time.time()
             record = {'version': 1, 'id': secrets.token_hex(16), 'workspaceHash': workspace_hash(cwd),
                       'account': account, 'model': model, 'effort': effort, 'kind': kind, 'mode': mode,
                       'createdAt': now, 'updatedAt': now, 'state': 'queued', 'phase': 'queued',
-                      'errorCode': None, 'resultRef': None, 'brokerGeneration': generation}
+                      'errorCode': None, 'resultRef': None, 'brokerGeneration': generation,
+                      'pgid': None, 'runner': None, 'appServer': None}
             self.write(record)
             return record
 
     def transition(self, ident, state, *, phase=None, error=None, result=None):
-        with self.lock:
+        with self.locked():
             record = self.resolve(ident)
             if state not in TRANSITIONS.get(record['state'], ()):
                 return False
@@ -103,8 +121,19 @@ class Store:
             self.write(record)
             return True
 
+    def set_process(self, ident, *, pgid=None, runner=None, app_server=None):
+        with self.locked():
+            record = self.resolve(ident)
+            if record['state'] in TERMINAL: return False
+            if pgid is not None: record['pgid'] = pgid
+            if runner is not None: record['runner'] = runner
+            if app_server is not None: record['appServer'] = app_server
+            record['updatedAt'] = time.time()
+            self.write(record)
+            return True
+
     def clear(self, workspace=None, older_than=None):
-        with self.lock:
+        with self.locked():
             removed = 0
             for record in self.records():
                 if record['state'] not in TERMINAL: continue
