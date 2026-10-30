@@ -83,7 +83,7 @@ function world(on: On, config: Record<string, unknown> | null, model: string, sp
     w.messagesRead++
     return { value: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }] }
   })
-  on('tool.list', async () => ({ value: (w.toolsList ?? []).map(name => ({ name, description: name, mcp: true })) as never }))
+  on('tool.list', async () => ({ value: (w.toolsList ?? []).map(name => ({ name, description: name, mcp: name !== 'ToolSearch' })) as never }))
   on('env.set', async (_$, e) => {
     if (w.failEnvName === e.name) { w.failEnvName = undefined; throw new Error('env write failed') }
     if (w.failEnvSets > 0) { w.failEnvSets--; throw new Error('env write failed') }
@@ -197,6 +197,8 @@ test('generate_image: the prompt names the path and pipeline refusals reach the 
 
 test('a bridge model is answered by the upstream and never reaches the chain', async ($, on) => {
   const w = world(on, baseConfig, LOCAL, { stdout: SSE_OK, code: 0 })
+  w.toolsList = ['ToolSearch', 'Read']
+  w.files[baseConfig.toolsFile] = JSON.stringify({ tools: ['ToolSearch', 'Read'].map(name => ({ name, description: name, input_schema: { type: 'object' } })) })
   const { chunks, result } = await drain($.turn.step(STEP(LOCAL)))
   expect(result.answer).toBe('local answer')
   expect(chunks.map(c => c.kind)).toEqual(['text', 'stop'])
@@ -207,6 +209,7 @@ test('a bridge model is answered by the upstream and never reaches the chain', a
   // Only the user's own header file is passed; no subscription credential is read or forwarded.
   expect(sent.argv.filter(a => a.startsWith('@') && a !== '@-')).toEqual(['@/cfg/headers'])
   expect(JSON.parse(sent.input ?? '{}').model).toBe(LOCAL)
+  expect(JSON.parse(sent.input ?? '{}').tools.map((tool: { name: string }) => tool.name)).toEqual(['Read'])
 })
 
 test('an upstream failure ends the turn with an error text and never falls back to the chain', async ($, on) => {
@@ -1323,7 +1326,7 @@ test('Codex login: startup and unsupported behavior failures do not retry', { op
 
 test('Codex login: cancellation closes the helper and never forwards API-only tools', { options: { ...CODEX_OPTIONS, imageModel: 'gpt-image-2' } }, async ($, on) => {
   const w = world(on, null, CODEX_MODEL, { stdout: SSE_OK, code: 0, hang: true })
-  w.toolsList = ['mcp__model-mod__generate_image', 'mcp__model-mod__web_search', 'mcp__model-mod__web_fetch']
+  w.toolsList = ['ToolSearch', 'mcp__model-mod__generate_image', 'mcp__model-mod__web_search', 'mcp__model-mod__web_fetch']
   const stream = $.turn.step(STEP(CODEX_MODEL))
   const first = await stream.next()
   expect(first.done).toBe(false)

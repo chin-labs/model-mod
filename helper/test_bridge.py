@@ -82,6 +82,16 @@ class Contract(unittest.TestCase):
         self.assertEqual(history['history'][0]['name'], forward[reserved])
         self.assertEqual(history['reverse'][history['history'][0]['name']], reserved)
         self.assertEqual(history['history'][1]['call_id'], 'u')
+        request['messages'][1]['content'][0]['content'] = [{'type': 'tool_reference', 'tool_name': reserved}]
+        history = prepare(request, {'test': 'gpt-6.1-terra'})
+        self.assertEqual(history['history'][1]['output'], 'ERROR: Loaded tool: ' + reserved)
+        request['messages'][1]['content'][0]['content'] = [{'type': 'unknown\n' + 'x' * 70}]
+        r = self.run_bridge(request)
+        self.assertIn('model-mod-http:400', r.stderr)
+        self.assertIn('invalid tool result content (unknown' + 'x' * 57 + ')', json.loads(r.stdout)['error']['message'])
+        request['messages'][1]['content'][0]['content'] = [{'type': 'tool_reference', 'tool_name': ''}]
+        with self.assertRaisesRegex(InvalidRequest, r'invalid tool result content \(tool_reference\)'):
+            prepare(request, {'test': 'gpt-6.1-terra'})
         with self.assertRaises(InvalidRequest): names(tools + [{'name': encoded, 'input_schema': {}}])
 
     def test_errors_and_version(self):
