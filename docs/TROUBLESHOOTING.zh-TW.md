@@ -31,9 +31,14 @@
 | 尚未登入或帳號目錄不存在 | 執行 `/model-mod:setup` 並選 Codex login，在終端機依畫面指示建立目錄並執行 `CODEX_HOME=... codex login`，之後重新執行 setup。Windows 會顯示 PowerShell 命令。 |
 | Codex 版本過舊 | 將官方 CLI 升級至至少 0.165.0，再重試。 |
 | helper 無法啟動 | 安裝 Python 3.9 以上版本並檢查 `pythonBin`，也檢查 `codexBin` 與 `codexAccountsDir` 路徑。執行檔須為命令名稱或絕對路徑。 |
-| `unsupported codex behavior` 或協定不相容 | helper 遇到不支援的項目或設定時會終止回合。請檢查 Codex 版本及有效設定，更新或檢查 Codex 後再重試。見[限制說明](LIMITATIONS.zh-TW.md#codex-登入的限制)。 |
+| `Codex used a built-in tool that model-mod does not support` 或協定不相容 | helper 遇到不支援的項目或設定時會終止回合。重試前請檢查 Codex 版本及有效設定；不建議以升級作為此錯誤的解法。見[限制說明](LIMITATIONS.zh-TW.md#codex-登入的限制)。 |
+| 工具名稱顯示為 `bridge_` 加雜湊 | `mcp__...` 等保留名稱及不符合 Codex 格式的名稱，在呼叫 Codex 時會轉成別名，回傳時還原。見[限制說明](LIMITATIONS.zh-TW.md#codex-登入的限制)。 |
 | 429、額度或速率限制 | 查看你的 Codex 訂閱額度與重置時間。尚未輸出前，重試會遵循最多 15 秒的 `Retry-After`；要求等待更久時直接結束回合。不會自動輪替帳號。 |
 | 帳號設定被拒且回復失敗 | 開啟 `/plugin configure model-mod@model-mod`，手動將 `codexModels` 還原成先前的值，也檢查 `codexAccounts`；需要時再執行 setup。 |
+
+需要裝置驗證時，依 README 為每個帳號建立目錄，並各執行一次 `CODEX_HOME=<codexAccountsDir>/<帳號> codex login --device-auth`。Windows 請在 PowerShell 設定各帳號專用的 `CODEX_HOME`。然後執行 setup。
+
+執行 `/exit` 後，app-server 程序在關閉期間可能短暫殘留，通常數秒內結束。未知 Codex 模型 ID 的警告可能來自客戶端或上游模型清單；警告本身不代表模型一定無法執行。請檢查可用模型清單並傳送簡短訊息測試。
 
 ## 更新
 

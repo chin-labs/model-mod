@@ -13,7 +13,7 @@ model-mod is a plugin (a "mod") for Claude Code that puts models from your own C
 ## Requirements
 
 - Claude Code with mod support, tested on **Claude Code 2.1.299 to 2.1.310**; other versions are untested.
-- Codex login: Python 3.9 or newer and an installed `codex` CLI. Or use your own running Messages-compatible API and its API key; CLIProxyAPI is the tested API upstream. model-mod does not install or run the API server.
+- Codex login: Python 3.9 or newer and an installed `codex` CLI (minimum tested version 0.165.0). The default Codex context window is 128,000 tokens; configure it with `contextWindow`. Or use your own running Messages-compatible API and its API key; CLIProxyAPI is the tested API upstream. model-mod does not install or run the API server.
 - `curl` and `bash`; web fetch and image generation need additional system tools listed in [Configuration](docs/CONFIGURATION.md#set-up-your-upstream-first).
 
 ## Quick start

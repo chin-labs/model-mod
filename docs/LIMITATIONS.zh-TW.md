@@ -13,10 +13,12 @@ Marketplace 安裝已用本機 clone 與使用標準 HTTP 協定的 Git 伺服�
 ## Codex 登入的限制
 
 - 最近實測的 Codex CLI 版本為 **0.165.0**，也是最低版本；更舊的版本會被拒絕。較新版本會照常執行，但未逐版驗證。更新已測版本紀錄前，應對新版本執行手動 live 契約測試。
-- 這是**軟隔離，不是嚴格的工具白名單**。helper 使用專用家目錄、唯讀 sandbox、不允許核准並關閉部分功能，但兩個 MCP 資源清單工具仍可能執行。執行期項目檢查遇到不允許或未知的項目時，會終止回合並顯示固定的 `unsupported codex behavior: <type>` 訊息。開始 thread 前，`config/read` 會檢查有效設定；新版若改變設定或協定，helper 會 fail closed 並回報原因。重試前請檢查設定與 Codex 相容性。
-- `max_tokens` 會接受但忽略；`tool_choice`、`temperature`、`top_p`、`stop_sequences`、`cache_control`、thinking 預算與簽章會被忽略並記錄診斷；歷史 thinking 區塊會丟棄。不要依賴這些控制項生效。
-- Codex 模型不提供 `generate_image` 與 `web_search`，但保留 `web_fetch`。Codex 自動壓縮項目不受支援，因此使用者未明設 `contextWindow` 時，Codex 模型採保守的 128,000 token 預設視窗。目前明設 272,000 也會被視為預設值；其他有效值可覆寫。這不會停用 model-mod 自己的壓縮。
-- 每個步驟都會啟動一個 helper 與 `codex app-server` 程序，啟動延遲約數秒。Windows 在設計上支援，但**未驗證**。
+- 這是**軟隔離，不是嚴格的工具白名單**。helper 使用專用家目錄、唯讀 sandbox、不允許核准並關閉部分功能，但兩個 MCP 資源清單工具仍可能執行。執行期項目檢查遇到不允許或未知的項目時，會終止回合並顯示`Codex used a built-in tool that model-mod does not support (<type>); try again, and report it if it keeps happening` 訊息。開始 thread 前，`config/read` 會檢查有效設定；新版若改變設定或協定，helper 會 fail closed 並回報原因。重試前請檢查設定與 Codex 相容性。
+- Codex 內建 shell、patch 與檔案操作、網路與瀏覽器工具、sleep、子代理、apps、plugins 和 goals 均已停用。動態工具來自客戶端，另有上述 MCP 資源清單例外；helper 的唯讀隔離指示不會告知模型。
+- Codex 保留 `mcp__` 開頭的名稱並限制工具名稱。bridge 以 `bridge_` 加雜湊作為受影響名稱的別名，回傳時還原原名。
+- `max_tokens` 會接受但忽略；`tool_choice`、`temperature`、`top_p`、`stop_sequences`、`cache_control`、thinking 預算與簽章會被忽略；歷史 thinking 區塊會丟棄。helper 寫出的 `model-mod-note:` 診斷行是內部標記，會被丟棄，不會顯示給使用者。不要依賴這些控制項生效。
+- Codex 模型不提供 `generate_image` 與 `web_search`，但保留 `web_fetch`。Codex 自動壓縮項目不受支援，因此使用者未明設 `contextWindow` 時，Codex 模型採保守的 128,000 token 預設視窗。可用 `contextWindow` 設定視窗。這不會停用 model-mod 自己的壓縮。
+- 每次呼叫會啟動一個本機 helper 程序與 `codex app-server`，會增加延遲。Windows 在設計上支援，但**未驗證**。
 - Codex 的額度與速率限制取決於你自己的訂閱；達到限制時 model-mod 不會輪替帳號。
 
 ## 已知限制
@@ -43,6 +45,7 @@ SDK 與 `-p` 的呼叫端必須檢查結果文字是否以 `model-mod:` 開頭�
 
 以下行為尚未驗證，請勿假設可用。
 
+- **Codex 環境。** 兩個 Codex 帳號並存、Windows、Python 3.9 實際執行，以及 live SIGHUP 回收尚未驗證。
 - **自動切換。** 真實用量重置後切回、真實被拒請求後的 rate-limit 資料，以及從 Remote Control 觸發。
 - **Remote Control 與手機。** 只試過簡短的工作階段。長時間連線與從手機選模型未測。
 - **真實的上游 rate limit。** 已測試重試，但未測已耗盡的上游憑證之間的容錯，也未測快取 token 對你額度的影響。
