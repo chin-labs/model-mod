@@ -1283,7 +1283,7 @@ test('Codex login: startup and unsupported behavior failures do not retry', { op
   const { result } = await drain($.turn.step(STEP(CODEX_MODEL)))
   expect(result.answer).toContain('unsupported codex behavior: commandExecution')
   expect(w.spawned.length - before).toBe(1)
-  reply.stdout = '{"error":{"type":"api_error"}}'
+  reply.stdout = '{"type":"error","error":{"type":"api_error","message":"Codex login: app-server turn failed","code":"bridge_error"}}'
   reply.stderr = 'model-mod-http:500\n'
   const prior = w.spawned.length
   const unauthenticated = await drain($.turn.step(STEP(CODEX_MODEL)))

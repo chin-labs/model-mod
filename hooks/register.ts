@@ -1848,7 +1848,7 @@ export const register: Register = (on, options) => {
               reason = prefix + (httpStatus === 429 ? 'rate limited' : httpStatus === 504 ? 'app-server timed out' : 'app-server request failed')
             }
             const transient = codex
-              ? RETRYABLE_HTTP_STATUS.includes(httpStatus) || (httpStatus >= 500 && !errorCode)
+              ? (errorCode === undefined || errorCode === 'bridge_error' || errorCode === 'timeout') && (RETRYABLE_HTTP_STATUS.includes(httpStatus) || httpStatus >= 500)
               : parser.error || exit.code === 22
                 ? RETRYABLE_HTTP_STATUS.includes(httpStatus) || ['rate_limit_error', 'overloaded_error', 'api_error'].includes(type as string)
                 : exit.code === 0 || (exit.code !== null && [6, 7, 18, 28, 35, 52, 55, 56].includes(exit.code))
