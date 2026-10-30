@@ -4,7 +4,7 @@ import type { EnvMemo, FallbackMemo, TrackedAgent } from '../types'
 import { MessagesStream } from './sse.ts'
 import { htmlToText } from './text.ts'
 import { openPane, registerPane } from './pane.tsx'
-import { delegate, backgroundCommand, transfer } from './delegate.ts'
+import { delegate, backgroundCommand, transfer, runStopGate, stopGateSettings } from './delegate.ts'
 
 // Read legacy rows only as an extra ownership source; this mod never writes them.
 const ROW_MARK = 'Local API via model-mod'
@@ -1559,7 +1559,9 @@ async function manageUpstreams($: EngineInterface, c: Config): Promise<string> {
 async function admin($: EngineInterface, e: { origin: { kind: string } }, arg: 'setup' | 'status' | 'refresh') {
   const c = await load($)
   const invalidCodex = invalidCodexFields(pluginOptions)
-  const codexWarning = invalidCodex.length ? `\nCodex login: invalid ${invalidCodex.join(', ')}; configure these fields.` : ''
+  const gateSettings = stopGateSettings(pluginOptions)
+  const gateStatus = `\nCodex Stop gate: ${gateSettings.enabled ? 'on' : 'off'}; maximum blocks: ${gateSettings.blocks}.${gateSettings.invalid ? ' Invalid gate setting; using off or the default.' : ''}`
+  const codexWarning = (invalidCodex.length ? `\nCodex login: invalid ${invalidCodex.join(', ')}; configure these fields.` : '') + gateStatus
   if (arg === 'setup') {
     const interactive = e.origin.kind === 'composer' || e.origin.kind === 'bridge'
     const status = `picker=${c ? 'active' : 'inactive'}; models=${c?.models.length ?? 0}`
@@ -1620,8 +1622,21 @@ async function admin($: EngineInterface, e: { origin: { kind: string } }, arg: '
 export const register: Register = (on, options) => {
   registerPane(on)
   let transcript: string | undefined
+  let turnFailed = false
   on('classic.SessionStart', async ($, e, next) => { transcript = e.transcript_path; return next(e) })
-  on('classic.Stop', async ($, e, next) => { transcript = e.transcript_path; return next(e) })
+  on('classic.Stop', async ($, e, next) => {
+    transcript = e.transcript_path
+    let downstream: ReturnType<typeof next> | undefined
+    const forward = () => downstream ??= next(e)
+    return runStopGate($, e, forward, pluginOptions, () => load($), next.signal, turnFailed).catch(() => {
+      $.ui.status('Codex gate not verified; human review required. Run /model-mod:review --gate.')
+      return forward()
+    })
+  })
+  on('turn.start', async ($, e, next) => {
+    if (e.agentId === undefined) turnFailed = false
+    return next(e)
+  })
   pluginOptions = options ?? {}
   on('session.start', async ($, e, next) => {
     const c = await load($)
@@ -2073,6 +2088,7 @@ export const register: Register = (on, options) => {
   on('turn.complete', async ($, e, next) => {
     const result = await next(e)
     if (e.agentId !== undefined) return result
+    turnFailed = e.reason === 'aborted' || e.reason === 'error'
     try {
       const c = await load($)
       if (c) {

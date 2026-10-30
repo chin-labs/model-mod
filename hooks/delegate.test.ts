@@ -1,6 +1,6 @@
 import { test, expect } from 'claude-code/testing'
 import type { EngineInterface } from 'claude-code'
-import { delegate, formatOutput, parseDelegate, backgroundCommand, pollJob, transfer } from './delegate.ts'
+import { delegate, formatOutput, parseDelegate, backgroundCommand, pollJob, transfer, automaticGate, runStopGate, stopGateSettings } from './delegate.ts'
 
 test('delegate parser handles quotes, separator, repeats and unknown flags', () => {
   expect(parseDelegate('review', `--base 'feature/test' --adversarial -- "focus text" 'and more'`)).toEqual({ base: 'feature/test', adversarial: true, text: `"focus text" 'and more'` })
@@ -15,6 +15,94 @@ test('gate accepts only the permitted review options', () => {
   expect(parseDelegate('review', '--gate --account test --model chat --effort high --base main')).toEqual({ text: '', gate: true, account: 'test', model: 'chat', effort: 'high', base: 'main' })
   for (const args of ['--gate --background', '--gate --adversarial', '--gate -- focus', '--gate --gate']) expect(() => parseDelegate('review', args)).toThrow()
   expect(() => parseDelegate('rescue', '--gate -- task')).toThrow()
+})
+
+test('manual gate uses the session fingerprint and sanitizes finding data', async () => {
+  let request: any
+  const value = { verdict: 'block', needsHuman: false, fingerprint: 'd'.repeat(64), findings: [{ severity: 'blocking', file: '\x1b[31mfile', summary: '\x01issue' }] }
+  const $ = { plugin: { root: '/plugin' }, session: { id: async () => 'manual-session', model: async () => 'test/chat', cwd: async () => '/repo' },
+    process: { spawn: (args: { input: string }) => { request = JSON.parse(args.input); return { async *[Symbol.asyncIterator]() { yield { stream: 'stdout', text: JSON.stringify({ text: JSON.stringify(value) }) } } } } } } as unknown as EngineInterface
+  const c = { codex: new Map([['test/chat', { account: 'test', model: 'chat', directory: '/accounts/test' }]]), accountsDir: '/accounts' }
+  const result = await delegate($, 'review', '--gate', c, new AbortController().signal)
+  expect(request.sessionId).toBe('manual-session'); expect(request.options.gate).toBe(true)
+  expect(result.text).toContain('untrusted'); expect(result.text).not.toContain('\x1b'); expect(result.text).not.toContain('\x01')
+})
+
+test('stop gate settings are opt-in and invalid values use defaults', () => {
+  expect(stopGateSettings({})).toEqual({ enabled: false, blocks: 1, invalid: false })
+  expect(stopGateSettings({ codexStopGate: 'ON', codexStopGateBlocks: 2 })).toEqual({ enabled: true, blocks: 2, invalid: false })
+  expect(stopGateSettings({ codexStopGate: 'bad', codexStopGateBlocks: 3 })).toEqual({ enabled: false, blocks: 1, invalid: true })
+})
+
+test('stop gate skips ineligible events and preserves downstream blocks', async () => {
+  let runs = 0, nexts = 0
+  const gate = runStopGate
+  const $ = { ui: { status: () => {}, toast: async () => {} } } as unknown as EngineInterface
+  const e = { session_id: 'skip-test', cwd: '/repo', stop_hook_active: false }
+  const next = async () => { nexts++; return {} }
+  const signal = new AbortController().signal
+  for (const [event, options, failed] of [
+    [e, {}, false], [{ ...e, agent_id: 'agent' }, { codexStopGate: 'on' }, false],
+    [{ ...e, stop_hook_active: true }, { codexStopGate: 'on' }, false],
+    [{ ...e, isAborted: true }, { codexStopGate: 'on' }, false], [e, { codexStopGate: 'on' }, true],
+  ] as const) await gate($, event, next, options, async () => undefined, signal, failed)
+  expect(nexts).toBe(5); expect(runs).toBe(0)
+  const result = await gate($, e, async () => ({ block: 'official block' }), { codexStopGate: 'on' }, async () => undefined, signal)
+  expect(result.block).toBe('official block'); expect(runs).toBe(0)
+})
+
+test('stop gate enforces its limit, warns on unknown and protects reentry', async () => {
+  let runs = 0, warnings: string[] = []
+  let release: () => void = () => {}, started: () => void = () => {}
+  const ready = new Promise<void>(resolve => { started = resolve })
+  let wait = false
+  const fingerprint = 'c'.repeat(64)
+  const gate = runStopGate
+  const c = { codex: new Map([['test/chat', { account: 'test', model: 'chat', directory: '/accounts/test' }]]), accountsDir: '/accounts' }
+  const $ = { plugin: { root: '/plugin' }, session: { model: async () => 'test/chat' },
+    ui: { status: (s: string) => { warnings.push(s) }, toast: async () => {} },
+    process: { run: async (_argv: unknown, opts: { stdin: string }) => {
+      const req = JSON.parse(opts.stdin)
+      if (req.kind === 'snapshot') return { exitCode: 0, stdout: JSON.stringify({ changed: true, fingerprint }) }
+      runs++
+      if (wait) await new Promise<void>(resolve => { release = resolve; started() })
+      return { exitCode: 0, stdout: JSON.stringify({ text: JSON.stringify({ fingerprint, verdict: 'block', needsHuman: false, findings: [{ severity: 'blocking', file: '\x1b[31mfile', summary: '\x01issue' }] }) }) }
+    } } } as unknown as EngineInterface
+  const e = { session_id: 'block-test', cwd: '/repo', stop_hook_active: false }
+  const opts = { codexStopGate: 'on', codexStopGateBlocks: 2 }, next = async () => ({})
+  const signal = new AbortController().signal
+  for (let i = 0; i < 2; i++) {
+    const result = await gate($, e, next, opts, async () => c, signal)
+    expect(result.block).toContain('untrusted'); expect(result.block).not.toContain('\x1b')
+  }
+  expect((await gate($, e, next, opts, async () => c, signal)).block).toBeUndefined()
+  expect(warnings[0]).toContain('not passed or not verified')
+  wait = true
+  const pending = gate($, { ...e, session_id: 'parallel' }, next, opts, async () => c, signal)
+  await ready
+  const before = runs
+  await gate($, { ...e, session_id: 'parallel' }, next, opts, async () => c, signal)
+  expect(runs).toBe(before)
+  release(); await pending
+  await gate($, { ...e, session_id: 'unknown' }, next, opts, async () => { throw new Error('timeout') }, signal)
+  expect(warnings.length).toBe(2)
+})
+
+test('automatic gate caches only the exact snapshot and reruns after changes', async () => {
+  let fingerprint = 'a'.repeat(64), changed = true, reviews = 0
+  const $ = { plugin: { root: '/plugin' }, session: { model: async () => 'test/chat' }, process: { run: async (_argv: unknown, opts: { stdin: string }) => {
+    const req = JSON.parse(opts.stdin)
+    if (req.kind === 'snapshot') return { exitCode: 0, stdout: JSON.stringify({ changed, fingerprint }) }
+    reviews++
+    return { exitCode: 0, stdout: JSON.stringify({ text: JSON.stringify({ verdict: 'pass', needsHuman: false, findings: [], fingerprint }) }) }
+  } } } as unknown as EngineInterface
+  const c = { codex: new Map([['test/chat', { account: 'test', model: 'chat', directory: '/accounts/test' }]]), accountsDir: '/accounts' }
+  const signal = new AbortController().signal
+  changed = false; expect(await automaticGate($, c, 'snapshot-test', '/repo', signal)).toBe('skip')
+  changed = true; expect((await automaticGate($, c, 'snapshot-test', '/repo', signal) as any).verdict).toBe('pass')
+  expect(await automaticGate($, c, 'snapshot-test', '/repo', signal)).toBe('skip')
+  fingerprint = 'b'.repeat(64); await automaticGate($, c, 'snapshot-test', '/repo', signal)
+  expect(reviews).toBe(2)
 })
 
 test('write is rescue-only and requires explicit confirmation', async () => {

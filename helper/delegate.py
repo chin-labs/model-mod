@@ -167,6 +167,11 @@ def gate_snapshot(cwd, base, session):
             finally:
                 if fd >= 0: os.close(fd)
         except OSError: raise Failure('Untracked file is unavailable; review was not performed.')
+        try:
+            if b'\0' in data: raise ValueError('binary')
+            data.decode('utf-8')
+        except UnicodeDecodeError: raise Failure('An untracked file is not UTF-8; review was not performed.')
+        except ValueError: raise Failure('An untracked file is binary; review was not performed.')
         size += len(data)
         untracked.append((raw, data))
     if size > MAX_DIFF: raise Failure('Diff exceeds the size limit; review was not performed.')

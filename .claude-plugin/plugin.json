@@ -101,6 +101,18 @@
       "description": "on or off. Native search sends queries to OpenAI and does not enforce Claude domain rules.",
       "default": "on"
     },
+    "codexStopGate": {
+      "type": "string",
+      "title": "Codex Stop review gate",
+      "description": "off or on. When on, completing a main-session turn may start a read-only Codex review that sends the diff to OpenAI and can block ending, up to the configured limit. Read-only can still run commands; review quality and hook behavior are unverified.",
+      "default": "off"
+    },
+    "codexStopGateBlocks": {
+      "type": "number",
+      "title": "Codex Stop gate block limit",
+      "description": "Maximum number of blocks per session: 1 or 2. After the limit the session may end without a verified pass; human review is required.",
+      "default": 1
+    },
     "codexServiceTier": {
       "type": "string",
       "title": "Codex service tier",

@@ -671,6 +671,13 @@ class DelegateTest(unittest.TestCase):
         self.assertIn('untracked', turn['input'][0]['text'])
         (self.repo / 'new').write_text('modified\n')
         self.assertNotEqual(first['fingerprint'], delegate.gate_snapshot(str(self.repo), None, 'session')['fingerprint'])
+        self.log.unlink()
+        self.mode('gate_approval')
+        self.assertEqual(json.loads(delegate.execute(req))['verdict'], 'pass')
+        replies = [r for r in self.records() if r.get('id') in ('approval1', 'approval2') and 'result' in r]
+        self.assertEqual([r['result'] for r in replies], [{'decision': 'decline'}, {'decision': 'decline'}])
+        (self.repo / 'new').write_bytes(b'\x00binary')
+        with self.assertRaises(delegate.Failure): delegate.gate_snapshot(str(self.repo), None, 'session')
 
     def test_adversarial_diffs(self):
         req = dict(self.request, kind='review', options={'adversarial': True, 'text': 'focus'})

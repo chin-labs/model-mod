@@ -105,7 +105,7 @@ for line in sys.stdin:
     elif method == 'turn/start':
         items = [{'type': 'sleep'}, {'type': 'commandExecution'}] if mode == 'wait_forbidden' else [{'type': 'fileChange'}] if mode == 'forbidden_response' else ([{'type': 'sleep'}] if mode == 'wait_response' else [])
         send({'id': ident, 'result': {'turn': {'id': 'turn1', 'items': items}}})
-        if mode == 'delegate_approval':
+        if mode in ('delegate_approval', 'gate_approval'):
             send({'id': 'approval1', 'method': 'item/commandExecution/requestApproval', 'params': {}})
             send({'id': 'approval2', 'method': 'item/fileChange/requestApproval', 'params': {}})
             for _ in range(2):
@@ -148,7 +148,7 @@ for line in sys.stdin:
                 event('rawResponseItem/completed', {'item': dict(reasoning, id='after-call')})
             if mode == 'reasoning_many':
                 for n in range(2, 7): event('rawResponseItem/completed', {'item': dict(reasoning, id='reason' + str(n))})
-        if mode == 'gate':
+        if mode in ('gate', 'gate_approval'):
             text = config.get('gateText', json.dumps({'verdict': 'pass', 'findings': [], 'needsHuman': False}))
         elif mode == 'delegate_echo':
             text = params['input'][0]['text'] + '\n' + os.environ['CODEX_HOME']
