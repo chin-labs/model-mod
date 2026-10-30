@@ -9,11 +9,12 @@ All notable changes to this project are listed here. The format follows [Keep a 
 - Status reports Codex accounts and usage limits. API and Codex upstreams can coexist; Codex takes precedence for matching IDs.
 
 ### Changed
-- Codex turns use client-provided tools only; built-in capabilities are disabled. Reserved `mcp__` and incompatible tool names use reversible aliases. Codex CLI versions below 0.165.0 are refused.
+- Codex turns use client-provided dynamic tools; built-in capabilities are disabled, with two MCP resource-list tools still available. Reserved `mcp__` and incompatible tool names use reversible aliases. Codex CLI versions below 0.165.0 are refused.
 - Codex requests use bounded retries and handle upstream 429 responses. Codex models do not offer `generate_image` or `web_search`; their default context window is 128,000 tokens.
 
 ### Fixed
-- Convert `tool_reference` blocks in tool results to text and exclude the built-in ToolSearch from tools sent to Codex.
+- Convert `tool_reference` blocks in tool results to separated text and exclude the built-in ToolSearch from tools sent to Codex.
+- Use UTF-8 for helper standard streams and clarify setup and account-directory error hints.
 
 ### Documentation
 - Update the English and Traditional Chinese README and documentation for both upstreams. Windows, Python 3.9 and concurrent use of two Codex accounts remain unverified.
