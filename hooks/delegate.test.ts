@@ -47,9 +47,10 @@ test('stop gate skips ineligible events and preserves downstream blocks', async 
   for (const [event, options, failed] of [
     [e, {}, false], [{ ...e, agent_id: 'agent' }, { codexStopGate: 'on' }, false],
     [{ ...e, stop_hook_active: true }, { codexStopGate: 'on' }, false],
-    [{ ...e, isAborted: true }, { codexStopGate: 'on' }, false], [e, { codexStopGate: 'on' }, true],
+    [{ ...e, isAborted: true }, { codexStopGate: 'on' }, false], [{ ...e, error: 'error' }, { codexStopGate: 'on' }, false],
+    [e, { codexStopGate: 'on' }, true],
   ] as const) await gate($, event, next, options, async () => c, signal, failed)
-  expect(nexts).toBe(5); expect(runs).toBe(0)
+  expect(nexts).toBe(6); expect(runs).toBe(0)
   const result = await gate($, e, async () => ({ block: 'official block' }), { codexStopGate: 'on' }, async () => c, signal)
   expect(result.block).toBe('official block'); expect(runs).toBe(0)
 })
@@ -124,6 +125,18 @@ test('stop gate timeout warns and retains the reentry lock until work settles', 
   expect(calls).toBe(1)
   release()
   await Promise.resolve(); await Promise.resolve()
+})
+
+test('cancelling an active gate returns an unverified warning', async () => {
+  let release: () => void = () => {}, started: () => void = () => {}, warning = ''
+  const ready = new Promise<void>(resolve => { started = resolve })
+  const $ = { clock: { after: () => ({ cancel: () => {} }) }, ui: { status: (s: string) => { warning = s }, toast: async () => {} } } as unknown as EngineInterface
+  const controller = new AbortController()
+  const config = async () => { started(); await new Promise<void>(resolve => { release = resolve }); return undefined }
+  const pending = runStopGate($, { session_id: 'cancelled-gate', cwd: '/repo', stop_hook_active: false }, async () => ({}), { codexStopGate: 'on' }, config, controller.signal)
+  await ready; controller.abort(); expect((await pending).block).toBeUndefined()
+  expect(warning).toContain('not verified')
+  release()
 })
 
 test('automatic gate caches only the exact snapshot and reruns after changes', async () => {

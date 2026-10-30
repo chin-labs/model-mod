@@ -220,18 +220,20 @@ export async function runStopGate($: EngineInterface, e: StopEvent, next: () => 
     downstream = await next()
     if (downstream.block || downstream.preventContinuation) return downstream
     const controller = new AbortController()
-    const abort = () => controller.abort()
-    signal.addEventListener('abort', abort, { once: true })
-    if (signal.aborted) controller.abort()
-    let timer: { cancel: () => void } | undefined, expired = false
+    let timer: { cancel: () => void } | undefined, expired = false, abort = () => {}
     const timeout = new Promise<GateResult>(resolve => {
-      timer = $.clock.after(115_000, () => { expired = true; controller.abort(); resolve({ verdict: 'unknown', findings: [], needsHuman: true }) })
+      abort = () => { expired = true; controller.abort(); resolve({ verdict: 'unknown', findings: [], needsHuman: true }) }
+      signal.addEventListener('abort', abort, { once: true })
+      timer = $.clock.after(115_000, abort)
+      if (signal.aborted) abort()
     })
     const operation = (async () => automaticGate($, await config(), e.session_id, e.cwd, controller.signal))()
     let result: GateResult | 'skip'
     try { result = await Promise.race([operation, timeout]) }
     finally { timer?.cancel(); signal.removeEventListener('abort', abort) }
     if (expired) {
+      gatePasses.delete(e.session_id)
+      result = { verdict: 'unknown', findings: [], needsHuman: true }
       retainLock = true
       void operation.finally(() => gateRunning.delete(e.session_id)).catch(() => undefined)
     }

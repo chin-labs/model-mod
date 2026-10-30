@@ -661,6 +661,8 @@ class DelegateTest(unittest.TestCase):
         req = dict(self.request, kind='review', options={'gate': True}, sessionId='session')
         first = json.loads(delegate.execute(req))
         self.assertEqual(first['verdict'], 'pass')
+        (self.repo / 'subdir').mkdir()
+        self.assertEqual(first['fingerprint'], delegate.gate_snapshot(str(self.repo / 'subdir'), None, 'session')['fingerprint'])
         records = self.records()
         thread = next(r['params'] for r in records if r.get('method') == 'thread/start')
         self.assertEqual(thread['sandbox'], 'read-only')

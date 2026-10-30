@@ -143,7 +143,15 @@ def diff_for(cwd, base):
 
 def gate_snapshot(cwd, base, session):
     if not isinstance(session, str) or not session or len(session) > 256: raise Failure('Session unavailable.')
+    root = git(cwd, ['rev-parse', '--show-toplevel'], 4096)
+    cwd = os.fsdecode(root[:-1]) if root.endswith(b'\n') else ''
+    if not cwd or any(ord(ch) < 32 or 127 <= ord(ch) <= 159 for ch in cwd): raise Failure('Repository root is unavailable.')
     head = git(cwd, ['rev-parse', '--verify', 'HEAD'], 4096)
+    if base:
+        validate_ref(cwd, base)
+        base_commit = git(cwd, ['rev-parse', '--verify', '--end-of-options', base + '^{commit}'], 4096)
+    else:
+        base_commit = b''
     common = ['--binary', '--no-ext-diff', '--no-textconv', '--submodule=short', '--ignore-submodules=dirty']
     staged = safe_diff(cwd, ['diff', *common, '--cached', 'HEAD', '--'])
     unstaged = safe_diff(cwd, ['diff', *common, '--'])
@@ -175,7 +183,7 @@ def gate_snapshot(cwd, base, session):
         size += len(data)
         untracked.append((raw, data))
     if size > MAX_DIFF: raise Failure('Diff exceeds the size limit; review was not performed.')
-    parts = [session.encode(), (base or '').encode(), head, committed, staged, unstaged]
+    parts = [session.encode(), (base or '').encode(), base_commit, head, committed, staged, unstaged]
     for name, data in untracked: parts.extend((name, data))
     digest = hashlib.sha256()
     for part in parts:
