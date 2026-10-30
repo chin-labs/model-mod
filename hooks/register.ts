@@ -4,7 +4,7 @@ import type { EnvMemo, FallbackMemo, TrackedAgent } from '../types'
 import { MessagesStream } from './sse.ts'
 import { htmlToText } from './text.ts'
 import { openPane, registerPane } from './pane.tsx'
-import { delegate } from './delegate.ts'
+import { delegate, backgroundCommand } from './delegate.ts'
 
 // Read legacy rows only as an extra ownership source; this mod never writes them.
 const ROW_MARK = 'Local API via model-mod'
@@ -1979,6 +1979,7 @@ export const register: Register = (on, options) => {
   on('command.run', { command: 'model-mod:refresh' }, ($, e) => admin($, e, 'refresh').then(commandText))
   on('command.run', { command: 'model-mod:review' }, async ($, e, next) => delegate($, 'review', e.args, await load($), next.signal))
   on('command.run', { command: 'model-mod:rescue' }, async ($, e, next) => delegate($, 'rescue', e.args, await load($), next.signal))
+  for (const command of ['jobs', 'result', 'cancel'] as const) on('command.run', { command: `model-mod:${command}` }, async ($, e) => backgroundCommand($, command, e.args, await load($)))
 
   on('agent.spawn', async ($, e, next) => {
     const started = await next(e)

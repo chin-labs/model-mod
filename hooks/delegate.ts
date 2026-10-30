@@ -2,7 +2,7 @@ import type { EngineInterface } from 'claude-code'
 
 type Account = { account: string; model: string; directory: string }
 type DelegateConfig = { codex?: Map<string, Account>; accountsDir?: string; codexBin?: string; pythonBin?: string }
-type Options = { account?: string; model?: string; effort?: string; base?: string; adversarial?: boolean; text: string }
+type Options = { account?: string; model?: string; effort?: string; base?: string; adversarial?: boolean; background?: boolean; text: string }
 
 function cleanDisplay(value: string): string {
   return value.replace(/\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|.)/g, '').replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, '')
@@ -34,10 +34,11 @@ export function parseDelegate(kind: 'review' | 'rescue', input: string): Options
   const result: Options = { text }, seen = new Set<string>()
   for (let i = 0; i < tokens.length; i++) {
     const flag = tokens[i]!
-    const allowed = ['--account', '--model', '--effort', ...(kind === 'review' ? ['--base', '--adversarial'] : [])]
+    const allowed = ['--account', '--model', '--effort', '--background', ...(kind === 'review' ? ['--base', '--adversarial'] : [])]
     if (!allowed.includes(flag)) throw new Error('Unknown flag or text before --: ' + flag)
     if (seen.has(flag)) throw new Error('Repeated flag: ' + flag)
     seen.add(flag)
+    if (flag === '--background') { result.background = true; continue }
     if (flag === '--adversarial') { result.adversarial = true; continue }
     const value = tokens[++i]
     if (!value || value.startsWith('--')) throw new Error('Missing value for ' + flag)
@@ -73,6 +74,14 @@ export async function delegate($: EngineInterface, kind: 'review' | 'rescue', ar
     const script = root.replace(/[\\/]+$/, '') + sep + 'helper' + sep + 'delegate.py'
     const cwd = await $.session.cwd()
     if (signal.aborted) throw new Error('cancelled')
+    if (options.background) {
+      const { account: _account, model: _model, background: _background, ...jobOptions } = options
+      const reply = await client($, c, 'submit', { request: { kind, options: jobOptions, account: selected, accountsDir: c.accountsDir, directory: account.directory, codexBin: c.codexBin ?? 'codex', model, cwd } })
+      if (!reply.ok || !reply.job) return { text: 'model-mod: ' + cleanDisplay(reply.error ?? 'Background submission failed.') }
+      const id = reply.job.id.slice(0, 12)
+      pollJob($, c, reply.job.id)
+      return { text: `Started Codex job ${cleanDisplay(id)} (${cleanDisplay(selected)}, ${cleanDisplay(model)}). Check with /model-mod:jobs, read with /model-mod:result ${cleanDisplay(id)}.` }
+    }
     const child = $.process.spawn({ argv: [c.pythonBin ?? 'python3', '-E', '-s', script],
       input: JSON.stringify({ kind, options, account: selected, accountsDir: c.accountsDir, directory: account.directory, codexBin: c.codexBin ?? 'codex', model, cwd }), cwd })
     let stdout = ''
@@ -93,4 +102,87 @@ export async function delegate($: EngineInterface, kind: 'review' | 'rescue', ar
     const message = error instanceof Error && /^(Unclosed quote|Unknown flag|Repeated flag|Missing value|Invalid effort|A task|Native review|Review focus)/.test(error.message) ? error.message : 'Delegation failed or was cancelled; the result is incomplete. Longer jobs will require the future background feature.'
     return { text: 'model-mod: ' + message }
   }
+}
+
+
+type Job = { id: string; state: string; account: string; model: string; kind: string; createdAt: number; errorCode?: string | null }
+type Reply = { ok: boolean; error?: string; job?: Job; jobs?: Job[]; text?: string }
+const terminal = new Set(['completed', 'failed', 'cancelled', 'interrupted', 'unknown'])
+const polling = new Set<string>()
+const errors: Record<string, string> = {
+  timeout: 'total time limit reached', idle_timeout: 'inactivity time limit reached',
+  account_mismatch: 'account verification failed', not_logged_in: 'account is not logged in',
+  codex_too_old: 'Codex needs an update', possible_leftover: 'process cleanup could not be confirmed',
+  broker_restarted: 'broker restarted', broker_stopped: 'broker stopped', delegation_failed: 'delegation failed',
+  runner_start_failed: 'runner could not start', runner_exited: 'runner exited unexpectedly',
+}
+
+async function client($: EngineInterface, c: DelegateConfig | undefined, method: string, payload: object): Promise<Reply> {
+  const root = $.plugin.root
+  if (!root) throw new Error('plugin root unavailable')
+  const sep = root.includes('\\') && !root.includes('/') ? '\\' : '/'
+  const script = root.replace(/[\\/]+$/, '') + sep + 'helper' + sep + 'delegate.py'
+  try {
+    const run = await $.process.run([c?.pythonBin ?? 'python3', '-E', '-s', script, 'client', method], { stdin: JSON.stringify(payload), timeoutMs: 5000 })
+    const reply = JSON.parse(run.stdout) as Reply
+    if (reply.error === 'Background broker unavailable; start a new session to launch it.') reply.error = 'Background jobs need a new session to start the broker; restart Claude Code.'
+    return reply
+  } catch {
+    return { ok: false, error: 'Background jobs need a new session to start the broker; restart Claude Code.' }
+  }
+}
+
+export function pollJob($: EngineInterface, c: DelegateConfig | undefined, id: string): void {
+  if (polling.has(id)) return
+  polling.add(id)
+  let rounds = 0
+  const tick = () => {
+    $.clock.after(15_000, () => {
+      void (async () => {
+        try {
+          if (++rounds > 140) { polling.delete(id); return }
+          const reply = await client($, c, 'status', { id })
+          if (!reply.ok || !reply.job) { polling.delete(id); return }
+          if (terminal.has(reply.job.state)) {
+            polling.delete(id)
+            const short = cleanDisplay(id.slice(0, 12))
+            await $.ui.toast(`Codex job ${short} finished (${cleanDisplay(reply.job.state)}); run /model-mod:result ${short}`)
+          } else if (rounds >= 140) polling.delete(id)
+          else tick()
+        } catch { polling.delete(id) }
+      })()
+    })
+  }
+  try { tick() } catch { polling.delete(id) }
+}
+
+function jobLine(job: Job): string {
+  const date = Number.isFinite(job.createdAt) ? new Date(job.createdAt * 1000).toISOString() : 'unknown'
+  const error = job.errorCode ? ` — ${errors[job.errorCode] ?? job.errorCode}` : ''
+  return cleanDisplay(`${job.id.slice(0, 12)}  ${job.state}  ${job.account}  ${job.model}  ${job.kind}  ${date}${error}`)
+}
+
+export async function backgroundCommand($: EngineInterface, command: 'jobs' | 'result' | 'cancel', args: string, c: DelegateConfig | undefined): Promise<{ text: string }> {
+  try {
+    const tokens = args.trim() ? args.trim().split(/\s+/) : []
+    let id: string | undefined, all = false, clear = false
+    for (const token of tokens) {
+      if (command === 'jobs' && token === '--all' && !all) { all = true; continue }
+      if (command === 'jobs' && token === '--clear' && !clear) { clear = true; continue }
+      if (id || token.startsWith('--')) throw new Error('Unexpected argument: ' + token)
+      id = token
+    }
+    if (id && !/^[0-9a-f]{4,32}$/.test(id)) throw new Error('Invalid job ID; use at least 4 lowercase hexadecimal characters.')
+    if (command !== 'jobs' && !id) throw new Error('Provide a job ID from /model-mod:jobs.')
+    if (id && (all || clear)) throw new Error('Use a job ID without --all or --clear.')
+    if (all && clear) throw new Error('Use --clear without --all; it clears the current workspace only.')
+    const method = command === 'jobs' ? id ? 'status' : 'list' : command
+    const payload = method === 'list' ? { cwd: await $.session.cwd(), all, clear } : { id }
+    const reply = await client($, c, method, payload)
+    if (!reply.ok) return { text: 'model-mod: ' + cleanDisplay(reply.error ?? 'Background request failed.') }
+    if (method === 'list') return { text: reply.jobs?.length ? reply.jobs.map(jobLine).join('\n') : 'No jobs found.' }
+    if (!reply.job) throw new Error('Invalid broker response.')
+    if (method === 'result') return { text: formatOutput(reply.job.account, reply.job.model, reply.text ?? '') }
+    return { text: jobLine(reply.job) }
+  } catch (error) { return { text: 'model-mod: ' + cleanDisplay(error instanceof Error ? error.message : 'Background request failed.') } }
 }

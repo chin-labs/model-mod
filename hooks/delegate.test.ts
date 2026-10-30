@@ -1,6 +1,6 @@
 import { test, expect } from 'claude-code/testing'
 import type { EngineInterface } from 'claude-code'
-import { delegate, formatOutput, parseDelegate } from './delegate.ts'
+import { delegate, formatOutput, parseDelegate, backgroundCommand, pollJob } from './delegate.ts'
 
 test('delegate parser handles quotes, separator, repeats and unknown flags', () => {
   expect(parseDelegate('review', `--base 'feature/test' --adversarial -- "focus text" 'and more'`)).toEqual({ base: 'feature/test', adversarial: true, text: `"focus text" 'and more'` })
@@ -48,4 +48,58 @@ test('delegate passes the exact task text to the helper', async () => {
     await delegate($, 'rescue', '-- ' + text, { codex: new Map([['test/chat', { account: 'test', model: 'chat', directory: '/accounts/test' }]]), accountsDir: '/accounts' }, new AbortController().signal)
     expect((JSON.parse(input) as { options: { text: string } }).options.text).toBe(text)
   }
+})
+
+test('background parser preserves foreground behavior and rejects duplicate flag', () => {
+  expect(parseDelegate('rescue', '--background -- task')).toEqual({ background: true, text: 'task' })
+  expect(parseDelegate('rescue', '-- task')).toEqual({ text: 'task' })
+  expect(() => parseDelegate('rescue', '--background --background -- task')).toThrow()
+})
+
+const job = { id: 'abcdef0123456789abcdef0123456789', state: 'completed', account: 'test', model: 'chat', kind: 'rescue', createdAt: 1 }
+const config = { codex: new Map([['test/chat', { account: 'test', model: 'chat', directory: '/accounts/test' }]]), accountsDir: '/accounts' }
+
+test('background submission sends client account validation and exposes client errors', async () => {
+  let input: any
+  const $ = { plugin: { root: '/plugin' }, session: { model: async () => 'test/chat', cwd: async () => '/repo' },
+    process: { run: async (_argv: unknown, opts: { stdin: string }) => { input = JSON.parse(opts.stdin); return { stdout: JSON.stringify({ ok: false, error: 'Background jobs require the default accounts directory; use foreground delegation for a custom directory.' }) } } } } as unknown as EngineInterface
+  const result = await delegate($, 'rescue', '--background -- hello', config, new AbortController().signal)
+  expect(input.request.accountsDir).toBe('/accounts')
+  expect(input.request.directory).toBe('/accounts/test')
+  expect(input.request.options).toEqual({ text: 'hello' })
+  expect(result.text).toContain('Background jobs require the default accounts directory')
+})
+
+test('background commands validate IDs and sanitize display and errors', async () => {
+  let response: unknown = { ok: false, error: 'Ambiguous job ID; provide more characters.' }
+  const $ = { plugin: { root: '/plugin' }, session: { cwd: async () => '/repo' }, process: { run: async () => ({ stdout: JSON.stringify(response) }) } } as unknown as EngineInterface
+  expect((await backgroundCommand($, 'result', 'xyz!', config)).text).toContain('Invalid job ID')
+  expect((await backgroundCommand($, 'result', 'abc', config)).text).toContain('Invalid job ID')
+  expect((await backgroundCommand($, 'result', 'abcd', config)).text).toContain('Ambiguous job ID')
+  response = { ok: false, error: 'Background broker unavailable; start a new session to launch it.' }
+  expect((await backgroundCommand($, 'jobs', '', config)).text).toContain('restart Claude Code')
+  response = { ok: false, error: 'Background jobs are not supported on Windows.' }
+  expect((await backgroundCommand($, 'jobs', '', config)).text).toContain('not supported on Windows')
+  response = { ok: true, job: { ...job, account: '\x1b[31mtest\x1b[0m', model: 'chat\x01' }, text: '\x1b[31moutput\x1b[0m\x01' }
+  const result = (await backgroundCommand($, 'result', 'abcd', config)).text
+  expect(result).toContain('Codex output is unverified')
+  expect(result).not.toContain('\x1b')
+  expect(result).not.toContain('\x01')
+})
+
+test('notification polling deduplicates, stops on terminal or error and times out', async () => {
+  let callbacks: (() => void)[] = [], calls = 0, notices: string[] = [], state = 'running', fail = false
+  const $ = { plugin: { root: '/plugin' }, clock: { after: (_ms: number, cb: () => void) => { callbacks.push(cb) } },
+    ui: { toast: async (message: string) => { notices.push(message) } },
+    process: { run: async () => { calls++; if (fail) throw new Error('failure'); return { stdout: JSON.stringify({ ok: true, job: { ...job, state } }) } } } } as unknown as EngineInterface
+  const step = async () => { callbacks.shift()?.(); for (let i = 0; i < 12; i++) await Promise.resolve() }
+  pollJob($, config, job.id); pollJob($, config, job.id)
+  expect(callbacks.length).toBe(1)
+  await step(); state = 'completed'; await step()
+  expect(calls).toBe(2); expect(notices.length).toBe(1); expect(callbacks.length).toBe(0)
+  fail = true; pollJob($, config, job.id); await step()
+  expect(notices.length).toBe(1); expect(callbacks.length).toBe(0)
+  fail = false; state = 'running'; calls = 0; pollJob($, config, job.id)
+  for (let i = 0; i < 140; i++) await step()
+  expect(calls).toBe(140); expect(callbacks.length).toBe(0)
 })
