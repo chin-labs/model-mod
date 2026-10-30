@@ -98,17 +98,20 @@ test('stop gate enforces its limit, warns on unknown and protects reentry', asyn
 })
 
 test('unavailable gate and ambiguous account warn without claiming a pass', async () => {
-  let warnings = 0, runs = 0
+  let warnings = 0, runs = 0, unavailable = false, changed = false, notice = ''
   const $ = { plugin: { root: '/plugin' }, session: { model: async () => 'other' }, clock: { after: () => ({ cancel: () => {} }) },
-    ui: { status: (s: string) => { expect(s).toContain('not verified'); warnings++ }, toast: async () => {} },
-    process: { run: async () => { runs++; throw new Error('unavailable') } } } as unknown as EngineInterface
+    ui: { status: (s: string) => { expect(s).toContain('not verified'); warnings++; notice = s }, toast: async () => {} },
+    process: { run: async () => { runs++; if (unavailable) throw new Error('unavailable'); return { exitCode: 0, stdout: JSON.stringify({ changed, fingerprint: 'f'.repeat(64) }) } } } } as unknown as EngineInterface
   const c = { codex: new Map([['a/chat', { account: 'a', model: 'chat', directory: '/accounts/a' }], ['b/chat', { account: 'b', model: 'chat', directory: '/accounts/b' }]]), accountsDir: '/accounts' }
   const opts = { codexStopGate: 'on' }, signal = new AbortController().signal, next = async () => ({})
+  await runStopGate($, { session_id: 'clean', cwd: '/repo', stop_hook_active: false }, next, opts, async () => c, signal)
+  expect(runs).toBe(1); expect(warnings).toBe(0)
+  changed = true
   await runStopGate($, { session_id: 'ambiguous', cwd: '/repo', stop_hook_active: false }, next, opts, async () => c, signal)
-  expect(runs).toBe(0); expect(warnings).toBe(1)
-  c.codex.delete('b/chat')
+  expect(runs).toBe(2); expect(warnings).toBe(1); expect(notice).toContain('ambiguous')
+  c.codex.delete('b/chat'); unavailable = true
   await runStopGate($, { session_id: 'unavailable', cwd: '/repo', stop_hook_active: false }, next, opts, async () => c, signal)
-  expect(runs).toBe(1); expect(warnings).toBe(2)
+  expect(runs).toBe(3); expect(warnings).toBe(2)
 })
 
 test('stop gate timeout warns and retains the reentry lock until work settles', async () => {

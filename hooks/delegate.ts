@@ -8,7 +8,7 @@ function cleanDisplay(value: string): string {
   return value.replace(/\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|.)/g, '').replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, '')
 }
 type GateFinding = { severity: 'blocking' | 'note'; file: string; line?: number; summary: string }
-type GateResult = { verdict: 'pass' | 'block' | 'unknown'; findings: GateFinding[]; needsHuman: boolean; fingerprint?: string }
+type GateResult = { verdict: 'pass' | 'block' | 'unknown'; findings: GateFinding[]; needsHuman: boolean; fingerprint?: string; reason?: string }
 const gatePasses = new Map<string, string>()
 
 function readGate(text: string): GateResult {
@@ -162,22 +162,23 @@ export async function delegate($: EngineInterface, kind: 'review' | 'rescue', ar
 export async function automaticGate($: EngineInterface, c: DelegateConfig | undefined, sessionId: string, cwd: string, signal: AbortSignal): Promise<GateResult | 'skip'> {
   const unknown: GateResult = { verdict: 'unknown', findings: [], needsHuman: true }
   try {
-    if (!$.plugin.root || !c?.accountsDir || signal.aborted) return unknown
-    const accounts = [...(c.codex?.values() ?? [])]
-    const current = await $.session.model().catch(() => '')
-    const currentAccount = c.codex?.get(current)
-    const names = [...new Set(accounts.map(a => a.account))]
-    const selected = currentAccount ?? (names.length === 1 ? accounts[0] : undefined)
-    if (!selected) return unknown
+    if (!$.plugin.root || signal.aborted) return unknown
     const sep = $.plugin.root.includes('\\') && !$.plugin.root.includes('/') ? '\\' : '/'
     const script = $.plugin.root.replace(/[\\/]+$/, '') + sep + 'helper' + sep + 'delegate.py'
-    const argv = [c.pythonBin ?? 'python3', '-E', '-s', script]
+    const argv = [c?.pythonBin ?? 'python3', '-E', '-s', script]
     const snapshotRun = await $.process.run(argv, { cwd, stdin: JSON.stringify({ kind: 'snapshot', cwd, sessionId }), timeoutMs: 10_000 })
     const snapshot = JSON.parse(snapshotRun.stdout) as { changed?: boolean; fingerprint?: string }
     if (snapshotRun.exitCode !== 0 || typeof snapshot.changed !== 'boolean' || !/^[0-9a-f]{64}$/.test(snapshot.fingerprint ?? '')) return unknown
     if (!snapshot.changed) return 'skip'
     if (gatePasses.get(sessionId) === snapshot.fingerprint) return 'skip'
     if (signal.aborted) return unknown
+    if (!c?.accountsDir) return { ...unknown, reason: 'Codex account directory is unavailable.' }
+    const accounts = [...(c.codex?.values() ?? [])]
+    const current = await $.session.model().catch(() => '')
+    const currentAccount = c.codex?.get(current)
+    const names = [...new Set(accounts.map(a => a.account))]
+    const selected = currentAccount ?? (names.length === 1 ? accounts[0] : undefined)
+    if (!selected) return { ...unknown, reason: 'Codex account is unavailable or ambiguous; select an account for a manual review.' }
     const request = { kind: 'review', options: { gate: true, text: '' }, sessionId, cwd, account: selected.account,
       directory: selected.directory, accountsDir: c.accountsDir, model: selected.model, codexBin: c.codexBin ?? 'codex' }
     const run = await $.process.run(argv, { cwd, stdin: JSON.stringify(request), timeoutMs: 105_000 })
@@ -242,7 +243,8 @@ export async function runStopGate($: EngineInterface, e: StopEvent, next: () => 
       gateBlocks.set(e.session_id, (gateBlocks.get(e.session_id) ?? 0) + 1)
       return { ...downstream, block: gateBlockReason(result) }
     }
-    try { $.ui.status(warning); await $.ui.toast(warning) } catch { /* status is best effort */ }
+    const notice = result.reason ? warning + ' ' + result.reason : warning
+    try { $.ui.status(notice); await $.ui.toast(notice) } catch { /* status is best effort */ }
     return downstream
   } catch {
     try { $.ui.status(warning); await $.ui.toast(warning) } catch { /* status is best effort */ }
