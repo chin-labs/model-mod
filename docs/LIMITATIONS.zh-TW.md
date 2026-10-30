@@ -12,6 +12,10 @@ Codex 登入與 API 上游已在 **Claude Code 2.1.314** 測試。API 上游也�
 
 Marketplace 安裝已用本機 clone 與使用標準 HTTP 協定的 Git 伺服器測試過。客戶端不支援從單純（dumb）HTTP 的 Git 伺服器安裝，且解除安裝後會留下插件快取。
 
+## 未識別的模型警告
+
+啟動時 Claude Code 可能警告非 Claude 模型 ID 未獲識別，並假設 context 為 200k。這是客戶端行為，model-mod 無法消除。選取模型後，model-mod 會套用自己的 context 視窗；Codex 預設為 128,000 token。
+
 ## Codex 登入的限制
 
 - 最近實測的 Codex CLI 版本為 **0.165.0**，也是最低版本；更舊的版本會被拒絕。較新版本會照常執行，但未逐版驗證。更新已測版本紀錄前，應對新版本執行手動 live 契約測試。

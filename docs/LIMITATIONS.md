@@ -10,6 +10,10 @@ Codex login and the API upstream were tested on **Claude Code 2.1.314**. The API
 
 Marketplace installs were tested from a local clone and from a Git server over the standard HTTP protocol. Claude Code does not support installing from a plain ("dumb") HTTP Git server, and it leaves the plugin cache behind after an uninstall.
 
+## Unrecognized model warning
+
+At startup Claude Code may warn that a non-Claude model ID is not recognized and that its context is assumed to be 200k. This is client behavior that model-mod cannot suppress. After a model is selected, model-mod applies its own context window; the Codex default is 128,000 tokens.
+
 ## Codex login limitations
 
 - The last tested Codex CLI version is **0.165.0**, also the minimum: older versions are rejected. Newer versions run but have not been verified individually. Before updating the tested-version record, run the manual live contract test against the new version.
