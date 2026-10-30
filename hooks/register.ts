@@ -11,6 +11,8 @@ const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:\/-]{0,99}$/
 const NOT_CHAT = /claude|anthropic|image|auto-review|embed|tts|whisper|moderation/i
 const OFFICIAL_ALIAS = /^(sonnet|opus|haiku|fable|best|default|opusplan)(\[1m\])?$/i
 const MODEL_CACHE_CAP = 2000
+// Abort a stalled stream after 300 seconds; SSE pings and normal output arrive much more often.
+const STREAM_IDLE_SECONDS = 300
 // CLIProxyAPI's default loopback address; keep it in step with the manifest's baseUrl default.
 const DEFAULT_BASE_URL = 'http://127.0.0.1:8317'
 
@@ -1544,7 +1546,7 @@ export const register: Register = (on, options) => {
         parser = new MessagesStream(e.model)
         // Retry-After comes back through --write-out, which curl writes to fd 2 itself: a header file opened on the stderr device
         // fails when the client hands the child a socket there. %header{} needs curl 7.84; an older curl prints nothing and the plain backoff applies.
-        const call = curlCall(c, ['-sN', '--fail-with-body', '--max-time', '900',
+        const call = curlCall(c, ['-sN', '--fail-with-body', '--max-time', '900', '--speed-limit', '1', '--speed-time', String(STREAM_IDLE_SECONDS),
           '--write-out', '%{stderr}\nmodel-mod-http:%{http_code}\nmodel-mod-retry-after:%header{retry-after}\n',
           '-H', 'content-type: application/json',
           '-H', 'anthropic-version: 2023-06-01', '--data-binary', '@-', c.baseUrl + '/v1/messages'])

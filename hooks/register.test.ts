@@ -261,6 +261,7 @@ test('HTTP failures stop after three retries and respect bounded Retry-After sec
     expect(limited.result.answer).toBe('model-mod: upstream rate limited (HTTP 429)' + (seconds > 15 ? `, retry after ${seconds}s.` : '.'))
     // Retry-After is read from the write-out; no header file is opened.
     const argv = w.spawned[0]!.argv
+    expect(argv.slice(argv.indexOf('--speed-limit'), argv.indexOf('--speed-limit') + 4)).toEqual(['--speed-limit', '1', '--speed-time', '300'])
     expect(argv).not.toContain('/dev/stderr')
     expect(argv).not.toContain('-D')
     expect(argv).toContain('%{stderr}\nmodel-mod-http:%{http_code}\nmodel-mod-retry-after:%header{retry-after}\n')
