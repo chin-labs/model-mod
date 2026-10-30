@@ -1528,12 +1528,12 @@ export const register: Register = (on, options) => {
       const c = await load($)
       if (!c) return next(e)
       const model = await $.session.model()
-      if (c.excluded?.has(model)) return { text: 'model-mod: model is not in the allowlist' }
+      if (c.excluded?.has(model)) return commandText({ text: 'model-mod: model is not in the allowlist' })
       if (!c.models.includes(model)) return next(e)
       const question = e.args.trim()
-      if (!question) return { text: 'model-mod: /btw needs a side question.' }
+      if (!question) return commandText({ text: 'model-mod: /btw needs a side question.' })
       const history = await $.session.messages({ as: 'api' })
-      if (!Array.isArray(history)) return { text: 'model-mod: side-question context is unavailable.' }
+      if (!Array.isArray(history)) return commandText({ text: 'model-mod: side-question context is unavailable.' })
       const messages = (history as unknown as Turn[]).map(message => ({ ...message,
         content: message.content.filter(block => !['thinking', 'redacted_thinking', 'server_tool_use'].includes(block.type)
           && !block.type.endsWith('_tool_result')) })).filter(message => message.content.length > 0)
@@ -1544,12 +1544,12 @@ export const register: Register = (on, options) => {
         system: [...prompt.sections.map(section => section.text),
           'Answer only the side question using the conversation as read-only context. Give one reply. Do not use tools or perform actions.'].join('\n\n') }
       const run = await messagesOnce($, c, model, body, '280', 300_000)
-      if (run.exitCode !== 0) return { text: c.codex?.has(model) ? codexRunError(c, c.codex.get(model)!, run) : 'model-mod: side-question request failed.' }
+      if (run.exitCode !== 0) return commandText({ text: c.codex?.has(model) ? codexRunError(c, c.codex.get(model)!, run) : 'model-mod: side-question request failed.' })
       const reply = JSON.parse(run.stdout) as { content?: { type: string; text?: string }[] }
       const text = scrub(c, (reply.content ?? []).filter(block => block.type === 'text').map(block => block.text ?? '').join('').trim(), false)
-      return { text: text || 'model-mod: side question returned no text.' }
+      return text ? { text } : commandText({ text: 'model-mod: side question returned no text.' })
     } catch {
-      return { text: 'model-mod: side-question request failed.' }
+      return commandText({ text: 'model-mod: side-question request failed.' })
     }
   })
 

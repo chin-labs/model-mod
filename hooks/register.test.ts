@@ -436,9 +436,10 @@ test('compaction of a subscription model goes down the chain', async ($, on) => 
 test('/context and /btw are answered locally for a bridge model and go down the chain otherwise', async ($, on) => {
   let sent: { model: string; messages: { content: { text?: string }[] }[]; tools?: unknown; system: string } | undefined
   let failed = false
+  let answer = 'side answer'
   const w = world(on, baseConfig, LOCAL, { stdout: '', code: 0 }, (_argv, stdin) => {
     sent = JSON.parse(stdin!)
-    return { exitCode: failed ? 22 : 0, stdout: JSON.stringify({ content: [{ type: 'text', text: 'side answer' }] }) }
+    return { exitCode: failed ? 22 : 0, stdout: JSON.stringify({ content: [{ type: 'text', text: answer }] }) }
   })
   const sq = (categoryName: string, isFilled: boolean, squareFullness: number) => ({ color: 'x', isFilled, categoryName, tokens: 1, percentage: 1, squareFullness })
   w.usage = { context: { window: 272000, tokens: 10, breakdown: { model: LOCAL, totalTokens: 10, rawMaxTokens: 272000, percentage: 1,
@@ -454,8 +455,13 @@ test('/context and /btw are answered locally for a bridge model and go down the 
   expect(sent?.tools).toBeUndefined()
   expect(sent?.system).toContain('read-only context')
   expect(w.reached).toEqual([])
+  expect((await $.command.run({ ...btw as object, args: ' ' } as never)).text).toBe('/btw needs a side question.')
+  answer = 'model-mod: answer from the model'
+  expect((await $.command.run(btw)).text).toBe(answer)
+  answer = ''
+  expect((await $.command.run(btw)).text).toBe('side question returned no text.')
   failed = true
-  expect((await $.command.run(btw)).text).toContain('side-question request failed')
+  expect((await $.command.run(btw)).text).toBe('side-question request failed.')
   expect(w.reached).toEqual([])
   w.current = 'claude-sonnet-5-5'
   expect((await $.command.run(btw)).text).toBe('engine')
