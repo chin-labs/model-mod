@@ -129,8 +129,53 @@ class Contract(unittest.TestCase):
                 self.assertIn(setting, calls[0]['argv'])
                 self.assertEqual(calls[0]['argv'][calls[0]['argv'].index(setting) - 1], '-c')
             self.assertEqual(sum(c.get('method') == 'turn/interrupt' for c in calls), 1)
+            self.assertIn('model_auto_compact_token_limit=140800', calls[0]['argv'])
+
+    def test_parallel_batch(self):
+        for mode in ('parallel_zero', 'parallel_50'):
+            for stream in (False, True):
+                r = self.run_bridge(dict(BASE, tools=TOOLS, stream=stream), mode)
+                self.assertEqual(r.returncode, 0, r.stderr)
+                if stream:
+                    frames = [json.loads(line[6:]) for line in r.stdout.splitlines() if line.startswith('data: ')]
+                    uses = [f for f in frames if f.get('content_block', {}).get('type') == 'tool_use']
+                    self.assertEqual([f['index'] for f in uses], [1, 2, 3])
+                    self.assertEqual([f['content_block']['id'] for f in uses], ['call1', 'call2', 'call3'])
+                    self.assertEqual(frames[-2]['delta']['stop_reason'], 'tool_use')
+                    self.assertEqual(frames[-1]['type'], 'message_stop')
+                else:
+                    result = json.loads(r.stdout)
+                    self.assertEqual([b['id'] for b in result['content'] if b['type'] == 'tool_use'], ['call1', 'call2', 'call3'])
+                    self.assertEqual(result['stop_reason'], 'tool_use')
+
+    def test_catalog_windows(self):
+        with tempfile.TemporaryDirectory() as home:
+            Path(home, 'models_cache.json').write_text(json.dumps({'models': [{'slug': 'gpt-6.1-terra', 'context_window': 500000, 'effective_context_window_percent': 95}]}))
+            argv = [sys.executable, str(BRIDGE), 'windows', '--codex-home', home]
+            result = subprocess.run(argv, text=True, capture_output=True)
+            self.assertEqual(json.loads(result.stdout)['windows'], {'gpt-6.1-terra': 475000})
+            Path(home, 'models_cache.json').unlink()
+            result = subprocess.run(argv, text=True, capture_output=True)
+            self.assertEqual(json.loads(result.stdout)['windows'], {})
+        with tempfile.TemporaryDirectory() as tmp:
+            log = Path(tmp) / 'log'
+            result = self.run_bridge(mode='compaction', log=log, extra=['--context-window', '272000', '--catalog-window', '475000'])
+            records = [json.loads(line) for line in log.read_text().splitlines()]
+            self.assertIn('model_auto_compact_token_limit=522500', records[0]['argv'])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('context compaction observed', result.stderr)
+        self.assertIn('reported model context window differs', result.stderr)
+        self.assertNotIn('context compaction observed', result.stdout)
 
     def test_history_and_names(self):
+        parallel = prepare(dict(BASE, tools=TOOLS, messages=[
+            {'role': 'assistant', 'content': [{'type': 'tool_use', 'name': 'one', 'id': 'c' + str(n), 'input': {'n': n}} for n in range(3)]},
+            {'role': 'user', 'content': [{'type': 'tool_result', 'tool_use_id': 'c' + str(n), 'content': 'result' + str(n)} for n in range(3)]},
+        ]), {'test': 'gpt-6.1-terra'})
+        self.assertEqual([(item['type'], item['call_id']) for item in parallel['history']],
+                         [('function_call', 'c0'), ('function_call', 'c1'), ('function_call', 'c2'),
+                          ('function_call_output', 'c0'), ('function_call_output', 'c1'), ('function_call_output', 'c2')])
+        self.assertEqual([item['output'] for item in parallel['history'][3:]], ['result0', 'result1', 'result2'])
         literal = prepare(dict(BASE, messages=[{'role': 'user', 'content': '__THREAD_ID__'}]), {'test': 'gpt-6.1-terra'})
         self.assertEqual(literal['input'][0]['text'], '__THREAD_ID__')
         name = 'tool name'

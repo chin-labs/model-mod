@@ -12,7 +12,7 @@ Marketplace installs were tested from a local clone and from a Git server over t
 
 ## Unrecognized model warning
 
-At startup Claude Code may warn that a non-Claude model ID is not recognized and that its context is assumed to be 200k. This is client behavior that model-mod cannot suppress. After a model is selected, model-mod applies its own context window; the Codex default is 128,000 tokens.
+At startup Claude Code may warn that a non-Claude model ID is not recognized and that its context is assumed to be 200k. This is client behavior that model-mod cannot suppress. After a model is selected, model-mod applies its own context window; Codex uses the effective catalog window or 128,000 tokens if unavailable.
 
 ## Codex login limitations
 
@@ -21,7 +21,7 @@ At startup Claude Code may warn that a non-Claude model ID is not recognized and
 - Codex built-in shell, network and browser tools, sleep, subagents, apps, plugins and goals are disabled. Patch and file operations are blocked by the read-only sandbox and item whitelist; item handling follows the checks above. Dynamic tools come from the client, with the MCP resource-list exceptions above. The model receives brief developer instructions to use only provided function tools, avoid built-in sleep, wait, collaboration and subagent tools, and end the turn when waiting for background work; it is not told the read-only isolation details.
 - Codex reserves names beginning with `mcp__` and restricts tool names. The bridge sends affected names as `bridge_` plus a hash and restores the original name on return.
 - `max_tokens` is accepted but ignored. `tool_choice`, `temperature`, `top_p`, `stop_sequences`, `cache_control`, thinking budgets and signatures are ignored; historical thinking blocks are discarded. The helper writes internal `model-mod-note:` diagnostic lines, which are discarded and not shown to users. Do not rely on these controls being enforced.
-- `generate_image` and `web_search` are not offered for Codex models; `web_fetch` remains available. Codex automatic compaction items are unsupported. The default Codex context window is 128,000 tokens when the user has not explicitly set `contextWindow`. Configure the window with `contextWindow`. This does not disable model-mod's own compaction.
+- `generate_image` and `web_search` are not offered for Codex models; `web_fetch` remains available. Codex context defaults to the account catalog's window multiplied by its effective percentage, or 128,000 tokens if unavailable; an explicit `contextWindow` overrides it. The helper sets the Codex auto-compaction threshold above the client window and notes compaction events internally. This does not guarantee Codex compaction is disabled or disable model-mod's own compaction.
 - Each call starts a local helper process and `codex app-server`, adding latency; startup latency has not been measured. Windows is supported by design but **not verified**.
 - Codex quotas and rate limits are determined by your own subscription. model-mod does not rotate accounts when a limit is reached.
 

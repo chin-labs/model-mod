@@ -194,7 +194,7 @@ async function configurePicker($: EngineInterface, c: { baseUrl: string; key?: s
   }
 }
 
-type CodexAccount = { account: string; model: string; directory: string }
+type CodexAccount = { account: string; model: string; directory: string; window?: number }
 type Config = { codex?: Map<string, CodexAccount>; pythonBin?: string; codexBin?: string; accountsDir?: string; apiInvalid?: boolean; prompts: Prompts; promptsDir?: string; baseUrl: string; headerFile?: string; key?: string; models: string[]; toolsFile?: string; defaultWindow?: number; contextWindowExplicit?: boolean; explicitModels?: boolean; excluded?: Set<string>; codexDirectoryUnavailable?: Set<string>; imageAuto?: boolean; source?: 'options' | 'file'; maxTokens: number; effortMode: 'suffix' | 'none'; imageModel?: string; contextWindows?: Record<string, number>; sideModel?: string; keepThinking?: boolean; localTitle?: boolean; localContext?: boolean; toolSearch?: 'auto' | 'on' | 'off'; toolSearchPercent?: number; refresh?: string[]; fallbackModel?: string; fallbackPercent?: number; workerModel?: string }
 type Tool = { name: string; description: string; input_schema: Record<string, unknown> }
 
@@ -265,8 +265,9 @@ const KNOWN_WINDOWS: Readonly<Record<string, number>> = { 'gpt-5.6-sol': 372_000
 let pluginOptions: PluginOptions = {}
 
 // The window of a bridge model: the configured one, else the known one, else the default of the options.
-function windowOf(c: Config, model: string): number | undefined {
-  return c.contextWindows?.[model] ?? (c.defaultWindow === undefined ? undefined : c.codex?.has(model) ? (c.contextWindowExplicit ? c.defaultWindow : 128_000) : KNOWN_WINDOWS[model] ?? c.defaultWindow)
+export function windowOf(c: Config, model: string): number | undefined {
+  const codex = c.codex?.get(model)
+  return c.contextWindows?.[model] ?? (codex ? (c.contextWindowExplicit ? c.defaultWindow : codex.window) ?? 128_000 : c.defaultWindow === undefined ? undefined : KNOWN_WINDOWS[model] ?? c.defaultWindow)
 }
 function addModels(c: Pick<Config, 'models'>, ids: readonly unknown[], validateId = true): void {
   for (const id of ids) {
@@ -475,6 +476,19 @@ async function loadNow($: EngineInterface) {
           built.excluded?.delete(id)
           addModels(built, [id])
         }
+        await Promise.all((candidate.accounts as string[]).map(async account => {
+          const items = [...built.codex!.values()].filter(item => item.account === account)
+          if (!items.length) return
+          try {
+            const result = await helperRun($, built, 'windows', items[0]!.directory, 5000)
+            if (result.exitCode !== 0 || result.isStdoutTruncated) return
+            const windows = (JSON.parse(result.stdout) as { windows?: Record<string, unknown> }).windows
+            for (const item of items) {
+              const value = windows?.[item.model]
+              if (typeof value === 'number' && Number.isInteger(value) && value > 0 && value <= 4_000_000) item.window = value
+            }
+          } catch { /* unavailable catalog uses the default */ }
+        }))
       }
     }
     const retired = await retiredModels($)
@@ -953,7 +967,11 @@ function helperArgs($: EngineInterface, c: Config, command: string, home: string
   const sep = root.includes('\\') && !root.includes('/') ? '\\' : '/'
   const script = root.replace(/[\\/]+$/, '') + sep + 'helper' + sep + 'bridge.py'
   const args = [c.pythonBin ?? 'python3', '-E', '-s', script, command, '--codex-home', home, '--codex-bin', c.codexBin ?? 'codex']
-  if (command === 'messages') args.push('--model-map', `${wire ?? model}=${model}`, '--idle-seconds', '300', '--max-seconds', '900')
+  if (command === 'messages') {
+    args.push('--model-map', `${wire ?? model}=${model}`, '--idle-seconds', '300', '--max-seconds', '900')
+    const item = [...(c.codex?.entries() ?? [])].find(([, value]) => value.directory === home && value.model === model)
+    if (item) args.push('--context-window', String(windowOf(c, item[0]) ?? 128_000), '--catalog-window', String(item[1].window ?? 128_000))
+  }
   return args
 }
 async function helperRun($: EngineInterface, c: Config, command: string, home: string, timeoutMs: number, model?: string, body?: object) {

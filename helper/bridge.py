@@ -29,7 +29,9 @@ from mapping import InvalidRequest, classify, prepare, usage_delta
 # Last live-tested version: codex-cli 0.165.0.
 MIN_TESTED_VERSION = (0, 165, 0)
 # These item types were observed in the live contract test; MCP is restricted separately.
-ALLOWED_ITEMS = frozenset(('userMessage', 'agentMessage', 'reasoning', 'dynamicToolCall'))
+ALLOWED_ITEMS = frozenset(('userMessage', 'agentMessage', 'reasoning', 'dynamicToolCall', 'contextCompaction'))
+TOOL_BATCH_SECONDS = 0.2
+DEFAULT_CONTEXT_WINDOW = 128_000
 WAIT_ITEMS = frozenset(('collabAgentToolCall', 'sleep'))
 ALLOWED_MCP_TOOLS = frozenset(('list_mcp_resources', 'list_mcp_resource_templates'))
 TOOL_INSTRUCTIONS = ('Use only the provided function tools. Do not use built-in sleep, wait, collaboration, or subagent tools. '
@@ -108,6 +110,7 @@ def warnings(home):
 def check_item(value):
     if not isinstance(value, dict) or not isinstance(value.get('type'), str): raise incompatible('item.type')
     kind = value['type']
+    if kind == 'contextCompaction': note('Codex login: context compaction observed')
     if kind in WAIT_ITEMS: return True
     if kind not in ALLOWED_ITEMS and not (kind == 'mcpToolCall' and value.get('tool') in ALLOWED_MCP_TOOLS):
         safe_kind = kind if re.fullmatch(r'[A-Za-z0-9_]{1,64}', kind) else 'unknown'
@@ -125,9 +128,26 @@ def check_turn(value):
         return waiting
 
 
+def catalog_windows(home):
+    try:
+        with open(os.path.join(home, 'models_cache.json'), encoding='utf-8') as f: models = json.load(f)['models']
+        result = {}
+        for model in models:
+            if not isinstance(model, dict): continue
+            slug, window, percent = model.get('slug'), model.get('context_window'), model.get('effective_context_window_percent')
+            if isinstance(slug, str) and type(window) is int and window > 0 and type(percent) in (int, float) and 0 < percent <= 100:
+                effective = int(window * percent / 100)
+                if effective > 0: result[slug] = effective
+        return result
+    except (OSError, ValueError, TypeError, KeyError, AttributeError, OverflowError): return {}
+
+
 class App:
     def __init__(self, args, cwd):
         argv = [args.codex_bin, 'app-server', '-c', 'web_search="disabled"', '-c', 'include_permissions_instructions=false', '-c', 'include_environment_context=false']
+        window = getattr(args, 'compact_window', None)
+        if window is not None:
+            argv.extend(['-c', 'model_auto_compact_token_limit=' + str((window * 11 + 9) // 10)])
         for feature in FEATURES: argv.extend(['--disable', feature])
         self.cwd = cwd
         self.deadline = time.monotonic() + getattr(args, 'max_seconds', 900)
@@ -168,11 +188,17 @@ class App:
         except (BrokenPipeError, OSError):
             raise incompatible('app-server flags or startup')
 
-    def next(self):
+    def next(self, until=None):
         remaining = self.deadline - time.monotonic()
         if remaining <= 0: raise BridgeError('Codex login: app-server maximum timeout', 504, code='timeout')
-        try: item = self.queue.get(timeout=min(self.idle_seconds, remaining))
-        except queue.Empty: raise BridgeError('Codex login: app-server timeout', 504, code='timeout')
+        batch_remaining = until - time.monotonic() if until is not None else None
+        if batch_remaining is not None and batch_remaining <= 0: raise queue.Empty()
+        timeout = min(self.idle_seconds, remaining, batch_remaining if batch_remaining is not None else remaining)
+        try: item = self.queue.get(timeout=timeout)
+        except queue.Empty:
+            if time.monotonic() >= self.deadline: raise BridgeError('Codex login: app-server maximum timeout', 504, code='timeout')
+            if until is not None and time.monotonic() >= until: raise
+            raise BridgeError('Codex login: app-server timeout', 504, code='timeout')
         if item is None:
             if not self.initialized: raise incompatible('app-server flags or startup')
             raise BridgeError('Codex login: app-server exited unexpectedly', 502)
@@ -297,17 +323,25 @@ def messages(args, app, prepared, cwd):
     message = {'id': 'msg_' + uuid.uuid4().hex, 'type': 'message', 'role': 'assistant', 'model': p['client_model'], 'content': [], 'stop_reason': None, 'stop_sequence': None, 'usage': {'input_tokens': 0, 'output_tokens': 0}}
     if p['stream']: emit('message_start', {'type': 'message_start', 'message': message})
     content, opened, calls, latest = [], False, [], {}
+    batch_deadline, call_ids = None, set()
     if check_turn(result.get('turn')):
         app.wait_interrupted = True
         app.interrupt()
     while True:
-        obj = app.pending.pop(0) if app.pending else app.next()
+        if batch_deadline is not None and time.monotonic() >= batch_deadline:
+            app.interrupt()
+            batch_deadline = None
+        try:
+            obj = app.pending.pop(0) if app.pending else app.next(batch_deadline)
+        except queue.Empty:
+            app.interrupt()
+            batch_deadline = None
+            continue
         method, params = obj.get('method'), obj.get('params', {})
         if obj.get('_model_mod_wait') and not app.wait_interrupted:
             app.wait_interrupted = True
             app.interrupt()
-        if app.wait_interrupted and method != 'turn/completed' and not (method == 'item/tool/call' and params.get('tool') in p['reverse']):
-            if method == 'thread/tokenUsage/updated': latest = params.get('tokenUsage', {}).get('total', {})
+        if app.wait_interrupted and method not in ('turn/completed', 'thread/tokenUsage/updated') and not (method == 'item/tool/call' and params.get('tool') in p['reverse']):
             continue
         if method == 'item/agentMessage/delta':
             if calls: continue
@@ -324,16 +358,21 @@ def messages(args, app, prepared, cwd):
                 if p['stream']: emit('content_block_stop', {'type': 'content_block_stop', 'index': len(content)-1})
                 opened = False
             block = {'type': 'tool_use', 'id': params.get('callId'), 'name': name, 'input': params.get('arguments')}
-            if not isinstance(block['id'], str) or not isinstance(block['input'], dict): raise BridgeError('Codex login: invalid dynamic tool call')
+            if not isinstance(block['id'], str) or not block['id'] or block['id'] in call_ids or not isinstance(block['input'], dict): raise BridgeError('Codex login: invalid dynamic tool call')
+            call_ids.add(block['id'])
             calls.append(block); content.append(block)
-            app.interrupt()
+            if batch_deadline is None and not app.interrupted: batch_deadline = time.monotonic() + TOOL_BATCH_SECONDS
             if p['stream']:
                 idx = len(content)-1
                 emit('content_block_start', {'type': 'content_block_start', 'index': idx, 'content_block': {'type': 'tool_use', 'id': block['id'], 'name': name, 'input': {}}})
                 emit('content_block_delta', {'type': 'content_block_delta', 'index': idx, 'delta': {'type': 'input_json_delta', 'partial_json': json.dumps(block['input'], ensure_ascii=False)}})
                 emit('content_block_stop', {'type': 'content_block_stop', 'index': idx})
         elif method == 'thread/tokenUsage/updated':
-            latest = params.get('tokenUsage', {}).get('total', {})
+            token_usage = params.get('tokenUsage', {})
+            latest = token_usage.get('total', {})
+            reported = token_usage.get('modelContextWindow')
+            if isinstance(reported, int) and reported != args.context_window:
+                note('Codex login: reported model context window differs from client window')
         elif method == 'turn/completed' and params.get('turn', {}).get('id') == app.turn_id:
             status = params['turn'].get('status')
             if status != 'completed' and not ((calls or app.wait_interrupted) and status == 'interrupted'):
@@ -453,7 +492,7 @@ def main():
         return 78
     parser = argparse.ArgumentParser(prog='bridge')
     subs = parser.add_subparsers(dest='command', required=True)
-    for name in ('messages', 'rate-limits', 'check', 'models', 'prepare-home', 'validate-home', 'can-remove-home', 'device-login', 'logout', 'remove-home', 'cleanup-home'):
+    for name in ('messages', 'rate-limits', 'check', 'models', 'windows', 'prepare-home', 'validate-home', 'can-remove-home', 'device-login', 'logout', 'remove-home', 'cleanup-home'):
         sub = subs.add_parser(name)
         sub.add_argument('--codex-home', required=True)
         sub.add_argument('--codex-bin', default='codex')
@@ -464,6 +503,8 @@ def main():
             sub.add_argument('--model-map', action='append', default=[])
             sub.add_argument('--idle-seconds', type=float, default=300)
             sub.add_argument('--max-seconds', type=float, default=900)
+            sub.add_argument('--context-window', type=int)
+            sub.add_argument('--catalog-window', type=int)
     args = parser.parse_args()
     signal.signal(signal.SIGTERM, cancel)
     signal.signal(signal.SIGINT, cancel)
@@ -524,8 +565,12 @@ def main():
                 raise BridgeError('Codex login: invalid account directory', code='invalid_home')
         if not os.path.isabs(args.codex_home) or not os.path.isdir(args.codex_home):
             raise BridgeError('Codex login: account home must be an existing absolute directory', code='invalid_home')
+        if args.command == 'windows':
+            print(json.dumps({'windows': catalog_windows(args.codex_home)}), flush=True)
+            return 0
         if args.command == 'messages':
             if args.idle_seconds <= 0 or args.max_seconds <= 0: raise InvalidRequest('invalid timeout')
+            if any(value is not None and not 1 <= value <= 4_000_000 for value in (args.context_window, args.catalog_window)): raise InvalidRequest('invalid context window')
             model_map = {}
             for entry in args.model_map:
                 name, sep, model = entry.partition('=')
@@ -543,6 +588,9 @@ def main():
             prepared = prepare(body, model_map)
             prepared['client_model'] = client_model
             prepared['effort'] = effort
+            catalog_window = args.catalog_window if args.catalog_window is not None else catalog_windows(args.codex_home).get(prepared['model'], DEFAULT_CONTEXT_WINDOW)
+            if args.context_window is None: args.context_window = catalog_window
+            args.compact_window = max(args.context_window, catalog_window)
         clean_old_directories()
         version, version_status = verify_version(args)
         home_warnings = warnings(args.codex_home)

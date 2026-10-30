@@ -39,7 +39,7 @@ API 伺服器路徑會把工作階段送往接受 Messages 風格串流請求（
 | `apiKey` | API 上游的金鑰（機密）。API 路徑需要此欄位。 | 無 |
 | `models` | 以逗號分隔的模型 ID，mod 只接管這些。空白：上游列出的所有 chat 模型。 | 空白 |
 | `imageModel` | `generate_image` 使用的模型。空白：`gpt-image-2`，或上游列出的第一個 `gpt-image*`。`none` 關閉此工具。 | 空白 |
-| `contextWindow` | 對未知視窗大小的模型所假設的輸入 token 數（最小 32000）。Codex 模型預設為 128,000 token，可用 `contextWindow` 設定（見 [限制](LIMITATIONS.zh-TW.md)）。 | `272000`（API）；128,000（Codex） |
+| `contextWindow` | 對未知視窗大小的模型所假設的輸入 token 數（最小 32000）。明設的值會覆寫 Codex 模型目錄視窗（見[限制](LIMITATIONS.zh-TW.md)）。 | `272000`（API）；目錄有效視窗或 128,000（Codex） |
 | `fallbackModel` | 訂閱用量達上限時要切換到的模型。空白：不自動切換。 | 空白 |
 | `fallbackPercent` | rate-limit 視窗用量達多少比例（50–100）時切換。僅在設定 `fallbackModel` 時有效。 | `100` |
 | `workerModel` | `model-mod:local-worker` 代理類型使用的模型。空白：用 fallback 模型；兩者都空白則不提供 worker 代理類型。 | 空白 |

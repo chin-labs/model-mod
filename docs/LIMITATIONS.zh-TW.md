@@ -14,7 +14,7 @@ Marketplace 安裝已用本機 clone 與使用標準 HTTP 協定的 Git 伺服�
 
 ## 未識別的模型警告
 
-啟動時 Claude Code 可能警告非 Claude 模型 ID 未獲識別，並假設 context 為 200k。這是客戶端行為，model-mod 無法消除。選取模型後，model-mod 會套用自己的 context 視窗；Codex 預設為 128,000 token。
+啟動時 Claude Code 可能警告非 Claude 模型 ID 未獲識別，並假設 context 為 200k。這是客戶端行為，model-mod 無法消除。選取模型後，model-mod 會套用自己的 context 視窗；Codex 使用模型目錄的有效視窗，讀不到時退回 128,000 token。
 
 ## Codex 登入的限制
 
@@ -23,7 +23,7 @@ Marketplace 安裝已用本機 clone 與使用標準 HTTP 協定的 Git 伺服�
 - Codex 內建 shell、網路與瀏覽器工具、sleep、子代理、apps、plugins 和 goals 均已停用。patch 與檔案操作會被唯讀 sandbox 與項目白名單阻擋；項目處理方式如上述檢查所示。動態工具來自客戶端，另有上述 MCP 資源清單例外。模型會收到簡短的 developer instructions，要求只使用提供的函式工具、不使用內建 sleep、等待、協作及子代理工具，等待背景工作時結束回合；唯讀隔離的細節不會告知模型。
 - Codex 保留 `mcp__` 開頭的名稱並限制工具名稱。bridge 以 `bridge_` 加雜湊作為受影響名稱的別名，回傳時還原原名。
 - `max_tokens` 會接受但忽略；`tool_choice`、`temperature`、`top_p`、`stop_sequences`、`cache_control`、thinking 預算與簽章會被忽略；歷史 thinking 區塊會丟棄。helper 寫出的 `model-mod-note:` 診斷行是內部標記，會被丟棄，不會顯示給使用者。不要依賴這些控制項生效。
-- Codex 模型不提供 `generate_image` 與 `web_search`，但保留 `web_fetch`。Codex 自動壓縮項目不受支援。使用者未明設 `contextWindow` 時，Codex 模型的預設視窗為 128,000 token。可用 `contextWindow` 設定視窗。這不會停用 model-mod 自己的壓縮。
+- Codex 模型不提供 `generate_image` 與 `web_search`，但保留 `web_fetch`。Codex context 預設為帳號模型目錄視窗乘以有效比例，讀不到時退回 128,000 token；明設 `contextWindow` 可覆寫。helper 將 Codex 自動壓縮門檻設在客戶端視窗之上並於內部記錄壓縮事件；這不保證完全停用 Codex 壓縮，也不會停用 model-mod 自己的壓縮。
 - 每次呼叫會啟動一個本機 helper 程序與 `codex app-server`，會增加延遲；啟動延遲尚未量測。Windows 在設計上支援，但**未驗證**。
 - Codex 的額度與速率限制取決於你自己的訂閱；達到限制時 model-mod 不會輪替帳號。
 

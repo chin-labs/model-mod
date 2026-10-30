@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 import time
+import threading
 
 
 def send(value):
@@ -45,6 +46,7 @@ if 'status' in sys.argv:
     print('Logged in using ChatGPT')
     sys.exit(1 if config.get('mode') == 'logged_out' else 0)
 mode = config.get('mode', 'text')
+interrupted = threading.Event()
 if mode == 'startup_fail':
     print('unknown option --disable', file=sys.stderr, flush=True)
     sys.exit(2)
@@ -93,6 +95,17 @@ for line in sys.stdin:
             continue
         if mode == 'miderror':
             event('error', {'error': {'message': 'upstream error'}, 'willRetry': False})
+        elif mode in ('parallel_zero', 'parallel_50'):
+            def send_calls():
+                for n in range(1, 4):
+                    if n > 1 and mode == 'parallel_50' and interrupted.wait(0.05): break
+                    if interrupted.is_set(): break
+                    event('item/tool/call', {'callId': 'call' + str(n), 'tool': 'one', 'arguments': {'n': n}})
+            threading.Thread(target=send_calls, daemon=True).start()
+        elif mode == 'compaction':
+            event('item/completed', {'item': {'type': 'contextCompaction'}})
+            event('thread/tokenUsage/updated', {'tokenUsage': {'modelContextWindow': 475000, 'total': {'inputTokens': 10}}})
+            event('turn/completed', {'turn': {'id': 'turn1', 'status': 'completed'}})
         elif mode == 'tools':
             event('item/tool/call', {'callId': 'call1', 'tool': 'one', 'arguments': {'n': 1}})
             event('item/tool/call', {'callId': 'call2', 'tool': 'two', 'arguments': {'n': 2}})
@@ -100,6 +113,7 @@ for line in sys.stdin:
             event('thread/tokenUsage/updated', {'tokenUsage': {'total': {'inputTokens': 100, 'cachedInputTokens': 40, 'outputTokens': 9}}})
             event('turn/completed', {'turn': {'id': 'turn1', 'status': 'completed'}})
     elif method == 'turn/interrupt':
+        interrupted.set()
         if mode == 'stubborn':
             while True:
                 try: event('item/agentMessage/delta', {'delta': 'hello'})

@@ -1,7 +1,7 @@
 import { test, expect, mock } from 'claude-code/testing'
 import type { Engine } from 'claude-code/testing'
 import type { On } from 'claude-code'
-import { loopbackHost, privateAddress } from './register.ts'
+import { loopbackHost, privateAddress, windowOf } from './register.ts'
 
 // What the compliance rules in docs/COMPLIANCE.md turn on: a model the bridge does not own always goes down the
 // chain (`next`), a bridge model never does, and the mod stays inert on a config that names a subscription host or a
@@ -1300,10 +1300,20 @@ test('Codex login: streaming and auxiliary requests use the helper without an AP
   expect(w.store.models).toBeUndefined()
 })
 
-test('Codex login: an explicitly configured context window is retained', { options: { ...CODEX_OPTIONS, contextWindow: 272000 } }, async ($, on) => {
-  const w = world(on, null, CODEX_MODEL, { stdout: SSE_OK, code: 0 })
-  await drain($.turn.step(STEP(CODEX_MODEL)))
-  expect(w.envSet).toContainEqual(['CLAUDE_CODE_MAX_CONTEXT_TOKENS', '272000'])
+for (const [contextWindow, expected] of [[undefined, 475000], [272000, 272000]] as const) {
+  test('Codex login: catalog window and explicit override ' + String(expected), { options: { ...CODEX_OPTIONS, ...(contextWindow ? { contextWindow } : {}) } }, async ($, on) => {
+    const w = world(on, null, CODEX_MODEL, { stdout: SSE_OK, code: 0 }, argv => argv.includes('windows')
+      ? { exitCode: 0, stdout: '{"windows":{"gpt-6.1-terra":475000}}' } : { exitCode: 1, stdout: '' })
+    await drain($.turn.step(STEP(CODEX_MODEL)))
+    await drain($.turn.step(STEP(CODEX_MODEL)))
+    expect(w.envSet).toContainEqual(['CLAUDE_CODE_MAX_CONTEXT_TOKENS', String(expected)])
+    expect(w.ran.filter(argv => argv.includes('windows')).length).toBe(1)
+    expect(w.spawned[0]!.argv).toContain(String(expected))
+  })
+}
+
+test('Codex login: per-model window takes precedence', () => {
+  expect(windowOf({ codex: new Map([[CODEX_MODEL, { account: 'main', model: 'gpt-6.1-terra', directory: '/account', window: 475000 }]]), contextWindowExplicit: true, defaultWindow: 272000, contextWindows: { [CODEX_MODEL]: 350000 } } as never, CODEX_MODEL)).toBe(350000)
 })
 
 test('Codex login: message_start before a 429 respects Retry-After and retries', { options: CODEX_OPTIONS }, async ($, on) => {
