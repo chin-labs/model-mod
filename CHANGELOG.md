@@ -22,6 +22,7 @@ All notable changes to this project are listed here. The format follows [Keep a 
 ### Documentation
 - Update the English and Traditional Chinese README and documentation for both upstreams. Windows, Python 3.9 and concurrent use of two Codex accounts remain unverified.
 - Record the tested Claude Code versions, explain the unrecognized model warning and link to device authentication instructions.
+- Clarify Codex and API data flows, isolation limits, setup and refresh behavior, troubleshooting and unverified environments.
 
 ## 0.1.2 - 2026-10-30
 
