@@ -116,6 +116,26 @@ def execute(request):
         app.close()
 
 
+def check_output(request):
+    check_platform()
+    cwd, path = request['cwd'], request['path']
+    if not isinstance(path, str) or path.startswith('/') or not path.endswith('.png') or any(p in ('', '.', '..') for p in path.split('/')):
+        raise Failure('Invalid output path.')
+    fd = os.open(os.path.realpath(cwd), os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        parts = path.split('/')
+        for part in parts[:-1]:
+            try: newfd = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            except FileNotFoundError: return {'ok': True}
+            os.close(fd)
+            fd = newfd
+        try: os.stat(parts[-1], dir_fd=fd, follow_symlinks=False)
+        except FileNotFoundError: return {'ok': True}
+        raise Failure('Could not save image; the output path already exists.')
+    finally:
+        os.close(fd)
+
+
 def write_image(request):
     check_platform()
     cwd, path, data = request['cwd'], request['path'], request['bytes_b64']
@@ -153,16 +173,17 @@ def main():
     signal.signal(signal.SIGINT, cancel)
     try:
         writing = sys.argv[1:] == ['--write']
+        checking = sys.argv[1:] == ['--check']
         limit = MAX_LINE if writing else 65536
         raw = sys.stdin.buffer.read(limit + 1)
         if len(raw) > limit: raise Failure('Image request is too large.')
         request = json.loads(raw)
         if not isinstance(request, dict): raise Failure('Invalid image request.')
-        result = write_image(request) if writing else execute(request)
+        result = check_output(request) if checking else write_image(request) if writing else execute(request)
     except Cancelled:
         result = {'ok': False, 'code': 'cancelled', 'message': 'Image generation was cancelled.'}
     except Exception as exc:
-        message = str(exc) if isinstance(exc, Failure) else ('Could not save image; check the path and ensure the file does not already exist.' if writing else 'Image generation failed; check your Codex installation and login.')
+        message = str(exc) if isinstance(exc, Failure) else ('Could not save image; check the path and ensure the file does not already exist.' if writing or checking else 'Image generation failed; check your Codex installation and login.')
         if getattr(exc, 'code', '') == 'codex_too_old': message = 'Codex is too old; update Codex to 0.165.0 or newer.'
         result = {'ok': False, 'code': 'image_error', 'message': message}
     print(json.dumps(result, ensure_ascii=False), flush=True)

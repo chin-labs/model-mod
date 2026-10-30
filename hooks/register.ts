@@ -357,6 +357,8 @@ function invalidCodexFields(o: PluginOptions): string[] {
 }
 function optionsCandidate(o: PluginOptions): Record<string, unknown> | undefined | null {
   const text = (name: string) => typeof o[name] === 'string' ? (o[name] as string).trim() : ''
+  const toggle = (name: string) => typeof o[name] === 'boolean' || typeof o[name] === 'number' ? String(o[name]).trim().toLowerCase() : text(name).toLowerCase()
+  const toggleInvalid = (name: string) => o[name] !== undefined && (!['string', 'boolean', 'number'].includes(typeof o[name]) || !['', 'on', 'true', '1', 'off', 'false', '0'].includes(toggle(name)))
   const baseUrl = text('baseUrl')
   const key = o.apiKey
   const accounts = text('codexAccounts').split(',').map(s => s.trim()).filter(Boolean)
@@ -381,8 +383,8 @@ function optionsCandidate(o: PluginOptions): Record<string, unknown> | undefined
     defaultWindow: number('contextWindow', 272_000), contextWindowExplicit: typeof o.contextWindow === 'number', sideModel: side === 'none' ? undefined : side || 'claude-haiku-5-5',
     keepThinking: o.keepThinking !== false, localTitle: o.localTitle !== false, localContext: o.localContext !== false,
     toolSearch: text('toolSearch') || 'auto', toolSearchPercent: number('toolSearchPercent', 10),
-    codexWebSearch: text('codexWebSearch') === 'off' ? 'off' : 'on', codexWebSearchInvalid: o.codexWebSearch !== undefined && !['on', 'off'].includes(text('codexWebSearch')),
-    codexKeepReasoning: text('codexKeepReasoning') === 'off' ? 'off' : 'on', codexKeepReasoningInvalid: o.codexKeepReasoning !== undefined && !['on', 'off'].includes(text('codexKeepReasoning')),
+    codexWebSearch: ['off', 'false', '0'].includes(toggle('codexWebSearch')) ? 'off' : 'on', codexWebSearchInvalid: toggleInvalid('codexWebSearch'),
+    codexKeepReasoning: ['off', 'false', '0'].includes(toggle('codexKeepReasoning')) ? 'off' : 'on', codexKeepReasoningInvalid: toggleInvalid('codexKeepReasoning'),
     codexServiceTier: text('codexServiceTier') === 'priority' ? 'priority' : 'default', codexServiceTierInvalid: !['default', 'priority', ''].includes(text('codexServiceTier')), fallbackModel: text('fallbackModel'), fallbackPercent: number('fallbackPercent', 100), workerModel: text('workerModel'), promptsDir: text('promptsDir') }
 }
 
@@ -498,6 +500,8 @@ async function loadNow($: EngineInterface) {
     built.models = built.models.filter(id => !retired.includes(id) || built.codex?.has(id))
     built.excluded ??= new Set()
     for (const id of retired) if (!built.codex?.has(id)) built.excluded.add(id)
+    if (fromOptions && built.codexWebSearchInvalid) $.ui.status('model-mod: invalid codexWebSearch; using on.')
+    if (fromOptions && built.codexKeepReasoningInvalid) $.ui.status('model-mod: invalid codexKeepReasoning; using on.')
     if (fromOptions && pluginOptions.codexServiceTier !== undefined && !['default', 'priority', ''].includes(String(pluginOptions.codexServiceTier))) $.ui.status('model-mod: invalid codexServiceTier; using default.')
     if (built.apiInvalid) $.ui.status('model-mod: API server apiKey contains invalid characters; configure a valid key.')
     // The models the mod switches the session to when the subscription's limit is reached (`fallbackModel`) and runs the
@@ -772,8 +776,8 @@ function stashThinking(toolId: string | undefined, blocks: Thinking[], codex: bo
   thinkingStash.set(toolId, usable)
 }
 const approvedTools = new Set<string>()
-async function permitted($: EngineInterface, e: { tool: string }, tool: string, what: string): Promise<string | undefined> {
-  if (approvedTools.has(tool)) return undefined
+async function permitted($: EngineInterface, e: { tool: string }, tool: string, what: string, approvalKey = tool): Promise<string | undefined> {
+  if (approvedTools.has(approvalKey)) return undefined
   const { tool: _name, tool_use_id: _id, agentId: _agent, ...input } = e as unknown as Record<string, unknown>
   let verdict: { decision: string; reason?: string } = { decision: 'ask' }
   try { verdict = await $.tool.check({ tool, input } as never) } catch { /* ask the person */ }
@@ -782,7 +786,7 @@ async function permitted($: EngineInterface, e: { tool: string }, tool: string, 
   const always = 'Yes, and do not ask again this session'
   try {
     const answer = await $.ui.ask(what, ['Yes', always, 'No'])
-    if (answer === always) approvedTools.add(tool)
+    if (answer === always) approvedTools.add(approvalKey)
     return answer === 'Yes' || answer === always ? undefined : 'The user declined this tool call.'
   } catch {
     return `${tool} needs the user's approval and nobody could be asked.`
@@ -1625,11 +1629,11 @@ export const register: Register = (on, options) => {
   let turnFailed = false
   on('classic.SessionStart', async ($, e, next) => { transcript = e.transcript_path; return next(e) })
   on('classic.Stop', async ($, e, next) => {
-    transcript = e.transcript_path
+    if (!e.agent_id) transcript = e.transcript_path
     let downstream: ReturnType<typeof next> | undefined
     const forward = () => downstream ??= next(e)
     return runStopGate($, e, forward, pluginOptions, () => load($), next.signal, turnFailed).catch(() => {
-      $.ui.status('Codex gate not verified; human review required. Run /model-mod:review --gate.')
+      if (stopGateSettings(pluginOptions).enabled) $.ui.status('Codex gate not verified; human review required. Run /model-mod:review --gate.')
       return forward()
     })
   })
@@ -1693,13 +1697,18 @@ export const register: Register = (on, options) => {
       const out = `${cwd}/${given}`
       const refused = await permitted($, e, IMAGE_TOOL, codex
         ? `Send this prompt to OpenAI to generate an image and save it to ${out}: "${prompt.slice(0, 200)}"?`
-        : `Generate an image and save it to ${given}: "${prompt.slice(0, 200)}"?`)
+        : `Generate an image and save it to ${given}: "${prompt.slice(0, 200)}"?`, IMAGE_TOOL + (codex ? ":codex" : ":api"))
       if (refused) return answer(refused, true)
       if (codex) {
         if (!c.accountsDir || !$.plugin.root) return answer('Codex account or plugin directory is unavailable.', true)
         const root = $.plugin.root.replace(/[\\/]+$/, '')
         const sep = root.includes('\\') && !root.includes('/') ? '\\' : '/'
         const script = root + sep + 'helper' + sep + 'image.py'
+        const check = await $.process.run([c.pythonBin ?? 'python3', '-E', '-s', script, '--check'],
+          { stdin: JSON.stringify({ cwd, path: given }), timeoutMs: 30_000 })
+        if (check.exitCode !== 0) return answer('Could not check image output path.', true)
+        const checked = JSON.parse(check.stdout) as { ok?: boolean; message?: string }
+        if (!checked.ok) return answer(checked.message ?? 'Could not check image output path.', true)
         const child = $.process.spawn({ argv: [c.pythonBin ?? 'python3', '-E', '-s', script], cwd,
           input: JSON.stringify({ prompt, size, quality, cwd, account: codex.account, directory: codex.directory,
             accountsDir: c.accountsDir, codexBin: c.codexBin ?? 'codex', model: codex.model }) })
@@ -2217,6 +2226,7 @@ export const register: Register = (on, options) => {
         let finished = false
         let rawError = ''
         let statusTail = ''
+        let reasoningRebuilt = false
         let httpStatus = 0
         let retryAfter: number | undefined
         let streamed = false
@@ -2236,6 +2246,7 @@ export const register: Register = (on, options) => {
               const lines = (statusTail + piece.text).split('\n')
               statusTail = lines.pop()!.slice(-4096)
               for (const line of lines) {
+                if (codex && line === 'model-mod-note:Codex login: reasoning discarded; retrying once') reasoningRebuilt = true
                 const status = /^model-mod-http:(\d{3})\r?$/.exec(line)
                 if (status) httpStatus = Number(status[1])
                 if (line.startsWith('model-mod-retry-after:')) {
@@ -2330,6 +2341,11 @@ export const register: Register = (on, options) => {
             }
             if (codex && (httpStatus === 429 || type === 'rate_limit_error')) codexLimitFailed.add(codex.directory)
             return yield* failure(e, reason, parser.nextIndex)
+          }
+          if (codex && reasoningRebuilt) {
+            for (const message of messages) for (const block of message.content) {
+              if (block.type === 'tool_use') thinkingStash.delete(String((block as { id?: unknown }).id))
+            }
           }
           if (codex ? c.codexKeepReasoning !== 'off' : c.keepThinking !== false) stashThinking(parser.firstToolId(), parser.thinkingBlocks(), !!codex)
           if (own) {

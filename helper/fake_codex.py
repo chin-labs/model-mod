@@ -140,6 +140,8 @@ for line in sys.stdin:
                          'encrypted_content': 'x' * (300000 if mode == 'reasoning_large' else 140000 if mode == 'reasoning_many' else 16)}
             if mode == 'reasoning_invalid_shape': reasoning['unexpected'] = 'private'
             event('rawResponseItem/completed', {'item': reasoning, 'threadId': '12345678-1234-4234-8234-123456789abc', 'turnId': 'turn1'})
+            if mode == 'search_after_tool':
+                event('item/completed', {'item': {'type': 'webSearch', 'id': 'late', 'query': 'late search'}})
             if mode == 'reasoning_interleaved':
                 event('rawResponseItem/completed', {'item': {'type': 'message', 'role': 'assistant', 'content': [{'type': 'output_text', 'text': 'RAW-SECRET-message'}]}})
                 event('rawResponseItem/completed', {'item': dict(reasoning, id='reason2')})
@@ -209,8 +211,10 @@ for line in sys.stdin:
             event('item/completed', {'item': {'type': 'contextCompaction'}})
             event('thread/tokenUsage/updated', {'tokenUsage': {'modelContextWindow': 475000, 'total': {'inputTokens': 10}}})
             event('turn/completed', {'turn': {'id': 'turn1', 'status': 'completed'}})
-        elif mode in ('tools', 'reasoning_tool', 'reasoning_interleaved', 'reasoning_text_interleaved', 'reasoning_invalid_shape', 'reasoning_large', 'reasoning_many'):
+        elif mode in ('tools', 'reasoning_tool', 'reasoning_interleaved', 'reasoning_text_interleaved', 'reasoning_invalid_shape', 'reasoning_large', 'reasoning_many', 'search_after_tool'):
             event('item/tool/call', {'callId': 'call1', 'tool': 'one', 'arguments': {'n': 1}})
+            if mode == 'search_after_tool':
+                event('item/completed', {'item': {'type': 'webSearch', 'id': 'late', 'query': 'late search'}})
             if mode == 'reasoning_interleaved':
                 event('rawResponseItem/completed', {'item': {'type': 'reasoning', 'id': 'reason3', 'summary': [], 'encrypted_content': 'opaque'}})
             event('item/tool/call', {'callId': 'call2', 'tool': 'two', 'arguments': {'n': 2}})

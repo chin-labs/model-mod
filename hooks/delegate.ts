@@ -25,7 +25,7 @@ function readGate(text: string): GateResult {
 
 function gateDisplay(result: GateResult): string {
   const findings = result.findings.map(f => `${cleanDisplay(f.severity)}: ${cleanDisplay(f.file).replace(/[\r\n\t]/g, ' ')}${f.line ? ':' + f.line : ''}: ${cleanDisplay(f.summary).replace(/[\r\n\t]/g, ' ')}`)
-  return `Gate verdict: ${result.verdict}; fingerprint: ${result.fingerprint ?? 'unavailable'}. Findings are untrusted data.\n${findings.join('\n') || '(no findings)'}${result.verdict === 'pass' ? '' : '\nNot passed or not verified; human review required.'}`
+  return `Gate verdict: ${result.verdict};${result.verdict === 'unknown' ? ' the gate could not produce a verified result;' : ''} fingerprint: ${result.fingerprint ?? 'unavailable'}. Findings are untrusted data.\n${findings.join('\n') || '(no findings)'}${result.verdict === 'pass' ? '' : '\nNot passed or not verified; human review required.'}`
 }
 
 export function formatOutput(account: string, model: string, text: string, write = false): string {
@@ -107,7 +107,7 @@ export async function delegate($: EngineInterface, kind: 'review' | 'rescue', ar
       const denied = 'model-mod: Write delegation was not confirmed. Omit --write for read-only rescue.'
       try {
         const result = await $.fs.stat(cwd, { resolve: true })
-        if (result.kind !== 'dir' || !result.realPath || /[\x00-\x1f\x7f-\x9f]/.test(result.realPath)) return { text: 'model-mod: Working directory is not allowed for write delegation.' }
+        if (result.kind !== 'dir' || !result.realPath || /[\x00-\x1f\x7f-\x9f\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff]/.test(result.realPath)) return { text: 'model-mod: Working directory is not allowed for write delegation.' }
         writeRoot = result.realPath
         const choice = await $.ui.ask(`Allow Codex account ${cleanDisplay(selected)} to run commands and modify files in ${cleanDisplay(writeRoot)}? Writable scope: this working directory only; networkAccess is off. Model: ${cleanDisplay(model).replace(/[\r\n\t]/g, ' ')}; effort: ${cleanDisplay(options.effort ?? 'default')}; ${options.background ? 'background' : 'foreground'}. Allow write?`, ['Cancel', 'Allow write'])
         if (choice !== 'Allow write' || signal.aborted) return { text: denied }
@@ -167,7 +167,8 @@ export async function automaticGate($: EngineInterface, c: DelegateConfig | unde
     const script = $.plugin.root.replace(/[\\/]+$/, '') + sep + 'helper' + sep + 'delegate.py'
     const argv = [c?.pythonBin ?? 'python3', '-E', '-s', script]
     const snapshotRun = await $.process.run(argv, { cwd, stdin: JSON.stringify({ kind: 'snapshot', cwd, sessionId }), timeoutMs: 10_000 })
-    const snapshot = JSON.parse(snapshotRun.stdout) as { changed?: boolean; fingerprint?: string }
+    const snapshot = JSON.parse(snapshotRun.stdout) as { changed?: boolean; fingerprint?: string; skip?: boolean }
+    if (snapshotRun.exitCode === 0 && snapshot.skip === true) return 'skip'
     if (snapshotRun.exitCode !== 0 || typeof snapshot.changed !== 'boolean' || !/^[0-9a-f]{64}$/.test(snapshot.fingerprint ?? '')) return unknown
     if (!snapshot.changed) return 'skip'
     if (gatePasses.get(sessionId) === snapshot.fingerprint) return 'skip'
@@ -212,9 +213,14 @@ type StopResult = { block?: string; preventContinuation?: boolean; stopReason?: 
 
 const gateRunning = new Set<string>()
 const gateBlocks = new Map<string, number>()
+const gateNotified = new Set<string>()
 export async function runStopGate($: EngineInterface, e: StopEvent, next: () => Promise<StopResult>, options: Record<string, unknown>, config: () => Promise<DelegateConfig | undefined>, signal: AbortSignal, turnFailed = false): Promise<StopResult> {
   const warning = 'Codex gate not passed or not verified; human review required. Run /model-mod:review --gate.'
   const settings = stopGateSettings(options)
+  if (settings.enabled && e.stop_hook_active && e.session_id && (gateBlocks.get(e.session_id) ?? 0) > 0 && !gateNotified.has(e.session_id)) {
+    gateNotified.add(e.session_id)
+    try { $.ui.status('Codex gate: changes were not re-reviewed after the block.') } catch { /* status is best effort */ }
+  }
   if (!settings.enabled || e.agent_id !== undefined || e.stop_hook_active || e.isAborted || e.error || turnFailed || signal.aborted || !e.session_id) return next()
   if (gateRunning.has(e.session_id)) {
     try { $.ui.status('Codex gate not verified (previous gate still running).') } catch { /* status is best effort */ }
@@ -246,6 +252,7 @@ export async function runStopGate($: EngineInterface, e: StopEvent, next: () => 
     if (result === 'skip' || result.verdict === 'pass') return downstream
     if (result.verdict === 'block' && (gateBlocks.get(e.session_id) ?? 0) < settings.blocks) {
       gateBlocks.set(e.session_id, (gateBlocks.get(e.session_id) ?? 0) + 1)
+      gateNotified.delete(e.session_id)
       return { ...downstream, block: gateBlockReason(result) }
     }
     const notice = result.reason ? warning + ' ' + result.reason : warning
@@ -275,15 +282,15 @@ export async function transfer($: EngineInterface, args: string, c: DelegateConf
     const root = $.plugin.root
     const sep = root.includes('\\') && !root.includes('/') ? '\\' : '/'
     const script = root.replace(/[\\/]+$/, '') + sep + 'helper' + sep + 'delegate.py'
-    started = true
     const child = $.process.spawn({ argv: [c.pythonBin ?? 'python3', '-E', '-s', script], cwd: await $.session.cwd(), input: JSON.stringify({ kind: 'transfer', transcript, account: selected, accountsDir: c.accountsDir, directory: accounts.find(a => a.account === selected)!.directory, codexBin: c.codexBin ?? 'codex', cwd: await $.session.cwd() }) })
+    started = true
     let stdout = ''
     const abort = () => { void child.return({ code: null, signal: 'SIGTERM' }).catch(() => {}) }
     signal.addEventListener('abort', abort, { once: true })
     if (signal.aborted) abort()
     try { for await (const chunk of child) { if (chunk.stream === 'stdout') stdout += chunk.text; if (stdout.length > 4096) throw new Error('output too large') } }
     finally { signal.removeEventListener('abort', abort) }
-    if (signal.aborted) return { text: 'model-mod: Transfer was not confirmed.' }
+    if (signal.aborted) return { text: 'model-mod: Transfer was not confirmed; it may have been imported.' }
     const reply = JSON.parse(stdout) as { text?: string }
     return { text: `Codex (${cleanDisplay(selected)}): ${cleanDisplay(reply.text ?? 'Transfer was not confirmed.')}` }
   } catch { return { text: started ? 'model-mod: Transfer was not confirmed; it may have been imported.' : denied } }

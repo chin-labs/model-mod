@@ -475,6 +475,7 @@ def messages(args, app, prepared, cwd):
             content[-1]['text'] += text
             if p['stream']: emit('content_block_delta', {'type': 'content_block_delta', 'index': len(content)-1, 'delta': {'type': 'text_delta', 'text': text}})
         elif method == 'item/completed' and isinstance(params.get('item'), dict) and params['item'].get('type') == 'webSearch':
+            if calls: continue
             item = params['item']
             ident = item.get('id')
             if not isinstance(ident, str) or not ident: raise incompatible('webSearch.id')

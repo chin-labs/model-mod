@@ -188,8 +188,9 @@ class Server(socketserver.ThreadingUnixStreamServer):
                    'codexBin': binary, 'accountsDir': account_root(), 'directory': home}
         if write:
             from delegate import validate_write_root
-            root = validate_write_root(cwd, account_root(), account)
-            if req.get('writeRoot') != root or cwd != root: raise ValueError('Working directory is not allowed for write delegation.')
+            try: root = validate_write_root(cwd, account_root(), account)
+            except Exception: raise jobs.UserError('Working directory is not allowed for write delegation; choose a safe working directory.')
+            if req.get('writeRoot') != root or cwd != root: raise jobs.UserError('Working directory is not allowed for write delegation; choose a safe working directory.')
             if any(r['account'] == account and r['mode'] == 'write' and r['state'] not in jobs.TERMINAL for r in self.store.records()):
                 raise jobs.UserError('Only one write job per account can run at a time.')
             request['writeRoot'] = root

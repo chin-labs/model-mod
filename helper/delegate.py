@@ -141,6 +141,23 @@ def diff_for(cwd, base):
     return safe_diff(cwd, ['diff', '--binary', '--no-ext-diff', '--no-textconv', '--submodule=short', '--ignore-submodules=dirty', target, '--'])
 
 
+def snapshot_unavailable(cwd):
+    env = git_env()
+    env['LC_ALL'] = 'C'
+    args = ['git', '-c', 'core.hooksPath=' + os.devnull, '-c', 'core.fsmonitor=false',
+            '-c', 'diff.autoRefreshIndex=false']
+    try:
+        root = subprocess.run(args + ['rev-parse', '--show-toplevel'], cwd=cwd, env=env,
+                              stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=15)
+        if root.returncode:
+            return b'not a git repository' in root.stderr.lower()
+        head = subprocess.run(args + ['rev-parse', '--verify', '--quiet', 'HEAD'], cwd=cwd, env=env,
+                              stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)
+        return head.returncode == 1
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
 def gate_snapshot(cwd, base, session):
     if not isinstance(session, str) or not session or len(session) > 256: raise Failure('Session unavailable.')
     root = git(cwd, ['rev-parse', '--show-toplevel'], 4096)
@@ -576,6 +593,9 @@ def main():
     try:
         request = json.load(sys.stdin)
         if request.get('kind') == 'snapshot':
+            if snapshot_unavailable(request['cwd']):
+                print(json.dumps({'skip': True}), flush=True)
+                return
             snapshot = gate_snapshot(request['cwd'], request.get('base'), request.get('sessionId'))
             print(json.dumps({'fingerprint': snapshot['fingerprint'], 'changed': snapshot['changed']}), flush=True)
             return

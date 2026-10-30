@@ -158,12 +158,17 @@ const SSE_OK = [
 
 test('Stop gate preserves the downstream block and forwards active Stop', { options: { codexStopGate: 'on' } }, async ($, on) => {
   const w = world(on, baseConfig, LOCAL, { stdout: '', code: 0 })
-  let reached = 0
-  on('classic.Stop', async () => { reached++; return { block: 'downstream block' } })
+  let reached = 0, blocked = true
+  on('classic.Stop', async () => { reached++; return blocked ? { block: 'downstream block' } : {} })
   const stop = { session_id: 'stop-test', cwd: '/work', transcript_path: '/transcript', stop_hook_active: false } as never
   expect((await $.classic.Stop(stop)).block).toBe('downstream block')
   expect((await $.classic.Stop({ ...stop as object, stop_hook_active: true } as never)).block).toBe('downstream block')
   expect(reached).toBe(2); expect(w.ran.length).toBe(0)
+  blocked = false
+  await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't', reason: 'error' } as never)
+  w.ran.length = 0
+  await $.classic.Stop(stop)
+  expect(reached).toBe(3); expect(w.ran.length).toBe(0)
 })
 
 test('a model the bridge does not own goes down the chain and nothing is spawned', async ($, on) => {
@@ -1595,19 +1600,36 @@ test('Codex native search stays off when the tool list cannot be read', { option
   expect(result.text).toContain('webSearch=blocked-by-permissions')
 })
 
-test('Codex image generation requests permission and validates PNG before writing', { options: CODEX_OPTIONS }, async ($, on) => {
+test('transfer retains the main transcript and requires an interactive origin', { options: CODEX_OPTIONS }, async ($, on) => {
+  const w = world(on, null, CODEX_MODEL, { stdout: JSON.stringify({ text: 'transfer complete' }), code: 0 })
+  on('classic.SessionStart', async () => ({}))
+  on('classic.Stop', async () => ({}))
+  await $.classic.SessionStart({ session_id: 'test', cwd: '/work', transcript_path: '/main.jsonl' } as never)
+  await $.classic.Stop({ session_id: 'test', cwd: '/work', transcript_path: '/agent.jsonl', agent_id: 'agent', stop_hook_active: false } as never)
+  const command = { command: 'model-mod:transfer', args: '' }
+  const denied = await $.command.run({ ...command, origin: { kind: 'sdk' } } as never)
+  expect(denied.text).toContain('interactive session')
+  w.answers = ['Import session']
+  await $.command.run({ ...command, origin: { kind: 'composer' } } as never)
+  expect(JSON.parse(w.spawned[0]!.input!).transcript).toBe('/main.jsonl')
+})
+
+test('Codex image generation requests permission and validates PNG before writing', { options: { ...OPTIONS, ...CODEX_OPTIONS, models: LOCAL, imageModel: 'gpt-image-2' } }, async ($, on) => {
   const good = JSON.stringify({ ok: true, bytes_b64: 'iVBORw0KGgppbWFnZQ==', size: 13 })
   const bad = JSON.stringify({ ok: true, bytes_b64: 'YmFk', size: 3 })
-  const w = world(on, null, CODEX_MODEL, [{ stdout: good, code: 0 }, { stdout: bad, code: 0 }, { stdout: good, code: 0 }], (_argv, input) => {
+  const w = world(on, null, LOCAL, [{ stdout: good, code: 0 }, { stdout: bad, code: 0 }, { stdout: good, code: 0 }], (_argv, input) => {
+    if (_argv[0] === 'bash') return { exitCode: 0, stdout: '13' }
     const path = (JSON.parse(input ?? '{}') as { path?: string }).path
-    return { exitCode: 0, stdout: JSON.stringify(path === 'new.png' ? { ok: true, size: 13 } : { ok: false, message: 'Could not save image.' }) }
+    return { exitCode: 0, stdout: JSON.stringify(['new.png', 'bad.png'].includes(path ?? '') ? { ok: true, size: 13 } : { ok: false, message: 'Could not save image.' }) }
   })
   on('tool.check', { tool: 'mcp__model-mod__generate_image' }, async () => ({ decision: 'ask' as const }))
-  w.answers = ['Yes', 'Yes', 'No', 'Yes', 'Yes']
+  w.answers = ['Yes, and do not ask again this session', 'Yes', 'Yes', 'No', 'Yes', 'Yes']
   const call = (path: string) => $.tool.call({ tool: 'mcp__model-mod__generate_image', prompt: 'red dot', path } as never).then(value => JSON.stringify(value), error => String(error))
+  expect(await call('api.png')).toContain('Saved image')
+  w.current = CODEX_MODEL
   expect(await call('new.png')).toContain('Saved image to /work/new.png')
-  expect(w.questions[0]!.question).toContain('OpenAI')
-  expect(w.questions[0]!.question).toContain('/work/new.png')
+  expect(w.questions[1]!.question).toContain('OpenAI')
+  expect(w.questions[1]!.question).toContain('/work/new.png')
   expect(w.spawned[0]!.argv).toContain('python3')
   expect(w.ran.some(argv => argv.includes('--write'))).toBe(true)
   expect(await call('bad.png')).toContain('invalid PNG')
@@ -1620,7 +1642,7 @@ test('Codex image generation requests permission and validates PNG before writin
   expect(w.spawned.length).toBe(2)
   expect(await call('existing.png')).toContain('Could not save image')
   expect(await call('link/escape.png')).toContain('Could not save image')
-  expect(w.spawned.length).toBe(4)
+  expect(w.spawned.length).toBe(2)
 })
 
 test('Codex login: at most four helpers run concurrently', { options: CODEX_OPTIONS }, async ($, on) => {

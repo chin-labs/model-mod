@@ -305,8 +305,8 @@ test('background commands validate IDs and sanitize display and errors', async (
   expect((await backgroundCommand($, 'result', 'xyz!', config)).text).toContain('Invalid job ID')
   expect((await backgroundCommand($, 'result', 'abc', config)).text).toContain('Invalid job ID')
   expect((await backgroundCommand($, 'result', 'abcd', config)).text).toContain('Ambiguous job ID')
-  response = { ok: false, error: 'Background broker unavailable; start a new session to launch it.' }
-  expect((await backgroundCommand($, 'jobs', '', config)).text).toContain('restart Claude Code')
+  response = { ok: false, error: 'Background broker socket is unavailable; check the broker and start a new session.' }
+  expect((await backgroundCommand($, 'jobs', '', config)).text).toContain('broker socket is unavailable')
   response = { ok: false, error: 'Background jobs are not supported on Windows.' }
   expect((await backgroundCommand($, 'jobs', '', config)).text).toContain('not supported on Windows')
   response = { ok: true, job: { ...job, account: '\x1b[31mtest\x1b[0m', model: 'chat\x01' }, text: '\x1b[31moutput\x1b[0m\x01' }

@@ -245,6 +245,11 @@ class Contract(unittest.TestCase):
             self.assertEqual(texts[2:], ['\nOpened page\n', '\nSearched within page\n', '\nUsed web search\n', 'done'])
             self.assertNotIn('opaque secret', result.stdout)
             self.assertNotIn('example.test', result.stdout)
+        for stream in (False, True):
+            after = self.run_bridge(dict(BASE, stream=stream, tools=TOOLS), mode='search_after_tool', extra=['--web-search'])
+            self.assertEqual(after.returncode, 0, after.stderr)
+            self.assertNotIn('Searched:', after.stdout)
+            self.assertIn('tool_use', after.stdout)
         disabled = self.run_bridge(mode='web_search')
         self.assertIn('unsupported_item', disabled.stdout)
 
