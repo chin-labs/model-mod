@@ -107,24 +107,25 @@ def warnings(home):
     return found
 
 
-def check_item(value):
+def check_item(value, web_search=False):
     if not isinstance(value, dict) or not isinstance(value.get('type'), str): raise incompatible('item.type')
     kind = value['type']
     if kind == 'contextCompaction': note('Codex login: context compaction observed')
     if kind in WAIT_ITEMS: return True
+    if kind == 'webSearch' and web_search: return False
     if kind not in ALLOWED_ITEMS and not (kind == 'mcpToolCall' and value.get('tool') in ALLOWED_MCP_TOOLS):
         safe_kind = kind if re.fullmatch(r'[A-Za-z0-9_]{1,64}', kind) else 'unknown'
         note('Codex login: unsupported codex behavior: ' + safe_kind)
         raise BridgeError('Codex login: unsupported codex behavior: ' + safe_kind, 502, code='unsupported_item')
 
 
-def check_turn(value):
+def check_turn(value, web_search=False):
     if not isinstance(value, dict): return
     if 'items' in value:
         if not isinstance(value['items'], list): raise incompatible('turn.items')
         waiting = False
         for item in value['items']:
-            if check_item(item): waiting = True
+            if check_item(item, web_search): waiting = True
         return waiting
 
 
@@ -188,7 +189,8 @@ def apply_effort(prepared, model):
 
 class App:
     def __init__(self, args, cwd):
-        argv = [args.codex_bin, 'app-server', '-c', 'web_search="disabled"', '-c', 'include_permissions_instructions=false', '-c', 'include_environment_context=false']
+        self.web_search = 'live' if getattr(args, 'web_search', False) else 'disabled'
+        argv = [args.codex_bin, 'app-server', '-c', 'web_search="' + self.web_search + '"', '-c', 'include_permissions_instructions=false', '-c', 'include_environment_context=false']
         window = getattr(args, 'compact_window', None)
         if window is not None:
             argv.extend(['-c', 'model_auto_compact_token_limit=' + str((window * 11 + 9) // 10)])
@@ -252,14 +254,14 @@ class App:
         waiting = False
         if item.get('method') in ('item/started', 'item/completed'):
             params = item.get('params')
-            waiting = bool(check_item(params.get('item') if isinstance(params, dict) else None))
+            waiting = bool(check_item(params.get('item') if isinstance(params, dict) else None, self.web_search == 'live'))
         for container in (item.get('params'), item.get('result')):
             if isinstance(container, dict):
-                if check_turn(container.get('turn')): waiting = True
+                if check_turn(container.get('turn'), self.web_search == 'live'): waiting = True
                 thread = container.get('thread')
                 if isinstance(thread, dict) and isinstance(thread.get('turns'), list):
                     for turn in thread['turns']:
-                        if check_turn(turn): waiting = True
+                        if check_turn(turn, self.web_search == 'live'): waiting = True
         if waiting: item['_model_mod_wait'] = True
         return item
 
@@ -333,7 +335,7 @@ class App:
         self.send({'method': 'initialized', 'params': {}})
         config = self.request('config/read', {'includeLayers': False, 'cwd': self.cwd})
         config = config.get('config') if isinstance(config, dict) else None
-        if not isinstance(config, dict) or config.get('web_search') != 'disabled': raise incompatible('web_search')
+        if not isinstance(config, dict) or config.get('web_search') != self.web_search: raise incompatible('web_search')
         features = config.get('features')
         if not isinstance(features, dict): raise incompatible('features')
         for feature in FEATURES:
@@ -371,7 +373,7 @@ def messages(args, app, prepared, cwd):
     if p['stream']: emit('message_start', {'type': 'message_start', 'message': message})
     content, opened, calls, latest = [], False, [], {}
     batch_deadline, call_ids = None, set()
-    if check_turn(result.get('turn')):
+    if check_turn(result.get('turn'), app.web_search == 'live'):
         app.wait_interrupted = True
         app.interrupt()
     while True:
@@ -568,6 +570,7 @@ def main():
             sub.add_argument('--accounts-dir', required=True)
             sub.add_argument('--account', required=True)
         if name == 'messages':
+            sub.add_argument('--web-search', action='store_true')
             sub.add_argument('--service-tier', choices=('default', 'priority'), default='default')
             sub.add_argument('--model-map', action='append', default=[])
             sub.add_argument('--idle-seconds', type=float, default=300)

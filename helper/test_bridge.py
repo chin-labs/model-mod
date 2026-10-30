@@ -103,6 +103,19 @@ class Contract(unittest.TestCase):
             Path(home, 'fake_config.json').write_text(json.dumps({'mode': mode, 'log': str(log) if log else None}))
             return subprocess.run([sys.executable, str(BRIDGE), 'messages', '--codex-home', home, '--codex-bin', str(FAKE), '--model-map', 'test=gpt-6.1-terra', *extra], input=json.dumps(body), text=True, capture_output=True, timeout=15)
 
+    def test_web_search_config(self):
+        for enabled in (False, True):
+            extra = ['--web-search'] if enabled else []
+            with self.subTest(enabled=enabled), tempfile.TemporaryDirectory() as tmp:
+                log = Path(tmp) / 'log'
+                result = self.run_bridge(log=log, extra=extra)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                argv = json.loads(log.read_text().splitlines()[0])['argv']
+                self.assertIn('web_search="' + ('live' if enabled else 'disabled') + '"', argv)
+                mismatch = self.run_bridge(mode='bad_web_search', extra=extra)
+                self.assertEqual(mismatch.returncode, 65)
+                self.assertIn('incompatible codex app-server protocol (web_search)', mismatch.stdout)
+
     def test_text_and_usage(self):
         r = self.run_bridge()
         self.assertEqual(r.returncode, 0, r.stderr)
