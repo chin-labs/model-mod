@@ -15,6 +15,10 @@ All notable changes to this project are listed here. The format follows [Keep a 
 - Side-question command messages no longer repeat the client label, and the informational agent message count status is no longer shown.
 
 ### Fixed
+- Explicit Codex `contextWindow` settings are no longer replaced by the default.
+- Tool references in Codex tool results are separated from adjacent text.
+- Waiting turns check every item for unsupported behavior and retain recognized dynamic tool calls received after interruption.
+- Setup and status explain unsupported Codex versions, and model selection reports unavailable account directories.
 - Codex turns that invoke built-in sleep or collaboration tools now end normally instead of failing.
 - On the Codex path, `tool_reference` blocks in tool results are converted to text, one per line, so a conversation that used the client's tool search no longer fails with an invalid-request error.
 - Use UTF-8 for helper standard streams and clarify setup and account-directory error hints.
