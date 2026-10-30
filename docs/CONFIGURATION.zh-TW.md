@@ -6,7 +6,7 @@
 
 Codex 登入與 Messages 相容 API 伺服器是同等的選擇，也可並存。使用 Codex 時，先安裝 Python 3.9 以上版本與官方 `codex` CLI，再執行 `/model-mod:setup` 並選 **Codex login**。需要登入時，setup 會建立專用帳號目錄並執行 `codex login --device-auth`。請開啟顯示的網址、輸入代碼，選 **Continue (after logging in)**，再選模型。若無法取得網址，setup 會改顯示手動終端機命令。使用 API 伺服器時，請依下一節準備，並在 setup 選 **Compatible API server**。
 
-在 setup 選 **Manage configured upstreams** 可登出或移除 Codex 帳號，也可移除插件選項中的 API。登出會保留帳號設定與目錄；移除預設保留目錄，若要刪除須再次確認，且只刪該帳號目錄。由 `MODEL_MOD_CONFIG` 提供的 API 須自行編輯該檔移除。 移除 API 會停用上游，但金鑰仍留在客戶端的安全儲存中，model-mod 無法清除；重新加入前須先在 `/plugin` 設定新金鑰，再執行 setup。
+在 setup 選 **Manage configured upstreams** 可登出或移除 Codex 帳號，也可移除插件選項中的 API。登出會保留帳號設定與目錄；移除預設保留目錄，若要刪除須再次確認，且只刪該帳號目錄。由 `MODEL_MOD_CONFIG` 提供的 API 須自行編輯該檔移除。 移除 API 會停用上游，但金鑰仍留在客戶端的安全儲存中，model-mod 無法清除；重新加入時 setup 會先確認要把已存金鑰送往哪個主機。
 
 ## 先準備好你的上游
 

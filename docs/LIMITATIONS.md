@@ -29,7 +29,7 @@ At startup Claude Code may warn that a non-Claude model ID is not recognized and
 
 ## Known limitations
 
-Previously saved legacy `/model` custom rows may remain visible after an upstream is removed; selecting a removed model is refused, so choose another model or remove the old row from your settings. APIs supplied by `MODEL_MOD_CONFIG` cannot be removed from setup; edit that file yourself. Removing an API disables it but leaves its key in the client’s secure storage; model-mod cannot clear the key. Readding it requires a new key in `/plugin` before running setup.
+Previously saved legacy `/model` custom rows may remain visible after an upstream is removed; selecting a removed model is refused, so choose another model or remove the old row from your settings. APIs supplied by `MODEL_MOD_CONFIG` cannot be removed from setup; edit that file yourself. Removing an API disables it but leaves its key in the client’s secure storage; model-mod cannot clear the key. When readding it, setup confirms the host before sending the stored key.
 
 | Area | What to expect | Workaround |
 |---|---|---|

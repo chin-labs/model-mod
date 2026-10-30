@@ -22,10 +22,10 @@ type World = { system: string; killed: number; toolsList?: string[]; spawned: { 
   ranEnv: (Record<string, string> | undefined)[]; reached: string[]; envSet: [string, string | undefined][]; messagesRead: number; failEnvSets: number; failEnvName?: string
   // The upstream's model list (null: unreachable), what the store holds, the picker rows of the settings, the requests
   // `$.http.fetch` made (the authorization header is reduced to its first 6 characters).
-  chooseUpstream?: boolean; answers: (string | null)[]; questions: { question: string; header: string; labels: string[]; multiSelect: boolean }[];
+  chooseUpstream?: boolean; answers: (string | null)[]; questions: { question: string; header: string; labels: string[]; multiSelect: boolean; fetchedCount: number }[];
   scopes: Record<string, Record<string, unknown>>; files: Record<string, string>; writes: string[]; saved: { key: string; value: unknown }[]; registered: string[]; configValues: Record<string, string>;
   toolDescriptions: Record<string, string>; httpStatus?: number; httpStatuses?: number[]; httpBody?: string; configSet?: (key: string) => { deny: string } | undefined; switchEnv: (string | undefined)[];
-  models: string[] | null; store: Record<string, unknown>; picker: unknown[]; fetched: { url: string; auth?: string }[]
+  models: string[] | null; store: Record<string, unknown>; picker: unknown[]; fetched: { url: string; auth?: string; matchesKey: boolean }[]
   // The session's current model (`/model` runs change it), the `/model` arguments run, the rate-limit windows the last
   // response reported and the clock.
   usage?: Record<string, unknown>; agents: { name: string; model?: string }[]; current: string; modelRuns: string[]; limits: { kind: string; percentUsed: number; resetsAt?: string }[]; clock: ReturnType<typeof mock.clock> }
@@ -41,7 +41,7 @@ function world(on: On, config: Record<string, unknown> | null, model: string, sp
   w.clock = mock.clock(on)
   mock.env(on, { HOME: '/fake-home', CLAUDE_CONFIG_DIR: '/fake-config', ...(config ? { MODEL_MOD_CONFIG: CONFIG_PATH } : {}), ...env })
   on('http.fetch', async (_$, e) => {
-    w.fetched.push({ url: e.url, auth: e.init?.headers?.authorization?.slice(0, 6) })
+    w.fetched.push({ url: e.url, auth: e.init?.headers?.authorization?.slice(0, 6), matchesKey: e.init?.headers?.authorization?.slice(7) === KEY })
     const status = w.httpStatuses?.shift() ?? w.httpStatus
     if (status !== undefined) return { value: { status, ok: status === 200, headers: {}, text: w.httpBody ?? '{}' } }
     if (w.models === null) throw new Error('unreachable')
@@ -66,7 +66,7 @@ function world(on: On, config: Record<string, unknown> | null, model: string, sp
   on('tool.call', { tool: 'AskUserQuestion' }, async (_$, e) => {
     const q = e.questions[0]!
     if (q.question.startsWith('Choose an upstream.') && !w.chooseUpstream) return { result: { questions: e.questions, answers: { [q.question]: 'Compatible API server' } } }
-    w.questions.push({ question: q.question, header: q.header, labels: q.options.map(o => o.label), multiSelect: q.multiSelect })
+    w.questions.push({ question: q.question, header: q.header, labels: q.options.map(o => o.label), multiSelect: q.multiSelect, fetchedCount: w.fetched.length })
     const answer = w.answers.shift()
     if (answer === null || answer === undefined) return { deny: 'dismissed' }
     return { result: { questions: e.questions, answers: { [q.question]: answer } } }
@@ -551,7 +551,7 @@ test('options: the key never enters an argument vector, models come from the ups
   const { result } = await drain($.turn.step(STEP(LOCAL)))
   expect(result.answer).toBe('local answer')
   expect(w.reached).toEqual([])
-  expect(w.fetched).toEqual([{ url: 'http://127.0.0.1:9999/v1/models', auth: 'Bearer' }])
+  expect(w.fetched).toEqual([{ url: 'http://127.0.0.1:9999/v1/models', auth: 'Bearer', matchesKey: true }])
   expect(w.store.models).toEqual([LOCAL])
   const sent = w.spawned[0]!
   expect(sent.argv.some(a => a.includes(KEY))).toBe(false)
@@ -1523,8 +1523,12 @@ test('manage: removing an API leaves Codex configured and does not expose the ke
   expect(w.saved.some(x => x.key === 'model-mod.apiKey')).toBe(false)
   expect(w.saved).toContainEqual({ key: 'model-mod.baseUrl', value: '' })
   expect(result.text).toContain("key remains in the client's secure storage")
-  w.answers = ['Compatible API server']
-  expect((await $.command.run(SETUP)).text).toContain('enter a new API key')
+  const digest = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(KEY))), b => b.toString(16).padStart(2, '0')).join('')
+  expect(Object.keys(w.store)).not.toContain('removedApiKey')
+  expect(JSON.stringify(w.store)).not.toContain(KEY)
+  expect(JSON.stringify(w.store)).not.toContain(digest)
+  w.answers = ['Compatible API server', 'Cancel, set a new key in /plugin first']
+  expect((await $.command.run(SETUP)).text).toContain('set an API key in /plugin')
   expect(w.fetched).toEqual([])
   expect(w.saved.some(x => x.key.endsWith('.codexAccounts'))).toBe(false)
   await $.session.start({ cwd: '/work' } as never)
@@ -1539,7 +1543,7 @@ test('manage: API removal rollback restores settings and leaves the key untouche
   w.answers = ['Manage configured upstreams', 'API 127.0.0.1; models=1; key=configured', 'Remove']
   expect((await $.command.run(SETUP)).text).toContain('previous settings restored')
   expect(w.saved).toEqual([{ key: 'model-mod.baseUrl', value: '' }, { key: 'model-mod.baseUrl', value: OPTIONS.baseUrl }])
-  expect(w.store.removedApiKey).toBe(null)
+  expect(w.store.retiredModels).toEqual([])
 })
 
 test('options: a retained key without a base URL never enables an API', { options: { ...OPTIONS, baseUrl: '' } }, async ($, on) => {
@@ -1550,17 +1554,47 @@ test('options: a retained key without a base URL never enables an API', { option
   expect(w.spawned).toEqual([])
 })
 
-test('setup: readding a removed API requires a different key before any request', { options: { ...OPTIONS, apiKey: KEY + '-replacement', baseUrl: '' } }, async ($, on) => {
+test('setup: readding an API confirms the host and reuses the stored key', { options: { ...OPTIONS, baseUrl: '' } }, async ($, on) => {
   const w = world(on, null, LOCAL, { stdout: '', code: 0 })
-  const salt = 'test-salt'
-  const digest = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(salt + KEY))), b => b.toString(16).padStart(2, '0')).join('')
-  w.store.removedApiKey = { salt, digest }
   w.models = [LOCAL]
-  w.answers = ['Change', 'http://localhost:9999/new', 'All (recommended)']
+  w.answers = ['Use stored key', 'Keep (recommended)', 'All (recommended)']
   expect((await $.command.run(SETUP)).text).toContain('1 local models selected')
-  expect(w.fetched[0]!.url).toBe('http://localhost:9999/new/v1/models')
-  expect(w.store.removedApiKey).toBe(null)
+  expect(w.questions[0]!.question).toContain('127.0.0.1')
+  expect(w.questions[0]!.fetchedCount).toBe(0)
+  expect(new URL(w.fetched[0]!.url).hostname).toBe(new URL(OPTIONS.baseUrl).hostname)
+  expect(new URL(w.fetched[0]!.url).pathname).toBe('/v1/models')
+  expect(w.fetched[0]!.auth).toBe('Bearer')
+  expect(w.fetched[0]!.matchesKey).toBe(true)
   expect(w.saved.some(x => x.key.endsWith('.apiKey'))).toBe(false)
+})
+
+for (const [name, answer] of [['cancel', 'Cancel, set a new key in /plugin first'], ['escape', null], ['unavailable', undefined]] as const) {
+  test(`setup: ${name} of stored-key confirmation changes nothing`, { options: { ...OPTIONS, baseUrl: '' } }, async ($, on) => {
+    const w = world(on, null, LOCAL, { stdout: '', code: 0 })
+    w.models = [LOCAL]
+    w.answers = answer === undefined ? [] : [answer]
+    expect((await $.command.run(SETUP)).text).toContain('set an API key in /plugin')
+    expect(w.fetched).toEqual([])
+    expect(w.saved).toEqual([])
+    expect(w.store).toEqual({})
+  })
+}
+
+test('setup: a changed destination requires another confirmation before any request', { options: { ...OPTIONS, baseUrl: '' } }, async ($, on) => {
+  const w = world(on, null, LOCAL, { stdout: '', code: 0 })
+  w.models = [LOCAL]
+  w.answers = ['Use stored key', 'Change', 'http://localhost:9999/new', 'Cancel, set a new key in /plugin first']
+  expect((await $.command.run(SETUP)).text).toContain('set an API key in /plugin')
+  expect(w.questions.at(-1)!.question).toContain('localhost')
+  expect(w.fetched).toEqual([])
+  expect(w.saved).toEqual([])
+})
+
+test('setup: a configured base URL does not ask for stored-key confirmation', { options: OPTIONS }, async ($, on) => {
+  const w = world(on, null, LOCAL, { stdout: '', code: 0 })
+  w.models = [LOCAL]
+  expect((await $.command.run(SETUP)).text).toContain('1 local models selected')
+  expect(w.questions.some(q => q.question.includes('stored by the client'))).toBe(false)
 })
 
 test('manage: a file-provided API requires manual removal', async ($, on) => {

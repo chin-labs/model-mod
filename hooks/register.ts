@@ -91,13 +91,14 @@ async function chooseModels($: EngineInterface, ids: string[], notes: string[], 
   }
 }
 
-type RemovedApiKey = { salt: string; digest: string }
-async function keyDigest(key: string, salt: string): Promise<string> {
-  const bytes = new TextEncoder().encode(salt + key)
-  return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), b => b.toString(16).padStart(2, '0')).join('')
+const storedKeyCancelled = 'model-mod: set an API key in /plugin → model-mod configure, then run /model-mod:setup again; nothing changed.'
+async function confirmStoredKey($: EngineInterface, baseUrl: string): Promise<boolean> {
+  try {
+    return await ask($, `Send the API key stored by the client to ${new URL(baseUrl).hostname}?`, ['Use stored key', 'Cancel, set a new key in /plugin first']) === 'Use stored key'
+  } catch { return false }
 }
 
-async function configurePicker($: EngineInterface, c: { baseUrl: string; key?: string; models: string[]; explicitModels?: boolean; codex?: Map<string, CodexAccount> }, setup: boolean, interactive: boolean, status: string): Promise<string> {
+async function configurePicker($: EngineInterface, c: { baseUrl: string; key?: string; models: string[]; explicitModels?: boolean; codex?: Map<string, CodexAccount> }, setup: boolean, interactive: boolean, status: string, confirmedHost?: string): Promise<string> {
   if (setup && !c.key) return 'model-mod: apiKey is not configured. Open /plugin → model-mod configure, set the upstream API key there, then run /model-mod:setup.'
   if (setup && !interactive) return 'model-mod setup is interactive. ' + status
   if (!c.key) return 'model-mod: no apiKey in the plugin options; picker refresh is unavailable.'
@@ -112,6 +113,7 @@ async function configurePicker($: EngineInterface, c: { baseUrl: string; key?: s
       }
     }
     try { baseUrl = endpoint(baseUrl) } catch { return 'model-mod: refused upstream URL; nothing changed.' }
+    if (confirmedHost && new URL(baseUrl).hostname !== confirmedHost && !await confirmStoredKey($, baseUrl)) return storedKeyCancelled
     const notes: string[] = []
     let capped = false
     const offered = (ids: string[]): string[] => {
@@ -156,7 +158,6 @@ async function configurePicker($: EngineInterface, c: { baseUrl: string; key?: s
     const urlRow = rowFor('baseUrl'), modelsRow = rowFor('models')
     if (!modelsRow || modelsRow.isLocked || (setup && (!urlRow || urlRow.isLocked))) return 'model-mod: writable plugin config rows are unavailable; nothing changed.'
     const known = await $.store.get('models')
-    const removedKeyBefore = setup ? await $.store.get('removedApiKey') : undefined
     const cached = { models: [] as string[] }
     if (Array.isArray(known)) addModels(cached, known.filter(id => typeof id === 'string' && !NOT_CHAT.test(id) && !selected.includes(id)))
     addModels(cached, selected)
@@ -174,14 +175,13 @@ async function configurePicker($: EngineInterface, c: { baseUrl: string; key?: s
           written.push(entry)
         } catch { written.push(entry); failed = true; break }
       }
-      if (!failed && setup) await $.store.set('removedApiKey', null)
     } catch { failed = true }
     if (failed) {
       let rollbackFailed = false
       for (const entry of written.reverse()) {
         try { if ('deny' in await $.config.set({ key: entry.row.key, value: entry.row.value })) rollbackFailed = true } catch { rollbackFailed = true }
       }
-      try { await $.store.set('models', known ?? []); await $.store.set('retiredModels', retired); if (setup) await $.store.set('removedApiKey', removedKeyBefore ?? null) } catch { rollbackFailed = true }
+      try { await $.store.set('models', known ?? []); await $.store.set('retiredModels', retired) } catch { rollbackFailed = true }
       return rollbackFailed ? 'model-mod: setup failed and rollback failed; restore the previous settings in /plugin.' : 'model-mod: setup failed; previous settings restored.'
     }
     if (!c.explicitModels) addModels(c, selected)
@@ -393,8 +393,7 @@ async function loadNow($: EngineInterface) {
   // No throws escape configuration loading: missing/invalid config is inert.
   try {
     // The plugin's own options first; an optional configuration file named by MODEL_MOD_CONFIG next.
-    const removedApiKey = await $.store.get('removedApiKey')
-    const given = optionsCandidate(removedApiKey ? { ...pluginOptions, baseUrl: '' } : pluginOptions)
+    const given = optionsCandidate(pluginOptions)
     if (given === null) {
       $.ui.status('model-mod: the apiKey option holds characters that cannot be used; mod is inert.')
       return undefined
@@ -404,7 +403,7 @@ async function loadNow($: EngineInterface) {
     if (given !== undefined) {
       candidate = given
     } else {
-      if (removedApiKey || (pluginOptions.apiKey && !String(pluginOptions.baseUrl ?? '').trim())) return undefined
+      if (pluginOptions.apiKey && !String(pluginOptions.baseUrl ?? '').trim()) return undefined
       const path = await $.env.get('MODEL_MOD_CONFIG')
       if (!path) return undefined
       candidate = JSON.parse(await $.fs.read(path))
@@ -1330,7 +1329,6 @@ async function removeSettings($: EngineInterface, changes: Record<string, string
   const entries = Object.entries(changes).map(([field, value]) => ({ field, value, row: rows.find(r => r.key.endsWith('.' + field) && r.provider.plugin.split('@')[0] === $.plugin.name.split('@')[0]) }))
   if (entries.some(e => !e.row || e.row.isLocked)) return 'writable plugin config unavailable; nothing changed'
   const oldRetired = await retiredModels($)
-  const oldRemovedApiKey = await $.store.get('removedApiKey')
   const oldCache = await $.store.get('models')
   const custom = await $.env.get('ANTHROPIC_CUSTOM_MODEL_OPTION')
   const clearCustom = typeof custom === 'string' && removed.includes(custom)
@@ -1338,15 +1336,11 @@ async function removeSettings($: EngineInterface, changes: Record<string, string
   const retired = [...new Set([...oldRetired, ...removed])]
   if (retired.length > MODEL_CACHE_CAP) return 'model ownership cache is full; nothing changed'
   try {
-    if ('baseUrl' in changes && typeof pluginOptions.apiKey === 'string') {
-      const salt = crypto.randomUUID()
-      await $.store.set('removedApiKey', { salt, digest: await keyDigest(pluginOptions.apiKey, salt) })
-    }
     await $.store.set('retiredModels', retired)
     await $.store.set('models', kept)
     if (clearCustom && (await $.env.set('ANTHROPIC_CUSTOM_MODEL_OPTION', undefined))?.deny) throw new Error('environment update refused')
   } catch {
-    try { await $.store.set('removedApiKey', oldRemovedApiKey ?? null); await $.store.set('retiredModels', oldRetired); await $.store.set('models', oldCache ?? []); if (clearCustom && (await $.env.set('ANTHROPIC_CUSTOM_MODEL_OPTION', custom))?.deny) throw new Error('environment rollback refused') } catch { return 'model cache update failed and rollback failed' }
+    try { await $.store.set('retiredModels', oldRetired); await $.store.set('models', oldCache ?? []); if (clearCustom && (await $.env.set('ANTHROPIC_CUSTOM_MODEL_OPTION', custom))?.deny) throw new Error('environment rollback refused') } catch { return 'model cache update failed and rollback failed' }
     return 'model cache could not be updated; previous values restored'
   }
   const written: typeof entries = []
@@ -1362,7 +1356,7 @@ async function removeSettings($: EngineInterface, changes: Record<string, string
     for (const entry of written.reverse()) {
       try { if ('deny' in await $.config.set({ key: entry.row!.key, value: entry.row!.value })) rollbackFailed = true } catch { rollbackFailed = true }
     }
-    try { await $.store.set('removedApiKey', oldRemovedApiKey ?? null); await $.store.set('retiredModels', oldRetired); await $.store.set('models', oldCache ?? []); if (clearCustom && (await $.env.set('ANTHROPIC_CUSTOM_MODEL_OPTION', custom))?.deny) throw new Error('environment rollback refused') } catch { rollbackFailed = true }
+    try { await $.store.set('retiredModels', oldRetired); await $.store.set('models', oldCache ?? []); if (clearCustom && (await $.env.set('ANTHROPIC_CUSTOM_MODEL_OPTION', custom))?.deny) throw new Error('environment rollback refused') } catch { rollbackFailed = true }
     return rollbackFailed ? 'configuration failed and rollback failed; restore the previous settings in /plugin' : 'configuration failed; previous settings restored'
   }
   pluginOptions = { ...pluginOptions, ...changes }
@@ -1404,7 +1398,7 @@ async function manageUpstreams($: EngineInterface, c: Config): Promise<string> {
     const error = await removeSettings($, changes, removed)
     if (error) return 'model-mod: ' + error
     const file = await $.env.get('MODEL_MOD_CONFIG')
-    return `model-mod: API upstream removed and disabled. The key remains in the client's secure storage; model-mod cannot clear it.${cleared.length ? ' Cleared: ' + cleared.join(', ') + '.' : ''}${file ? ' A configuration file is also configured; edit it separately if needed.' : ''}`
+    return `model-mod: API upstream removed and disabled. The key remains in the client's secure storage; model-mod cannot clear it. When readding it, setup confirms the host before sending the stored key.${cleared.length ? ' Cleared: ' + cleared.join(', ') + '.' : ''}${file ? ' A configuration file is also configured; edit it separately if needed.' : ''}`
   }
   const item = chosen.item
   const action = await ask($, `Manage Codex account ${item.account}?`, ['Log out', 'Remove', 'Back'])
@@ -1459,14 +1453,12 @@ async function admin($: EngineInterface, e: { origin: { kind: string } }, arg: '
       if (choice === 'Manage configured upstreams' && c) return { text: await manageUpstreams($, c) }
       if (choice === 'Codex login (recommended)') return { text: await setupCodex($, c) }
       if (choice !== 'Compatible API server') return { text: 'model-mod: setup cancelled, nothing changed' }
-      const removed = await $.store.get('removedApiKey') as RemovedApiKey | null | undefined
-      if (removed) {
-        const key = pluginOptions.apiKey
-        if (typeof key !== 'string' || await keyDigest(key, removed.salt) === removed.digest)
-          return { text: 'model-mod: enter a new API key in /plugin → model-mod configure, then run /model-mod:setup again.' }
-        const candidate = optionsCandidate({ ...pluginOptions, baseUrl: typeof pluginOptions.baseUrl === 'string' && pluginOptions.baseUrl.trim() || DEFAULT_BASE_URL })
-        if (!candidate || !candidate.key) return { text: 'model-mod: configure a valid new API key before setup.' }
-        return { text: await configurePicker($, { baseUrl: candidate.baseUrl as string, key: candidate.key as string, models: [], codex: c?.codex }, true, interactive, status) }
+      if (!String(pluginOptions.baseUrl ?? '').trim() && pluginOptions.apiKey) {
+        const candidate = optionsCandidate({ ...pluginOptions, baseUrl: DEFAULT_BASE_URL })
+        if (!candidate || !candidate.key) return { text: 'model-mod: configure a valid API key in /plugin before setup.' }
+        const baseUrl = candidate.baseUrl as string
+        if (!await confirmStoredKey($, baseUrl)) return { text: storedKeyCancelled }
+        return { text: await configurePicker($, { baseUrl, key: candidate.key as string, models: [], codex: c?.codex }, true, interactive, status, new URL(baseUrl).hostname) }
       }
       return { text: await configurePicker($, c ?? { baseUrl: typeof pluginOptions.baseUrl === 'string' && pluginOptions.baseUrl.trim() || DEFAULT_BASE_URL, models: [] }, true, interactive, status) }
     } catch { return { text: 'model-mod: setup cancelled, nothing changed' } }
