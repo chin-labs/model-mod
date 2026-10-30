@@ -155,6 +155,8 @@ def gate_snapshot(cwd, base, session):
     common = ['--binary', '--no-ext-diff', '--no-textconv', '--submodule=short', '--ignore-submodules=dirty']
     staged = safe_diff(cwd, ['diff', *common, '--cached', 'HEAD', '--'])
     unstaged = safe_diff(cwd, ['diff', *common, '--'])
+    with_dirty = safe_diff(cwd, ['diff', *common, '--ignore-submodules=none', '--'])
+    if with_dirty != unstaged: raise Failure('Dirty submodule contents cannot be reviewed by the gate.')
     committed = diff_for(cwd, base) if base else b''
     names = git(cwd, ['ls-files', '--others', '--exclude-standard', '-z'])
     untracked = []

@@ -681,6 +681,24 @@ class DelegateTest(unittest.TestCase):
         (self.repo / 'new').write_bytes(b'\x00binary')
         with self.assertRaises(delegate.Failure): delegate.gate_snapshot(str(self.repo), None, 'session')
 
+    def test_gate_rejects_dirty_submodule(self):
+        module = self.root / 'module'
+        module.mkdir()
+        def command(cwd, *args):
+            subprocess.run(['git', '-C', str(cwd), *args], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        command(module, 'init', '-q')
+        command(module, 'config', 'user.name', 'Test')
+        command(module, 'config', 'user.email', 'test@example.invalid')
+        (module / 'file').write_text('initial\n')
+        command(module, 'add', 'file')
+        command(module, 'commit', '-qm', 'initial')
+        command(self.repo, '-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', str(module), 'nested')
+        command(self.repo, 'commit', '-qm', 'add submodule')
+        self.assertFalse(delegate.gate_snapshot(str(self.repo), None, 'session')['changed'])
+        (self.repo / 'nested' / 'file').write_text('changed\n')
+        with self.assertRaisesRegex(delegate.Failure, 'Dirty submodule'):
+            delegate.gate_snapshot(str(self.repo), None, 'session')
+
     def test_adversarial_diffs(self):
         req = dict(self.request, kind='review', options={'adversarial': True, 'text': 'focus'})
         self.mode('text')
