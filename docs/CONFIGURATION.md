@@ -37,7 +37,7 @@ The mod activates with either a valid `apiKey` or a valid combination of `codexA
 | `apiKey` | Your API upstream's key (secret). Required for the API path. | none |
 | `models` | Comma-separated model IDs the mod answers for. Empty: every chat model the upstream lists. | empty |
 | `imageModel` | Model for `generate_image`. Empty: `gpt-image-2`, or the first `gpt-image*` the upstream lists. `none` turns the tool off. | empty |
-| `contextWindow` | Input tokens assumed for a model whose window is unknown (minimum 32000). Codex models default to 128,000 tokens and can be configured with `contextWindow` (see [Limitations](LIMITATIONS.md)). | `272000` |
+| `contextWindow` | Input tokens assumed for a model whose window is unknown (minimum 32000). Codex models default to 128,000 tokens and can be configured with `contextWindow` (see [Limitations](LIMITATIONS.md)). | `272000` (API); 128,000 (Codex) |
 | `fallbackModel` | One of your models to switch to when the subscription limit is reached. Empty: no automatic switch. | empty |
 | `fallbackPercent` | Used share of a rate-limit window (50–100) at which the switch happens. Only read when `fallbackModel` is set. | `100` |
 | `workerModel` | Model for the `model-mod:local-worker` agent type. Empty: the fallback model; if both are empty there is no worker type. | empty |
