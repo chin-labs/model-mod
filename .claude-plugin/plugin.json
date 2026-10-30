@@ -66,8 +66,7 @@
     "contextWindow": {
       "type": "number",
       "title": "Context window",
-      "description": "Input tokens assumed for a model whose context window is unknown.",
-      "default": 272000
+      "description": "Input tokens assumed for a model whose context window is unknown. Default 272000 for API models; 128000 for Codex models unless set."
     },
     "fallbackModel": {
       "type": "string",
