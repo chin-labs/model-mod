@@ -2,6 +2,22 @@
 
 All notable changes to this project are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Every release that changes plugin code or manifest files raises the `version` in `.claude-plugin/plugin.json`; installed clients only pick up a release whose version differs from the one they have.
 
+## 0.1.2 - 2026-10-30
+
+### Changed
+- Retries honour an integer `Retry-After` header on HTTP 429, 502, 503, 504 and 529: a value of 0–15 seconds raises the next wait to at least that value; a larger value ends the turn immediately with the HTTP status and the requested wait. Invalid values and HTTP dates are ignored. The header is read through curl's `--write-out` (curl 7.84 or newer; with an older curl the plain backoff applies), and after a streamed error event the request waits up to 2 seconds for it.
+- A streamed request is aborted after about five minutes in which the upstream sends less than one byte per second. The turn is then retried against the same model if nothing was streamed yet.
+- Failed requests say more about the cause: a final HTTP 429 reads `upstream rate limited (HTTP 429)`, and curl failures name a connection failure, a timeout or a TLS error with the curl exit code.
+- With the plugin options, a session no longer waits up to 8 seconds for the upstream's model list. With cached models the list is refreshed in the background; without them the session waits at most 2 seconds. The image tool is registered when a background refresh finds an image model.
+- `/model-mod:status` shows the host name only for loopback addresses (`localhost`, 127.0.0.0/8, `[::1]` and IPv4-mapped 127.0.0.0/8) and `host=remote` otherwise. It warns when plain HTTP sends the API key to a non-loopback host and when the configured `headerFile` is missing.
+- Command replies no longer repeat the `model-mod:` label that Claude Code already adds. When the mod is inactive and `MODEL_MOD_CONFIG` is set, the message points to that file.
+- `generate_image` creates the output file exclusively and refuses an existing file or symbolic link at the target even if one appears while the image is downloaded. A failed write removes the partial file, and the temporary file is removed when the call is interrupted. A target directory that cannot be resolved is reported as such.
+
+### Documentation
+- The marketplace description says the plugin does not modify the Claude Code binary.
+- Documented the `Retry-After` handling and the `status` host and warning output; the status example in Troubleshooting shows the client's `model-mod:` label.
+- Documented that a failed request is only ever retried against the same model.
+
 ## 0.1.1 - 2026-10-24
 
 ### Fixed

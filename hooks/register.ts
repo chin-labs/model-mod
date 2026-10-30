@@ -1019,7 +1019,7 @@ async function admin($: EngineInterface, e: { origin: { kind: string } }, arg: '
   const warnings: string[] = []
   if (c.headerFile !== undefined && !await $.fs.exists(c.headerFile)) warnings.push('headerFile not found')
   if (!loopback && url.protocol === 'http:') warnings.push('plain http to a non-loopback host sends the API key unencrypted')
-  return { text: `model-mod 0.1.1: picker=active${warnings.map(w => `; warning: ${w}`).join('')}; host=${loopback ? url.hostname : 'remote'}; config=${c.source}; models=${c.models.length}; tools=${captured ? (c.toolsFile ? 'captured' : 'listed') : 'missing'}` +
+  return { text: `model-mod 0.1.2: picker=active${warnings.map(w => `; warning: ${w}`).join('')}; host=${loopback ? url.hostname : 'remote'}; config=${c.source}; models=${c.models.length}; tools=${captured ? (c.toolsFile ? 'captured' : 'listed') : 'missing'}` +
     `; ${promptStatus(c.prompts)}; tool search=${c.toolSearch ?? 'auto'}; MCP tools without a captured schema=${open}${open && c.refresh ? ' (/model-mod:refresh captures them)' : ''}` }
 }
 
