@@ -307,10 +307,11 @@ function invalidCodexFields(o: PluginOptions): string[] {
   const text = (name: string) => typeof o[name] === 'string' ? (o[name] as string).trim() : ''
   const accounts = text('codexAccounts').split(',').map(s => s.trim()).filter(Boolean)
   const models = text('codexModels').split(',').map(s => s.trim()).filter(Boolean)
-  if (!accounts.length && !models.length) return []
   const fields: string[] = []
-  if (!accounts.length || !accounts.every(s => /^[a-z0-9][a-z0-9-]{0,31}$/.test(s))) fields.push('codexAccounts')
-  if (!models.length || !models.every(s => /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(s) && !/claude|anthropic/i.test(s))) fields.push('codexModels')
+  if (accounts.length || models.length) {
+    if (!accounts.length || !accounts.every(s => /^[a-z0-9][a-z0-9-]{0,31}$/.test(s))) fields.push('codexAccounts')
+    if (!models.length || !models.every(s => /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(s) && !/claude|anthropic/i.test(s))) fields.push('codexModels')
+  }
   for (const name of ['codexAccountsDir', 'codexBin', 'pythonBin']) {
     const value = text(name), raw = o[name]
     if ((typeof raw === 'string' && /[\0\r\n]/.test(raw)) || (value && !(name === 'codexAccountsDir' ? /^(?:\/|[A-Za-z]:[\\/])/.test(value) : /^(?:\/|[A-Za-z]:[\\/])/.test(value) || /^[A-Za-z0-9._-]+$/.test(value)))) fields.push(name)
@@ -417,7 +418,11 @@ async function loadNow($: EngineInterface) {
       const home = await $.env.get('HOME')
       const appdata = await $.env.get('APPDATA')
       const dir = candidate.accountsDir ?? (appdata ? appdata.replace(/[\\/]+$/, '') + '\\model-mod\\accounts' : home ? home.replace(/\/+$/, '') + '/.config/model-mod/accounts' : undefined)
-      if (!dir) $.ui.status('model-mod: Codex login: accounts directory unavailable; configure codexAccountsDir.')
+      if (!dir) {
+        $.ui.status('model-mod: Codex login: accounts directory unavailable; configure codexAccountsDir.')
+        built.excluded ??= new Set()
+        for (const account of candidate.accounts as string[]) for (const model of candidate.codexModels as string[]) built.excluded.add(`${account}/${model}`)
+      }
       if (dir) {
         built.accountsDir = dir
         built.codex = new Map()
