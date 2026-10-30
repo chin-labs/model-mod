@@ -1602,7 +1602,7 @@ export const register: Register = (on, options) => {
     if (!args) return next(e)
     const c = await load($)
     if (!c) return next(e)
-    if (c.excluded?.has(args)) return { text: `model-mod: ${args} is not in the allowlist; run /model-mod:setup.` }
+    if (c.excluded?.has(args)) return { text: c.codexDirectoryUnavailable?.has(args) ? 'model-mod: model is not in the allowlist; configure codexAccountsDir' : `model-mod: ${args} is not in the allowlist; run /model-mod:setup.` }
     if (!c.models.includes(args)) return next(e)
     try { await $.env.set('ANTHROPIC_CUSTOM_MODEL_OPTION', args) } catch {
       return { text: 'model-mod: could not prepare the local model; model not changed.' }
@@ -1615,6 +1615,7 @@ export const register: Register = (on, options) => {
   on('command.run', { command: 'model-mod:model' }, async ($, e) => {
     const c = await load($)
     if (!c) return { text: `model-mod: inactive; models=0. ${await configHint($)}` }
+    if (c.codexDirectoryUnavailable?.has(e.args.trim())) return { text: 'model-mod: model is not in the allowlist; configure codexAccountsDir' }
     if (e.origin.kind !== 'composer' && e.origin.kind !== 'bridge') return { text: 'model-mod: /model-mod:model needs an interactive session.' }
     if (!c.models.length) return { text: 'model-mod: no local models. Run /model-mod:setup to add them.' }
     let current = ''

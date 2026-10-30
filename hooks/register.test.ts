@@ -1260,6 +1260,8 @@ test('Codex login: missing account directory leaves the API active and refuses C
   const w = world(on, null, LOCAL, { stdout: SSE_OK, code: 0 }, undefined, { HOME: '', APPDATA: '' })
   expect((await drain($.turn.step(STEP(LOCAL)))).result.answer).toBe('local answer')
   expect((await drain($.turn.step(STEP(CODEX_MODEL)))).result.answer).toContain('not in the allowlist; configure codexAccountsDir')
+  expect((await $.command.run({ ...MODEL, args: CODEX_MODEL })).text).toContain('model is not in the allowlist; configure codexAccountsDir')
+  expect((await $.command.run({ ...PICK, args: CODEX_MODEL })).text).toContain('model is not in the allowlist; configure codexAccountsDir')
   expect(w.reached).toEqual([])
 })
 
