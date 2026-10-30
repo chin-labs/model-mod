@@ -119,8 +119,10 @@ def check_turn(value):
     if not isinstance(value, dict): return
     if 'items' in value:
         if not isinstance(value['items'], list): raise incompatible('turn.items')
+        waiting = False
         for item in value['items']:
-            if check_item(item): return True
+            if check_item(item): waiting = True
+        return waiting
 
 
 class App:
@@ -182,14 +184,12 @@ class App:
             params = item.get('params')
             waiting = bool(check_item(params.get('item') if isinstance(params, dict) else None))
         for container in (item.get('params'), item.get('result')):
-            if isinstance(container, dict) and not waiting:
-                waiting = bool(check_turn(container.get('turn')))
+            if isinstance(container, dict):
+                if check_turn(container.get('turn')): waiting = True
                 thread = container.get('thread')
-                if not waiting and isinstance(thread, dict) and isinstance(thread.get('turns'), list):
+                if isinstance(thread, dict) and isinstance(thread.get('turns'), list):
                     for turn in thread['turns']:
-                        if check_turn(turn):
-                            waiting = True
-                            break
+                        if check_turn(turn): waiting = True
         if waiting: item['_model_mod_wait'] = True
         return item
 
@@ -306,7 +306,7 @@ def messages(args, app, prepared, cwd):
         if obj.get('_model_mod_wait') and not app.wait_interrupted:
             app.wait_interrupted = True
             app.interrupt()
-        if app.wait_interrupted and method != 'turn/completed':
+        if app.wait_interrupted and method != 'turn/completed' and not (method == 'item/tool/call' and params.get('tool') in p['reverse']):
             if method == 'thread/tokenUsage/updated': latest = params.get('tokenUsage', {}).get('total', {})
             continue
         if method == 'item/agentMessage/delta':

@@ -55,6 +55,16 @@ class Contract(unittest.TestCase):
                     self.assertEqual(sum(x.get('method') == 'turn/interrupt' for x in records), 1)
                     with self.assertRaises(ProcessLookupError): os.kill(records[0]['pid'], 0)
 
+        for stream in (True, False):
+            r = self.run_bridge(dict(BASE, stream=stream, tools=TOOLS), 'wait_tool')
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn('"type": "tool_use", "id": "call1"', r.stdout)
+            self.assertIn('"stop_reason": "tool_use"', r.stdout)
+            self.assertIn('"input_tokens": 60', r.stdout)
+            r = self.run_bridge(dict(BASE, stream=stream), 'wait_forbidden')
+            self.assertIn('model-mod-http:502', r.stderr)
+            self.assertIn('unsupported_item', r.stdout)
+
     def test_parallel_tools_and_interrupt(self):
         with tempfile.TemporaryDirectory() as tmp:
             log = Path(tmp) / 'log'

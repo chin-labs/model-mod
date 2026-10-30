@@ -58,9 +58,13 @@ for line in sys.stdin:
             send({'id': ident, 'result': {'thread': {'id': 'invalid' if mode == 'invalid_uuid' else '12345678-1234-4234-8234-123456789abc'}, 'approvalPolicy': 'never', 'sandbox': {'type': 'readOnly'}}})
     elif method == 'thread/inject_items': send({'id': ident, 'result': {}})
     elif method == 'turn/start':
-        items = [{'type': 'fileChange'}] if mode == 'forbidden_response' else ([{'type': 'sleep'}] if mode == 'wait_response' else [])
+        items = [{'type': 'sleep'}, {'type': 'commandExecution'}] if mode == 'wait_forbidden' else [{'type': 'fileChange'}] if mode == 'forbidden_response' else ([{'type': 'sleep'}] if mode == 'wait_response' else [])
         send({'id': ident, 'result': {'turn': {'id': 'turn1', 'items': items}}})
         event('item/agentMessage/delta', {'delta': 'hello'})
+        if mode == 'wait_tool':
+            event('item/started', {'item': {'type': 'sleep'}})
+            event('item/tool/call', {'callId': 'call1', 'tool': 'one', 'arguments': {'n': 1}})
+            continue
         if mode in ('wait_started', 'wait_completed', 'wait_response', 'wait_turn'):
             if mode in ('wait_started', 'wait_completed'):
                 event('item/' + mode.removeprefix('wait_'), {'item': {'type': 'collabAgentToolCall'}})
