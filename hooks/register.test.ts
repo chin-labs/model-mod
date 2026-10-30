@@ -1483,8 +1483,25 @@ test('Codex login: cancellation closes the helper and excludes API-only web sear
   await stream.return(undefined as never)
   expect(w.killed).toBe(1)
   const outcome = await $.tool.call({ tool: 'mcp__model-mod__web_search' } as never).then(value => JSON.stringify(value), error => String(error))
-  expect(outcome).toContain('unavailable for Codex login')
+  expect(outcome).toContain('Codex login uses native web search')
 })
+
+for (const [setting, hasWebSearch, enabled, status] of [
+  ['on', true, true, 'on'], ['on', false, false, 'blocked-by-permissions'],
+  ['off', true, false, 'off'], ['invalid', true, true, 'on'],
+] as const) {
+  test(`Codex native search: ${setting}, permission=${hasWebSearch}`, { options: { ...CODEX_OPTIONS, codexWebSearch: setting } }, async ($, on) => {
+    const w = world(on, null, CODEX_MODEL, { stdout: SSE_OK, code: 0 })
+    w.toolsList = [...(hasWebSearch ? ['WebSearch'] : []), 'mcp__model-mod__web_search']
+    await drain($.turn.step(STEP(CODEX_MODEL)))
+    expect(w.spawned[0]!.argv.includes('--web-search')).toBe(enabled)
+    const body = JSON.parse(w.spawned[0]!.input!) as { tools?: { name: string }[] }
+    expect((body.tools ?? []).some(tool => tool.name === 'mcp__model-mod__web_search')).toBe(false)
+    const result = await $.command.run({ command: 'model-mod:status', args: '', origin: { kind: 'composer' } } as never)
+    expect(result.text).toContain('webSearch=' + status)
+    if (setting === 'invalid') expect(result.text).toContain('invalid setting; using on')
+  })
+}
 
 test('Codex image generation requests permission and validates PNG before writing', { options: CODEX_OPTIONS }, async ($, on) => {
   const good = JSON.stringify({ ok: true, bytes_b64: 'iVBORw0KGgppbWFnZQ==', size: 13 })

@@ -89,6 +89,12 @@
       "title": "Prompts directory (optional)",
       "description": "Absolute path of a directory with your own compact.md, title.md, subagent-note.md and worker.md. Empty: use the plugin's prompts. A missing or unusable file is not replaced by a built-in prompt."
     },
+    "codexWebSearch": {
+      "type": "string",
+      "title": "Codex native web search",
+      "description": "on or off. Native search sends queries to OpenAI and does not enforce Claude domain rules.",
+      "default": "on"
+    },
     "codexServiceTier": {
       "type": "string",
       "title": "Codex service tier",

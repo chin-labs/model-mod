@@ -196,7 +196,7 @@ async function configurePicker($: EngineInterface, c: { baseUrl: string; key?: s
 }
 
 type CodexAccount = { account: string; model: string; directory: string; window?: number }
-type Config = { codex?: Map<string, CodexAccount>; pythonBin?: string; codexBin?: string; accountsDir?: string; apiInvalid?: boolean; prompts: Prompts; promptsDir?: string; baseUrl: string; headerFile?: string; key?: string; models: string[]; toolsFile?: string; defaultWindow?: number; contextWindowExplicit?: boolean; explicitModels?: boolean; excluded?: Set<string>; codexDirectoryUnavailable?: Set<string>; imageAuto?: boolean; source?: 'options' | 'file'; maxTokens: number; effortMode: 'suffix' | 'none'; imageModel?: string; contextWindows?: Record<string, number>; sideModel?: string; keepThinking?: boolean; localTitle?: boolean; localContext?: boolean; toolSearch?: 'auto' | 'on' | 'off'; toolSearchPercent?: number; refresh?: string[]; fallbackModel?: string; fallbackPercent?: number; workerModel?: string; codexServiceTier?: 'default' | 'priority'; codexServiceTierInvalid?: boolean }
+type Config = { codex?: Map<string, CodexAccount>; pythonBin?: string; codexBin?: string; accountsDir?: string; apiInvalid?: boolean; prompts: Prompts; promptsDir?: string; baseUrl: string; headerFile?: string; key?: string; models: string[]; toolsFile?: string; defaultWindow?: number; contextWindowExplicit?: boolean; explicitModels?: boolean; excluded?: Set<string>; codexDirectoryUnavailable?: Set<string>; imageAuto?: boolean; source?: 'options' | 'file'; maxTokens: number; effortMode: 'suffix' | 'none'; imageModel?: string; contextWindows?: Record<string, number>; sideModel?: string; keepThinking?: boolean; localTitle?: boolean; localContext?: boolean; toolSearch?: 'auto' | 'on' | 'off'; toolSearchPercent?: number; refresh?: string[]; fallbackModel?: string; fallbackPercent?: number; workerModel?: string; codexServiceTier?: 'default' | 'priority'; codexServiceTierInvalid?: boolean; codexWebSearch?: 'on' | 'off'; codexWebSearchInvalid?: boolean }
 type Tool = { name: string; description: string; input_schema: Record<string, unknown> }
 
 let config: Config | undefined
@@ -381,6 +381,7 @@ function optionsCandidate(o: PluginOptions): Record<string, unknown> | undefined
     defaultWindow: number('contextWindow', 272_000), contextWindowExplicit: typeof o.contextWindow === 'number', sideModel: side === 'none' ? undefined : side || 'claude-haiku-5-5',
     keepThinking: o.keepThinking !== false, localTitle: o.localTitle !== false, localContext: o.localContext !== false,
     toolSearch: text('toolSearch') || 'auto', toolSearchPercent: number('toolSearchPercent', 10),
+    codexWebSearch: text('codexWebSearch') === 'off' ? 'off' : 'on', codexWebSearchInvalid: o.codexWebSearch !== undefined && !['on', 'off'].includes(text('codexWebSearch')),
     codexServiceTier: text('codexServiceTier') === 'priority' ? 'priority' : 'default', codexServiceTierInvalid: !['default', 'priority', ''].includes(text('codexServiceTier')), fallbackModel: text('fallbackModel'), fallbackPercent: number('fallbackPercent', 100), workerModel: text('workerModel'), promptsDir: text('promptsDir') }
 }
 
@@ -1385,7 +1386,14 @@ async function setupCodex($: EngineInterface, c?: Config): Promise<string> {
 type CodexWindow = { remainingPercent?: number | null; resetsAt?: number | null; windowDurationMins?: number | null }
 type CodexLimits = { primary?: CodexWindow | null; secondary?: CodexWindow | null; ordinaryUsageAllowed?: boolean | null; usageLimitExceeded?: boolean | null; rateLimitReachedType?: string | null; credits?: { hasCredits?: boolean; balance?: string | null; unlimited?: boolean } | null }
 
+async function codexWebSearchState($: EngineInterface, c: Config): Promise<'on' | 'off' | 'blocked-by-permissions'> {
+  if (c.codexWebSearch === 'off') return 'off'
+  try { return (await $.tool.list()).some(tool => tool.name === 'WebSearch') ? 'on' : 'blocked-by-permissions' }
+  catch { return 'blocked-by-permissions' }
+}
+
 async function codexStatus($: EngineInterface, c: Config): Promise<string[]> {
+  const search = await codexWebSearchState($, c)
   const accounts = new Map<string, CodexAccount>()
   for (const item of c.codex?.values() ?? []) accounts.set(item.account, item)
   return Promise.all([...accounts.values()].map(async item => {
@@ -1428,7 +1436,7 @@ async function codexStatus($: EngineInterface, c: Config): Promise<string[]> {
         if (typeof info.planType === 'string' && /^[a-zA-Z0-9_-]{1,40}$/.test(info.planType)) plan = info.planType
       }
     } catch { /* plan remains unavailable */ }
-    return scrub(c, `upstream=Codex login; account=${item.account}; dir=${item.directory}; python=${python}; codex=${version}; login=${login}; limits=${limits}; credits=${credits}; plan=${plan}; ordinaryUsageAllowed=${ordinary}; serviceTier=${c.codexServiceTier ?? 'default'}${c.codexServiceTierInvalid ? ' (invalid setting; using default)' : ''}${warnings.map(w => '; warning: ' + w).join('')}`, false)
+    return scrub(c, `upstream=Codex login; account=${item.account}; dir=${item.directory}; python=${python}; codex=${version}; login=${login}; limits=${limits}; credits=${credits}; plan=${plan}; ordinaryUsageAllowed=${ordinary}; webSearch=${search}${c.codexWebSearchInvalid ? ' (invalid setting; using on)' : ''}; serviceTier=${c.codexServiceTier ?? 'default'}${c.codexServiceTierInvalid ? ' (invalid setting; using default)' : ''}${warnings.map(w => '; warning: ' + w).join('')}`, false)
   }))
 }
 
@@ -1763,7 +1771,7 @@ export const register: Register = (on, options) => {
       if (!c) return answer('Web search is not configured.', true)
       const model = await bridgeModel($, e, c)
       if (model === undefined) return answer('web_search is only available while a local model is selected. With this model, use the built-in WebSearch tool instead.', true)
-      if (c.codex?.has(model)) return answer('web_search is unavailable for Codex login models.', true)
+      if (c.codex?.has(model)) return answer('Codex login uses native web search when WebSearch is permitted and codexWebSearch is on; check /model-mod:status and plugin settings.', true)
       const input = e as unknown as Record<string, unknown>
       const query = typeof input.query === 'string' ? input.query.trim() : ''
       if (!query || query.length > 500) return answer('query must be 1-500 characters.', true)
@@ -2173,7 +2181,8 @@ export const register: Register = (on, options) => {
         parser = new MessagesStream(e.model)
         // Retry-After comes back through --write-out, which curl writes to fd 2 itself: a header file opened on the stderr device
         // fails when the client hands the child a socket there. %header{} needs curl 7.84; an older curl prints nothing and the plain backoff applies.
-        const call = codex ? { argv: helperArgs($, c, 'messages', codex.directory, codex.model, body.model), env: undefined } : curlCall(c, ['-sN', '--fail-with-body', '--max-time', '900', '--speed-limit', '1', '--speed-time', String(STREAM_IDLE_SECONDS),
+        const searchEnabled = codex && await codexWebSearchState($, c) === 'on'
+        const call = codex ? { argv: [...helperArgs($, c, 'messages', codex.directory, codex.model, body.model), ...(searchEnabled ? ['--web-search'] : [])], env: undefined } : curlCall(c, ['-sN', '--fail-with-body', '--max-time', '900', '--speed-limit', '1', '--speed-time', String(STREAM_IDLE_SECONDS),
           '--write-out', '%{stderr}\nmodel-mod-http:%{http_code}\nmodel-mod-retry-after:%header{retry-after}\n',
           '-H', 'content-type: application/json',
           '-H', 'anthropic-version: 2023-06-01', '--data-binary', '@-', c.baseUrl + '/v1/messages'])
