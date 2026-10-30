@@ -1,4 +1,10 @@
 import json
+import argparse
+import contextlib
+import io
+from unittest.mock import patch
+
+import bridge
 import os
 import signal
 import subprocess
@@ -64,6 +70,33 @@ class Contract(unittest.TestCase):
             failed = subprocess.run([sys.executable, str(BRIDGE), 'device-login', '--codex-home', str(home), '--codex-bin', str(FAKE), '--accounts-dir', tmp, '--account', 'home'], capture_output=True, text=True, timeout=10)
             self.assertNotEqual(failed.returncode, 0)
             self.assertNotIn('https://', failed.stdout)
+
+    def test_device_login_lifetime_and_expiry(self):
+        self.assertGreater(bridge.DEVICE_LOGIN_TIMEOUT, 15 * 60)
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp, 'home')
+            home.mkdir()
+            args = argparse.Namespace(codex_bin=str(FAKE), codex_home=str(home))
+            config = home / 'fake_config.json'
+            config.write_text(json.dumps({'mode': 'login_success', 'login_delay': .2}))
+            with patch.object(bridge, 'DEVICE_LOGIN_TIMEOUT', .5), contextlib.redirect_stdout(io.StringIO()):
+                self.assertTrue(bridge.device_login(args))
+            self.assertTrue((home / 'auth.json').exists())
+            config.write_text(json.dumps({'login_delay': 60, 'log': str(Path(tmp, 'log'))}))
+            with patch.object(bridge, 'DEVICE_LOGIN_TIMEOUT', .3), contextlib.redirect_stdout(io.StringIO()):
+                with self.assertRaisesRegex(bridge.BridgeError, 'expired.*setup'):
+                    bridge.device_login(args)
+            records = json.loads(Path(tmp, 'log').read_text().splitlines()[0])
+            for pid in records.values():
+                for _ in range(50):
+                    try: os.kill(pid, 0)
+                    except ProcessLookupError: break
+                    time.sleep(.02)
+                else: self.fail('login process survived expiry')
+            config.write_text(json.dumps({'mode': 'login_expired', 'login_delay': .01}))
+            with contextlib.redirect_stdout(io.StringIO()):
+                with self.assertRaisesRegex(bridge.BridgeError, 'expired.*setup'):
+                    bridge.device_login(args)
 
     def run_bridge(self, body=BASE, mode='text', log=None, extra=()):
         with tempfile.TemporaryDirectory() as home:

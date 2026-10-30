@@ -18,7 +18,7 @@ model-mod 是供 Claude Code 使用的插件（mod），讓你把自己的 Codex
 
 ## 快速開始
 
-可選擇其中一種或同時使用兩種上游。使用 Codex 登入時，先安裝 Python 3.9 以上版本與官方 `codex` CLI。setup 會建立專用帳號目錄並引導裝置驗證；手動登入方式見[疑難排解](docs/TROUBLESHOOTING.zh-TW.md)。
+可選擇其中一種或同時使用兩種上游。使用 Codex 登入時，先安裝 Python 3.9 以上版本與官方 `codex` CLI。setup 會建立專用帳號目錄並引導裝置驗證；代碼約 15 分鐘內有效。手動登入方式見[疑難排解](docs/TROUBLESHOOTING.zh-TW.md)。
 
 使用 API 伺服器時，先[準備好上游](docs/CONFIGURATION.zh-TW.md#先準備好你的上游)及其 API 金鑰。接著在 Claude Code 的互動工作階段中執行：
 

@@ -22,7 +22,7 @@ type World = { system: string; killed: number; toolsList?: string[]; spawned: { 
   ranEnv: (Record<string, string> | undefined)[]; reached: string[]; envSet: [string, string | undefined][]; messagesRead: number; failEnvSets: number; failEnvName?: string
   // The upstream's model list (null: unreachable), what the store holds, the picker rows of the settings, the requests
   // `$.http.fetch` made (the authorization header is reduced to its first 6 characters).
-  chooseUpstream?: boolean; answers: (string | null)[]; questions: { question: string; header: string; labels: string[]; multiSelect: boolean; fetchedCount: number }[];
+  chooseUpstream?: boolean; autoContinue?: boolean; deviceAnswerDelay?: number; answers: (string | null)[]; questions: { question: string; header: string; labels: string[]; multiSelect: boolean; fetchedCount: number }[];
   scopes: Record<string, Record<string, unknown>>; files: Record<string, string>; writes: string[]; saved: { key: string; value: unknown }[]; registered: string[]; configValues: Record<string, string>;
   toolDescriptions: Record<string, string>; httpStatus?: number; httpStatuses?: number[]; httpBody?: string; configSet?: (key: string) => { deny: string } | undefined; switchEnv: (string | undefined)[];
   models: string[] | null; store: Record<string, unknown>; picker: unknown[]; fetched: { url: string; auth?: string; matchesKey: boolean }[]
@@ -67,7 +67,10 @@ function world(on: On, config: Record<string, unknown> | null, model: string, sp
     const q = e.questions[0]!
     if (q.question.startsWith('Choose an upstream.') && !w.chooseUpstream) return { result: { questions: e.questions, answers: { [q.question]: 'Compatible API server' } } }
     w.questions.push({ question: q.question, header: q.header, labels: q.options.map(o => o.label), multiSelect: q.multiSelect, fetchedCount: w.fetched.length })
-    const answer = w.answers.shift()
+    if (w.deviceAnswerDelay && q.question.startsWith('Open https://example.test/device')) {
+      const delay = w.deviceAnswerDelay; w.deviceAnswerDelay = 0; await w.clock.sleep(delay)
+    }
+    const answer = w.autoContinue && q.question.startsWith('Open https://example.test/device') ? 'Continue (after logging in)' : w.answers.shift()
     if (answer === null || answer === undefined) return { deny: 'dismissed' }
     return { result: { questions: e.questions, answers: { [q.question]: answer } } }
   })
@@ -1641,9 +1644,50 @@ test('Codex login: cancelling device setup closes the child', async ($, on) => {
   })
   w.chooseUpstream = true
   w.answers = ['Codex login (recommended)', 'main', null]
-  expect((await $.command.run(SETUP)).text).toContain('then run /model-mod:setup again')
+  expect((await $.command.run(SETUP)).text).toContain('login cancelled')
   expect(w.killed).toBe(1)
   expect(w.ran.some(argv => argv.includes('cleanup-home'))).toBe(true)
+})
+
+test('Codex login: late completion and expiry remain distinct from failure', async ($, on) => {
+  let checks = 0
+  const reply: SpawnReply = { stdout: JSON.stringify({ url: 'https://example.test/device', code: 'ABCD-EFGHI' }) + '\n', code: 0, wait: 14 * 60_000 + 30_000 }
+  const w = world(on, null, 'claude-sonnet-5-5', reply, argv => {
+    if (argv[1] === '--version') return { exitCode: 0, stdout: argv[0] === 'python3' ? 'Python 3.12.0' : 'codex-cli 0.165.0' }
+    if (argv.includes('prepare-home')) return { exitCode: 0, stdout: '{"created":true}' }
+    if (argv.includes('check')) return { exitCode: checks++ ? 0 : 68, stdout: '{}' }
+    if (argv.includes('models')) return { exitCode: 0, stdout: '{"models":[{"id":"gpt-6.1-terra"}]}' }
+    return { exitCode: 0, stdout: '{}' }
+  })
+  w.chooseUpstream = true
+  w.autoContinue = true
+  w.deviceAnswerDelay = 14 * 60_000
+  w.answers = ['Codex login (recommended)', 'main', 'All (recommended)']
+  let finished = false
+  const run = $.command.run(SETUP).finally(() => { finished = true })
+  for (let i = 0; i < 110 && !finished; i++) await w.clock.advance(10_000)
+  expect((await run).text).toContain('1 models configured')
+  expect(w.saved.some(row => row.key.endsWith('.codexAccounts'))).toBe(true)
+  expect(w.questions.some(q => q.question.includes('valid for about 15 minutes'))).toBe(true)
+
+  checks = 0; reply.hang = true; reply.wait = undefined
+  w.answers = ['Codex login (recommended)', 'main']
+  finished = false
+  const expired = $.command.run(SETUP).finally(() => { finished = true })
+  for (let i = 0; i < 120 && !finished; i++) await w.clock.advance(10_000)
+  const expiredResult = await expired
+  expect(expiredResult.text).toContain('device code expired; run /model-mod:setup again')
+  expect(w.killed).toBe(1)
+  expect(w.ran.some(argv => argv.includes('cleanup-home'))).toBe(true)
+
+  checks = 0; reply.hang = false; reply.code = 1
+  w.answers = ['Codex login (recommended)', 'main']
+  expect((await $.command.run(SETUP)).text).toContain('device login failed')
+
+  checks = 0
+  reply.stdout = [JSON.stringify({ url: 'https://example.test/device', code: 'ABCD-EFGHI' }) + '\n', '{"error":{"code":"device_expired"}}\n']
+  w.answers = ['Codex login (recommended)', 'main']
+  expect((await $.command.run(SETUP)).text).toContain('device code expired; run /model-mod:setup again')
 })
 
 test('Codex login: unavailable device output falls back to manual login', async ($, on) => {

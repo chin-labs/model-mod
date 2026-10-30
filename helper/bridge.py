@@ -438,6 +438,10 @@ def account_home(root, account, create=False):
     return target, created
 
 
+DEVICE_CODE_LIFETIME = 15 * 60
+DEVICE_LOGIN_TIMEOUT = 16 * 60  # Allow the CLI time to finish after the code expires.
+
+
 def device_login(args):
     proc = subprocess.Popen([args.codex_bin, 'login', '--device-auth'], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                             env=env(args.codex_home), start_new_session=(os.name == 'posix'))
@@ -447,7 +451,8 @@ def device_login(args):
             for line in proc.stdout: lines.put(line.decode('utf-8', 'replace'))
         finally: lines.put(None)
     threading.Thread(target=read_output, daemon=True).start()
-    deadline = time.monotonic() + 600
+    started = time.monotonic()
+    deadline = started + DEVICE_LOGIN_TIMEOUT
     url = code = None
     expecting_url = expecting_code = False
     try:
@@ -465,9 +470,24 @@ def device_login(args):
             if url and code:
                 print(json.dumps({'url': url, 'code': code}), flush=True)
                 break
-        if not url or not code: return False
-        try: return proc.wait(timeout=max(0.01, deadline - time.monotonic())) == 0
-        except subprocess.TimeoutExpired: return False
+        if not url or not code:
+            if time.monotonic() >= deadline:
+                raise BridgeError('Codex login: device code expired; run /model-mod:setup again', code='device_expired')
+            return False
+        expired_output = False
+        while time.monotonic() < deadline:
+            try: line = lines.get(timeout=min(1, max(0.01, deadline - time.monotonic())))
+            except queue.Empty:
+                if proc.poll() is not None: break
+                continue
+            if line is None: break
+            if re.search(r'\bexpir(?:ed|ation)\b', line, re.IGNORECASE): expired_output = True
+        try: result = proc.wait(timeout=max(0.01, deadline - time.monotonic()))
+        except subprocess.TimeoutExpired: result = None
+        if result == 0: return True
+        if result is None or expired_output or time.monotonic() - started >= DEVICE_CODE_LIFETIME:
+            raise BridgeError('Codex login: device code expired; run /model-mod:setup again', code='device_expired')
+        return False
     finally:
         if os.name == 'posix':
             try: os.killpg(proc.pid, signal.SIGTERM)
@@ -484,6 +504,7 @@ def device_login(args):
         if os.name == 'posix':
             try: os.killpg(proc.pid, signal.SIGKILL)
             except ProcessLookupError: pass
+        proc.stdout.close()
 
 
 def main():

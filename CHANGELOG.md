@@ -17,6 +17,7 @@ All notable changes to this project are listed here. The format follows [Keep a 
 - Side-question command messages no longer repeat the client label, and the informational agent message count status is no longer shown.
 
 ### Fixed
+- Allow the full device code lifetime during Codex setup and report expired login codes.
 - Removing an API upstream disables it without clearing its key from the client’s secure storage; when readding it, setup confirms the host before sending the stored key.
 - Explicit Codex `contextWindow` settings are no longer replaced by the default.
 - Tool references in Codex tool results are separated from adjacent text.

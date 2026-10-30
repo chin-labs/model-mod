@@ -40,7 +40,11 @@ if 'login' in sys.argv and '--device-auth' in sys.argv:
         print('   \x1b[94mhttps://example.test/device\x1b[0m', flush=True)
         print('2. Enter this one-time code \x1b[90m(expires in 15 minutes)\x1b[0m', flush=True)
         print('   \x1b[94mABCD-EFGHI\x1b[0m', flush=True)
-        time.sleep(60)
+        time.sleep(config.get('login_delay', 60))
+        if config.get('mode') == 'login_success':
+            with open(os.path.join(os.environ['CODEX_HOME'], 'auth.json'), 'w', encoding='utf-8') as f: f.write('{}')
+            sys.exit(0)
+        if config.get('mode') == 'login_expired': print('Device code expired', flush=True)
     sys.exit(1)
 if 'status' in sys.argv:
     print('Logged in using ChatGPT')

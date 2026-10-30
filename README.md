@@ -18,7 +18,7 @@ model-mod is a plugin (a "mod") for Claude Code that puts models from your own C
 
 ## Quick start
 
-Choose either or both upstreams. For Codex login, install Python 3.9+ and the official `codex` CLI. Setup creates a dedicated account directory and guides you through device authentication; see [Troubleshooting](docs/TROUBLESHOOTING.md) for the manual alternative.
+Choose either or both upstreams. For Codex login, install Python 3.9+ and the official `codex` CLI. Setup creates a dedicated account directory and guides you through device authentication. The code is valid for about 15 minutes; see [Troubleshooting](docs/TROUBLESHOOTING.md) for the manual alternative.
 
 For an API server, [prepare your upstream](docs/CONFIGURATION.md#set-up-your-upstream-first) and its API key. Then run these in an interactive Claude Code session:
 

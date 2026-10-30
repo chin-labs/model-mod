@@ -1181,16 +1181,26 @@ function commandText(reply: { text: string }): { text: string } {
   return { text: reply.text.replace(/^model-mod(?:: ?| )/, '') }
 }
 
-async function deviceSetup($: EngineInterface, c: Config, home: string, root: string, account: string, created: boolean): Promise<boolean> {
+const DEVICE_SETUP_TIMEOUT = 17 * 60_000 // Leave the helper a minute to finish and report expiry.
+const DEVICE_WAIT_INTERVAL = 60_000
+
+type DeviceResult = 'success' | 'expired' | 'cancelled' | 'failed' | 'manual'
+
+async function deviceSetup($: EngineInterface, c: Config, home: string, root: string, account: string, created: boolean): Promise<DeviceResult> {
   const args = [...helperArgs($, c, 'device-login', home), '--accounts-dir', root, '--account', account]
   const child = $.process.spawn({ argv: args })
   let resolveReady: (value: { url: string; code: string } | undefined) => void = () => {}
   const ready = new Promise<{ url: string; code: string } | undefined>(resolve => { resolveReady = resolve })
-  let output = '', offered = false, expired = false, success = false
+  let output = '', offered = false, expired = false, success = false, helperExpired = false
   const done = (async () => {
     try {
       for await (const piece of child) {
-        if (piece.stream !== 'stdout' || offered) continue
+        if (piece.stream !== 'stdout') continue
+        if (offered) {
+          output = (output + piece.text).slice(-4096)
+          if (output.includes('device_expired')) helperExpired = true
+          continue
+        }
         output = (output + piece.text).slice(-4096)
         const end = output.indexOf('\n')
         if (end < 0) continue
@@ -1199,6 +1209,7 @@ async function deviceSetup($: EngineInterface, c: Config, home: string, root: st
           if (typeof data.url === 'string' && /^https:\/\/[A-Za-z0-9.-]+(?::[0-9]+)?\/[A-Za-z0-9/_-]+$/.test(data.url) &&
               typeof data.code === 'string' && /^[A-Z0-9]{4}-[A-Z0-9]{4,8}$/.test(data.code)) {
             offered = true
+            if (output.slice(end + 1).includes('device_expired')) helperExpired = true
             resolveReady({ url: data.url, code: data.code })
           }
         } catch { /* malformed output falls back to manual login */ }
@@ -1211,22 +1222,30 @@ async function deviceSetup($: EngineInterface, c: Config, home: string, root: st
     if (!created) return
     try { await $.process.run([...helperArgs($, c, 'cleanup-home', home), '--accounts-dir', root, '--account', account], { timeoutMs: 15_000 }) } catch { /* leave uncertain contents alone */ }
   }
-  const deadline = $.clock.after(600_000, () => { expired = true; void close().then(clean) })
+  const deadline = $.clock.after(DEVICE_SETUP_TIMEOUT, () => { expired = true; void close().then(clean) })
   const firstWait = new Promise<undefined>(resolve => { const timer = $.clock.after(20_000, () => resolve(undefined)); void ready.then(() => timer.cancel()) })
   try {
     const details = await Promise.race([ready, firstWait])
-    if (!details || expired) return false
-    for (let attempt = 0; attempt < 3; attempt++) {
-      const answer = await ask($, `Open ${details.url} and enter the one-time code ${details.code}. Continue after logging in?`, ['Continue (after logging in)', 'Cancel'])
-      if (answer !== 'Continue (after logging in)' || expired) return false
+    if (expired) return 'expired'
+    if (!details) return 'manual'
+    for (;;) {
+      let answer: string
+      try {
+        answer = await ask($, `Open ${details.url} and enter the one-time code ${details.code}. The code is valid for about 15 minutes. Continue after logging in? You can press Continue again if login is still pending.`, ['Continue (after logging in)', 'Cancel'])
+      } catch { return expired || helperExpired ? 'expired' : 'cancelled' }
+      if (expired || helperExpired) return 'expired'
+      if (answer !== 'Continue (after logging in)') return 'cancelled'
       let timer: { cancel: () => void } | undefined
-      const wait = new Promise<undefined>(resolve => { timer = $.clock.after(60_000, () => resolve(undefined)) })
+      const wait = new Promise<undefined>(resolve => { timer = $.clock.after(DEVICE_WAIT_INTERVAL, () => resolve(undefined)) })
       const result = await Promise.race([done, wait])
       timer?.cancel()
-      if (result !== undefined) return success = result && !expired
+      if (expired || helperExpired) return 'expired'
+      if (result !== undefined) {
+        success = result
+        return result ? 'success' : 'failed'
+      }
     }
-    return false
-  } catch { return false } finally {
+  } catch { return expired || helperExpired ? 'expired' : 'failed' } finally {
     deadline.cancel()
     await close()
     if (created && !success) await clean()
@@ -1267,7 +1286,11 @@ async function setupCodex($: EngineInterface, c?: Config): Promise<string> {
       const mkdir = windows ? `New-Item -ItemType Directory -Force -LiteralPath ${powershellQuote(accountHome)}` : `mkdir -p -- ${shellQuote(accountHome)}`
       const login = loginCommand(runtime, { account, model: '', directory: accountHome })
       const manual = `model-mod: Codex login (${account}): create the account directory and log in from your ${windows ? 'PowerShell' : 'terminal'}, then run /model-mod:setup again:\n${mkdir}\n${login}`
-      try { if (!await deviceSetup($, runtime, accountHome, dir, account, created)) return manual } catch { return manual }
+      const device = await deviceSetup($, runtime, accountHome, dir, account, created)
+      if (device === 'expired') return 'model-mod: Codex login: device code expired; run /model-mod:setup again to get a new code.'
+      if (device === 'cancelled') return 'model-mod: Codex login cancelled; run /model-mod:setup again when ready.'
+      if (device === 'failed') return 'model-mod: Codex device login failed; run /model-mod:setup again.\n' + manual
+      if (device === 'manual') return manual
       check = await helperRun($, runtime, 'check', accountHome, 15_000)
     }
     if (check.exitCode === 67) return `model-mod: Codex login (${account}): codex too old; upgrade to 0.165.0 or newer`
