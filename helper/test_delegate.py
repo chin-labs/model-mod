@@ -257,17 +257,22 @@ class DelegateTest(unittest.TestCase):
         records = self.records()
         thread = next(r['params'] for r in records if r.get('method') == 'thread/start')
         turn = next(r['params'] for r in records if r.get('method') == 'turn/start')
-        self.assertEqual(thread['sandbox'], 'workspace-write')
-        self.assertEqual(thread['approvalPolicy'], 'never')
-        self.assertEqual(turn['sandboxPolicy'], {'type': 'workspaceWrite', 'writableRoots': [root], 'networkAccess': False,
-                                                   'excludeTmpdirEnvVar': True, 'excludeSlashTmp': True})
+        self.assertEqual(thread, {'serviceName': 'model_mod', 'model': 'chat', 'cwd': root, 'sandbox': 'workspace-write',
+                                  'approvalPolicy': 'never', 'ephemeral': True,
+                                  'config': {'sandbox_workspace_write': {'writable_roots': [root], 'network_access': False,
+                                                                         'exclude_tmpdir_env_var': True, 'exclude_slash_tmp': True}}})
+        self.assertEqual(turn, {'threadId': '12345678-1234-4234-8234-123456789abc', 'model': 'chat', 'effort': None,
+                                'sandboxPolicy': {'type': 'workspaceWrite', 'writableRoots': [root], 'networkAccess': False,
+                                                  'excludeTmpdirEnvVar': True, 'excludeSlashTmp': True},
+                                'input': [{'type': 'text', 'text': 'test', 'text_elements': []}]})
         self.assertEqual([r['result'] for r in records if r.get('id') in ('approval1', 'approval2')],
                          [{'decision': 'decline'}, {'decision': 'decline'}])
         self.log.unlink()
         self.mode('delegate_bad_sandbox')
         with self.assertRaisesRegex(delegate.Failure, 'sandbox'): delegate.execute(dict(request))
         self.assertFalse(any(r.get('method') == 'turn/start' for r in self.records()))
-        with self.assertRaises(delegate.Failure): delegate.execute(dict(request, writeRoot='/'))
+        self.mode('delegate_approval')
+        with self.assertRaisesRegex(delegate.Failure, 'Working directory'): delegate.execute(dict(request, writeRoot='/'))
         for unsafe in ('/', os.path.expanduser('~'), str(self.account_dir), str(self.account_dir.parent)):
             with self.assertRaises(delegate.Failure):
                 delegate.validate_write_root(unsafe, str(self.account_dir.parent), 'test')
