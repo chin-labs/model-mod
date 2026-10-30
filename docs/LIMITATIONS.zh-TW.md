@@ -2,7 +2,7 @@
 
 [English](LIMITATIONS.md)
 
-本頁說明你的模型與訂閱模型有何不同、哪些行為尚未驗證，以及哪些客戶端請求仍可能送到你的訂閱。適用範圍是由 model-mod 路由的模型；訂閱模型維持客戶端原本的路徑。已測試的 API 上游是 CLIProxyAPI ；Codex 登入是另一種上游。設定方式見 [README](../README.zh-TW.md)。
+本頁說明你的模型與訂閱模型有何不同、哪些行為尚未驗證，以及哪些客戶端請求仍可能送到你的訂閱。適用範圍是由 model-mod 路由的模型；訂閱模型維持客戶端原本的路徑。 CLIProxyAPI 是已測試的 API 上游；Codex 登入是另一種上游。設定方式見 [README](../README.zh-TW.md)。
 
 ## 已測試版本
 
