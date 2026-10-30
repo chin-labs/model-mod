@@ -1,6 +1,7 @@
 import json
 import os
 import signal
+import shutil
 import subprocess
 import tempfile
 import time
@@ -167,22 +168,181 @@ class DelegateTest(unittest.TestCase):
         subprocess.run(['git', '-C', str(sub), 'config', 'filter.x.clean', str(script)], check=True)
         (sub / '.gitattributes').write_text('* filter=x\n')
         (sub / 'file').write_text('different\n')
-        self.assertIn(b'Subproject commit', delegate.diff_for(str(super_repo), None))
-        self.assertFalse(flag.exists())
+        for setting in ('clean', 'smudge', 'process'):
+            subprocess.run(['git', '-C', str(sub), 'config', '--unset-all', 'filter.x.clean'], check=False)
+            subprocess.run(['git', '-C', str(sub), 'config', 'filter.x.' + setting, str(script)], check=True)
+            subprocess.run(['git', '-C', str(super_repo), 'diff', 'HEAD'], stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL, timeout=5)
+            self.assertEqual(flag.exists(), setting != 'smudge', setting)
+            if flag.exists(): flag.unlink()
+            self.assertIn(b'Subproject commit', delegate.diff_for(str(super_repo), None))
+            self.assertFalse(flag.exists())
+            subprocess.run(['git', '-C', str(sub), 'config', '--unset-all', 'filter.x.' + setting], check=True)
         super_git('branch', 'baseline')
         super_git('config', 'diff.submodule', 'diff')
         for key in ('diff.external', 'diff.x.textconv'):
             subprocess.run(['git', '-C', str(sub), 'config', key, str(script)], check=True)
             (sub / '.gitattributes').write_text('* diff=x\n')
+            super_git('diff', 'HEAD')
+            self.assertTrue(flag.exists(), key)
+            flag.unlink()
             self.assertIn(b'Subproject commit', delegate.diff_for(str(super_repo), None))
             self.assertFalse(flag.exists())
             subprocess.run(['git', '-C', str(sub), 'config', '--unset', key], check=True)
         super_git('commit', '-qm', 'update submodule')
         for key in ('diff.external', 'diff.x.textconv'):
             subprocess.run(['git', '-C', str(sub), 'config', key, str(script)], check=True)
+            super_git('diff', 'baseline...HEAD')
+            self.assertTrue(flag.exists(), key)
+            flag.unlink()
             self.assertIn(b'Subproject commit', delegate.diff_for(str(super_repo), 'baseline'))
             self.assertFalse(flag.exists())
             subprocess.run(['git', '-C', str(sub), 'config', '--unset', key], check=True)
+
+    def test_git_configuration_matrix(self):
+        def command(repo, *args, env=None):
+            return subprocess.run(['git', '-C', str(repo), *args], env=env, stdout=subprocess.PIPE,
+                                  stderr=subprocess.PIPE, check=True)
+
+        (self.repo / 'stable').write_text('stable\n')
+        (self.repo / 'staged').write_text('original staged\n')
+        command(self.repo, 'add', 'stable', 'staged')
+        command(self.repo, 'commit', '-qm', 'add stable')
+        command(self.repo, 'branch', 'baseline')
+        (self.repo / 'file').write_text('committed change\n')
+        command(self.repo, 'commit', '-qam', 'change')
+        (self.repo / 'file').write_text('unstaged change\n')
+        (self.repo / 'staged').write_text('staged change\n')
+        command(self.repo, 'add', 'staged')
+        branch = command(self.repo, 'branch', '--show-current').stdout.decode().strip()
+        version = tuple(map(int, subprocess.check_output(['git', '--version'], text=True).split()[2].split('.')[:2]))
+        rows = [
+            ('diff.external', 'config', True, True), ('diff.x.command', 'config', True, True),
+            ('diff.x.textconv', 'config', True, True), ('filter.x.clean', 'config', True, False),
+            ('filter.x.smudge', 'config', False, False), ('filter.x.process', 'config', True, False),
+            ('core.fsmonitor', 'config', True, False), ('core.hooksPath', 'hookpath', True, False),
+            ('hooks/post-index-change', 'hook', True, False),
+            ('core.pager', 'config', False, False), ('pager.diff', 'config', False, False),
+            ('core.sshCommand', 'config', False, False), ('core.editor', 'config', False, False),
+            ('core.askPass', 'config', False, False), ('credential.helper', 'config', False, False),
+            ('gpg.program', 'config', False, False), ('gpg.openpgp.program', 'config', False, False),
+            ('merge.x.driver', 'config', False, False), ('alias.example', 'config', False, False),
+            ('submodule.x.update', 'config', False, False), ('submodule.x.ignore', 'ignore', False, False),
+            ('diff.submodule', 'submodule', False, False),
+            ('info/attributes', 'info', True, False), ('core.attributesFile', 'attributes', True, False),
+            ('include.path', 'include', True, False), ('includeIf.onbranch', 'onbranch', True, False),
+            ('includeIf.gitdir', 'gitdir', True, False), ('config.worktree', 'worktree', True, False),
+            ('GIT_CONFIG_COUNT', 'env', True, True), ('GIT_CONFIG_PARAMETERS', 'env', True, True),
+            ('GIT_EXTERNAL_DIFF', 'env', True, True), ('GIT_PAGER', 'env', False, False),
+            ('GIT_SSH_COMMAND', 'env', False, False), ('GIT_DIR', 'env', False, False),
+            ('GIT_WORK_TREE', 'env', False, False), ('GIT_INDEX_FILE', 'env', False, False),
+            ('GIT_ATTR_SOURCE', 'env', False, False), ('GIT_ATTR_NOSYSTEM', 'env', False, False),
+            ('diff=x', 'attribute', True, True), ('filter=x', 'attribute', True, False),
+            ('merge=x', 'attribute', False, False), ('export-subst', 'attribute', False, False),
+            ('ident', 'attribute', False, False), ('text', 'attribute', False, False),
+            ('eol=lf', 'attribute', False, False), ('working-tree-encoding=UTF-8', 'attribute', False, False),
+        ]
+        if version >= (2, 54):
+            rows.append(('hook.x.command', 'config-hook', True, False))
+        else:
+            print('Git < 2.54: configured hook control skipped')
+        for number, (key, fixture, head_control, base_control) in enumerate(rows):
+            with self.subTest(key=key):
+                repo = self.root / ('matrix-%d' % number)
+                shutil.copytree(self.repo, repo, symlinks=True)
+                flag = self.root / ('matrix-flag-%d' % number)
+                script = self.root / ('matrix-script-%d' % number)
+                script.write_text('#!/bin/sh\nprintf marker > "' + str(flag) + '"\n')
+                script.chmod(0o755)
+                (repo / '.gitattributes').write_text('* diff=x filter=x merge=x\n')
+                marker = str(script)
+                env = dict(os.environ)
+                if fixture in ('config', 'ignore', 'submodule', 'config-hook'):
+                    value = 'none' if fixture == 'ignore' else 'diff' if fixture == 'submodule' else marker
+                    if key in ('alias.example', 'submodule.x.update'): value = '!' + marker
+                    command(repo, 'config', key, value)
+                    if fixture == 'config-hook': command(repo, 'config', 'hook.x.event', 'post-index-change')
+                elif fixture in ('hookpath', 'hook'):
+                    hooks = self.root / ('hooks-%d' % number) if fixture == 'hookpath' else repo / '.git' / 'hooks'
+                    hooks.mkdir(exist_ok=True)
+                    hook = hooks / 'post-index-change'
+                    hook.write_text(script.read_text()); hook.chmod(0o755)
+                    if fixture == 'hookpath': command(repo, 'config', 'core.hooksPath', str(hooks))
+                elif fixture in ('info', 'attributes', 'include', 'onbranch', 'gitdir', 'worktree'):
+                    if fixture == 'info':
+                        (repo / '.git' / 'info' / 'attributes').write_text('* filter=x\n')
+                        (repo / '.gitattributes').unlink()
+                        command(repo, 'config', 'filter.x.clean', marker)
+                    elif fixture == 'attributes':
+                        attrs = self.root / ('attributes-%d' % number)
+                        attrs.write_text('* filter=x\n')
+                        (repo / '.gitattributes').unlink()
+                        command(repo, 'config', 'core.attributesFile', str(attrs))
+                        command(repo, 'config', 'filter.x.clean', marker)
+                    else:
+                        included = self.root / ('include-%d' % number)
+                        included.write_text('[filter "x"]\n clean = ' + marker + '\n')
+                        if fixture == 'worktree':
+                            command(repo, 'config', 'extensions.worktreeConfig', 'true')
+                            (repo / '.git' / 'config.worktree').write_text(included.read_text())
+                        else:
+                            name = {'include': 'include.path', 'onbranch': 'includeIf.onbranch:' + branch + '.path',
+                                    'gitdir': 'includeIf.gitdir:' + os.path.realpath(repo / '.git') + '.path'}[fixture]
+                            command(repo, 'config', name, str(included))
+                elif fixture == 'env':
+                    if key == 'GIT_CONFIG_COUNT':
+                        env.update(GIT_CONFIG_COUNT='1', GIT_CONFIG_KEY_0='diff.external', GIT_CONFIG_VALUE_0=marker)
+                    elif key == 'GIT_CONFIG_PARAMETERS': env[key] = "'diff.external=" + marker + "'"
+                    elif key in ('GIT_EXTERNAL_DIFF', 'GIT_PAGER', 'GIT_SSH_COMMAND'): env[key] = marker
+                    elif key == 'GIT_DIR': env[key] = str(repo / '.git')
+                    elif key == 'GIT_WORK_TREE': env[key] = str(repo)
+                    elif key == 'GIT_INDEX_FILE': env[key] = str(repo / '.git' / 'index')
+                    elif key == 'GIT_ATTR_SOURCE': env[key] = 'HEAD'
+                    else: env[key] = '1'
+                else:
+                    (repo / '.gitattributes').write_text('* ' + key + '\n')
+                    if key == 'diff=x': command(repo, 'config', 'diff.x.command', marker)
+                    if key == 'filter=x': command(repo, 'config', 'filter.x.clean', marker)
+                    if key == 'merge=x': command(repo, 'config', 'merge.x.driver', marker)
+                for base, expected_control, expected_diff in ((None, head_control, b'unstaged change'),
+                                                               ('baseline', base_control, b'committed change')):
+                    os.utime(repo / 'stable', (1, 1))
+                    control = subprocess.run(['git', '-C', str(repo), 'diff', 'HEAD' if base is None else 'baseline...HEAD', '--'],
+                                             env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    self.assertEqual(flag.exists(), expected_control, (key, base, control.stderr))
+                    if flag.exists(): flag.unlink()
+                    os.utime(repo / 'stable', (2, 2))
+                    index_before = (repo / '.git' / 'index').read_bytes()
+                    with patch.dict(os.environ, env, clear=True):
+                        result = delegate.diff_for(str(repo), base)
+                    self.assertIn(expected_diff, result)
+                    if base is None: self.assertIn(b'staged change', result)
+                    self.assertFalse(flag.exists(), (key, base))
+                    if fixture == 'config-hook' and base is None:
+                        self.assertEqual(index_before, (repo / '.git' / 'index').read_bytes())
+                if fixture == 'hook' and version >= (2, 36):
+                    command(repo, 'hook', 'run', 'post-index-change')
+                    self.assertTrue(flag.exists())
+                    flag.unlink()
+                    delegate.git(str(repo), ['hook', 'run', '--ignore-missing', 'post-index-change'])
+                    self.assertFalse(flag.exists())
+                if fixture == 'config-hook':
+                    events = ('applypatch-msg', 'pre-applypatch', 'post-applypatch', 'pre-commit', 'pre-merge-commit',
+                              'prepare-commit-msg', 'commit-msg', 'post-commit', 'pre-rebase', 'post-checkout',
+                              'post-merge', 'pre-push', 'pre-receive', 'update', 'proc-receive', 'post-receive',
+                              'post-update', 'reference-transaction', 'push-to-checkout', 'pre-auto-gc', 'post-rewrite',
+                              'sendemail-validate', 'fsmonitor-watchman', 'p4-changelist', 'p4-prepare-changelist',
+                              'p4-post-changelist', 'p4-pre-submit', 'post-index-change')
+                    for event_index, event in enumerate(events):
+                        command(repo, 'config', '--replace-all', 'hook.x.event', event)
+                        for base, expected_diff in ((None, b'unstaged change'), ('baseline', b'committed change')):
+                            os.utime(repo / 'stable', (100 + event_index, 100 + event_index))
+                            command(repo, 'diff', 'HEAD' if base is None else 'baseline...HEAD', '--')
+                            self.assertEqual(flag.exists(), event == 'post-index-change' and base is None, (event, base))
+                            if flag.exists(): flag.unlink()
+                            os.utime(repo / 'stable', (200 + event_index, 200 + event_index))
+                            self.assertIn(expected_diff, delegate.diff_for(str(repo), base))
+                            self.assertFalse(flag.exists(), (event, base))
 
     def test_blocked_stdin_times_out(self):
         self.mode('delegate_no_read')
