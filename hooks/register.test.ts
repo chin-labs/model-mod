@@ -56,7 +56,7 @@ function world(on: On, config: Record<string, unknown> | null, model: string, sp
   on('session.cwd', async () => ({ value: '/work' }))
   on('fs.exists', async (_$, e) => ({ value: e.path in w.files }))
   on('fs.write', async (_$, e) => { w.files[e.path] = e.text; w.writes.push(e.path); return { value: undefined } })
-  on('config.list', async () => ({ value: [{ key: 'model', label: 'Model', kind: 'choice' as const, value: 'Default', options: ['default', 'sonnet', 'opus', 'haiku', 'best'], provider: { plugin: 'engine', tier: 'core' as const }, isLocked: false }, ...['baseUrl', 'models', 'codexAccounts', 'codexModels', 'apiKey', 'fallbackModel', 'workerModel'].map(field => ({ key: 'model-mod.' + field, label: field,
+  on('config.list', async () => ({ value: [{ key: 'model', label: 'Model', kind: 'choice' as const, value: 'Default', options: ['default', 'sonnet', 'opus', 'haiku', 'best'], provider: { plugin: 'engine', tier: 'core' as const }, isLocked: false }, ...['baseUrl', 'models', 'codexAccounts', 'codexModels', 'fallbackModel', 'workerModel'].map(field => ({ key: 'model-mod.' + field, label: field,
     kind: 'text' as const, value: w.configValues[field] ?? '', provider: { plugin: 'model-mod', tier: 'user' as const }, isLocked: false }))] }))
   on('config.set', async (_$, e) => {
     const refused = w.configSet?.(e.key)
@@ -1520,10 +1520,47 @@ test('manage: removing an API leaves Codex configured and does not expose the ke
   const result = await $.command.run(SETUP)
   expect(result.text).toContain('API upstream removed')
   expect(JSON.stringify(w.questions) + result.text).not.toContain(KEY)
-  expect(w.saved).toContainEqual({ key: 'model-mod.apiKey', value: '' })
+  expect(w.saved.some(x => x.key === 'model-mod.apiKey')).toBe(false)
+  expect(w.saved).toContainEqual({ key: 'model-mod.baseUrl', value: '' })
+  expect(result.text).toContain("key remains in the client's secure storage")
+  w.answers = ['Compatible API server']
+  expect((await $.command.run(SETUP)).text).toContain('enter a new API key')
+  expect(w.fetched).toEqual([])
   expect(w.saved.some(x => x.key.endsWith('.codexAccounts'))).toBe(false)
   await $.session.start({ cwd: '/work' } as never)
   expect((await drain($.turn.step(STEP(LOCAL)))).result.answer).toContain('not in the allowlist; use /model')
+})
+
+test('manage: API removal rollback restores settings and leaves the key untouched', { options: { ...OPTIONS, models: LOCAL } }, async ($, on) => {
+  const w = world(on, null, LOCAL, { stdout: '', code: 0 })
+  w.configValues = { baseUrl: OPTIONS.baseUrl, models: LOCAL }
+  w.configSet = key => key.endsWith('.models') ? { deny: 'locked' } : undefined
+  w.chooseUpstream = true
+  w.answers = ['Manage configured upstreams', 'API 127.0.0.1; models=1; key=configured', 'Remove']
+  expect((await $.command.run(SETUP)).text).toContain('previous settings restored')
+  expect(w.saved).toEqual([{ key: 'model-mod.baseUrl', value: '' }, { key: 'model-mod.baseUrl', value: OPTIONS.baseUrl }])
+  expect(w.store.removedApiKey).toBe(null)
+})
+
+test('options: a retained key without a base URL never enables an API', { options: { ...OPTIONS, baseUrl: '' } }, async ($, on) => {
+  const w = world(on, baseConfig, LOCAL, { stdout: '', code: 0 })
+  await $.session.start({ cwd: '/work' } as never)
+  expect((await $.command.run({ ...SETUP, command: 'model-mod:status' })).text).toContain('inactive')
+  expect(w.fetched).toEqual([])
+  expect(w.spawned).toEqual([])
+})
+
+test('setup: readding a removed API requires a different key before any request', { options: { ...OPTIONS, apiKey: KEY + '-replacement', baseUrl: '' } }, async ($, on) => {
+  const w = world(on, null, LOCAL, { stdout: '', code: 0 })
+  const salt = 'test-salt'
+  const digest = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(salt + KEY))), b => b.toString(16).padStart(2, '0')).join('')
+  w.store.removedApiKey = { salt, digest }
+  w.models = [LOCAL]
+  w.answers = ['Change', 'http://localhost:9999/new', 'All (recommended)']
+  expect((await $.command.run(SETUP)).text).toContain('1 local models selected')
+  expect(w.fetched[0]!.url).toBe('http://localhost:9999/new/v1/models')
+  expect(w.store.removedApiKey).toBe(null)
+  expect(w.saved.some(x => x.key.endsWith('.apiKey'))).toBe(false)
 })
 
 test('manage: a file-provided API requires manual removal', async ($, on) => {

@@ -17,6 +17,7 @@ All notable changes to this project are listed here. The format follows [Keep a 
 - Side-question command messages no longer repeat the client label, and the informational agent message count status is no longer shown.
 
 ### Fixed
+- Removing an API upstream disables it without clearing its key from the client’s secure storage; readding it requires a new key.
 - Explicit Codex `contextWindow` settings are no longer replaced by the default.
 - Tool references in Codex tool results are separated from adjacent text.
 - Waiting turns check every item for unsupported behavior and retain recognized dynamic tool calls received after interruption.
