@@ -6,7 +6,7 @@
 
 執行 `/model-mod:setup` 之後：
 
-1. 執行 `/model-mod:status`。mod 啟用時會回覆一行，例如 `model-mod <version>: picker=active; host=127.0.0.1; config=…; models=3; …`，其中 `models` 是提供的模型數。只設定 Codex 登入時，改顯示各帳號的狀態，不含 `host`、`config`、`models`。`model-mod: inactive; …` 表示沒有可用的上游設定（見疑難排解）。若回覆是說明插件 hook 未載入的文字，代表插件在此工作階段尚未啟用：執行 `/reload-plugins` 或重新啟動 Claude Code。
+1. 執行 `/model-mod:status`。mod 啟用時會回覆一行，例如 `model-mod: <version>: picker=active; host=127.0.0.1; config=…; models=3; …`，其中 `models` 是提供的模型數。只設定 Codex 登入時，改顯示各帳號的狀態，不含 `host`、`config`、`models`。`model-mod: inactive; …` 表示沒有可用的上游設定（見疑難排解）。若回覆是說明插件 hook 未載入的文字，代表插件在此工作階段尚未啟用：執行 `/reload-plugins` 或重新啟動 Claude Code。
 2. 執行 `/model-mod:model`，選一個你的模型並送出一則短訊息。回答來自你的上游。上游停擺或拒絕金鑰時，該回合會以錯誤訊息結束，不會改用訂閱重試。
 
 ## 症狀
