@@ -18,6 +18,49 @@ TOOLS = [{'name': 'one', 'input_schema': {'type': 'object'}}, {'name': 'two', 'i
 
 
 class Contract(unittest.TestCase):
+    def test_account_home_boundaries(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp, 'accounts')
+            outside = Path(tmp, 'outside')
+            outside.mkdir()
+            root.mkdir()
+            def run(command, account, home):
+                return subprocess.run([sys.executable, str(BRIDGE), command, '--codex-home', str(home), '--accounts-dir', str(root), '--account', account], text=True, capture_output=True)
+            self.assertEqual(run('prepare-home', 'main', root / 'main').returncode, 0)
+            self.assertEqual((root / 'main').stat().st_mode & 0o777, 0o700)
+            (root / 'link').symlink_to(outside, target_is_directory=True)
+            for account, home in [('link', root / 'link'), ('main', outside), ('main', root), ('../outside', root / '../outside'), ('Bad', root / 'Bad')]:
+                self.assertEqual(run('remove-home', account, home).returncode, 69)
+            self.assertTrue(outside.is_dir())
+            self.assertEqual(run('remove-home', 'main', root / 'main').returncode, 0)
+            self.assertFalse((root / 'main').exists())
+
+    def test_device_login_cancel(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp, 'home')
+            home.mkdir()
+            log = Path(tmp, 'log')
+            (home / 'fake_config.json').write_text(json.dumps({'log': str(log)}))
+            proc = subprocess.Popen([sys.executable, str(BRIDGE), 'device-login', '--codex-home', str(home), '--codex-bin', str(FAKE)], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            try:
+                data = json.loads(proc.stdout.readline())
+                self.assertEqual(data, {'url': 'https://example.test/device', 'code': 'ABCD-EFGHI'})
+                records = json.loads(log.read_text().splitlines()[0])
+                proc.terminate()
+                proc.communicate(timeout=10)
+                for pid in records.values():
+                    for _ in range(50):
+                        try: os.kill(pid, 0)
+                        except ProcessLookupError: break
+                        time.sleep(.02)
+                    else: self.fail('login process survived cancellation')
+            finally:
+                if proc.poll() is None: proc.kill(); proc.wait()
+            (home / 'fake_config.json').write_text(json.dumps({'mode': 'no_device_url'}))
+            failed = subprocess.run([sys.executable, str(BRIDGE), 'device-login', '--codex-home', str(home), '--codex-bin', str(FAKE)], capture_output=True, text=True, timeout=10)
+            self.assertNotEqual(failed.returncode, 0)
+            self.assertNotIn('https://', failed.stdout)
+
     def run_bridge(self, body=BASE, mode='text', log=None, extra=()):
         with tempfile.TemporaryDirectory() as home:
             Path(home, 'fake_config.json').write_text(json.dumps({'mode': mode, 'log': str(log) if log else None}))

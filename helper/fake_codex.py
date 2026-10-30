@@ -2,6 +2,7 @@
 """Fake app-server for offline JSONL contract tests."""
 import json
 import os
+import subprocess
 import sys
 import time
 
@@ -28,6 +29,18 @@ def event(method, params):
 if '--version' in sys.argv:
     print('codex-cli ' + config.get('version', '0.0.0' if config.get('mode') == 'version' else '0.165.0'))
     sys.exit(0)
+if 'logout' in sys.argv:
+    sys.exit(1 if config.get('mode') == 'logout_fail' else 0)
+if 'login' in sys.argv and '--device-auth' in sys.argv:
+    child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])
+    record({'pid': os.getpid(), 'child': child.pid})
+    if config.get('mode') != 'no_device_url':
+        print('1. Open this link in your browser and sign in to your account', flush=True)
+        print('   \x1b[94mhttps://example.test/device\x1b[0m', flush=True)
+        print('2. Enter this one-time code \x1b[90m(expires in 15 minutes)\x1b[0m', flush=True)
+        print('   \x1b[94mABCD-EFGHI\x1b[0m', flush=True)
+        time.sleep(60)
+    sys.exit(1)
 if 'status' in sys.argv:
     print('Logged in using ChatGPT')
     sys.exit(1 if config.get('mode') == 'logged_out' else 0)

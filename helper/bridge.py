@@ -381,16 +381,82 @@ def clean_old_directories():
         except OSError: pass
 
 
+def account_home(root, account, create=False):
+    if not os.path.isabs(root) or '..' in root.replace('\\', '/').split('/') or not re.fullmatch(r'[a-z0-9][a-z0-9-]{0,31}', account):
+        raise BridgeError('Codex login: invalid account directory', code='invalid_home')
+    if create: os.makedirs(root, mode=0o700, exist_ok=True)
+    base = os.path.realpath(root)
+    target = os.path.join(base, account)
+    if os.path.islink(target) or os.path.commonpath((base, os.path.realpath(target))) != base or os.path.realpath(target) == base:
+        raise BridgeError('Codex login: invalid account directory', code='invalid_home')
+    created = False
+    if create:
+        try:
+            os.mkdir(target, 0o700)
+            created = True
+        except FileExistsError:
+            if os.path.islink(target) or not os.path.isdir(target): raise BridgeError('Codex login: invalid account directory', code='invalid_home')
+    return target, created
+
+
+def device_login(args):
+    proc = subprocess.Popen([args.codex_bin, 'login', '--device-auth'], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            env=env(args.codex_home), start_new_session=(os.name == 'posix'))
+    lines = queue.Queue()
+    def read_output():
+        try:
+            for line in proc.stdout: lines.put(line.decode('utf-8', 'replace'))
+        finally: lines.put(None)
+    threading.Thread(target=read_output, daemon=True).start()
+    deadline = time.monotonic() + 600
+    url = code = None
+    expecting_url = expecting_code = False
+    try:
+        while time.monotonic() < deadline:
+            try: line = lines.get(timeout=min(1, max(0.01, deadline - time.monotonic())))
+            except queue.Empty:
+                if proc.poll() is not None: break
+                continue
+            if line is None: break
+            line = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', line).strip()
+            if expecting_url and re.fullmatch(r'https://[A-Za-z0-9.-]+(?::[0-9]+)?/[A-Za-z0-9/_-]+', line): url, expecting_url = line, False
+            elif expecting_code and re.fullmatch(r'[A-Z0-9]{4}-[A-Z0-9]{4,8}', line): code, expecting_code = line, False
+            if 'Open this link' in line: expecting_url = True
+            if 'Enter this one-time code' in line: expecting_code = True
+            if url and code:
+                print(json.dumps({'url': url, 'code': code}), flush=True)
+                break
+        if not url or not code: return False
+        try: return proc.wait(timeout=max(0.01, deadline - time.monotonic())) == 0
+        except subprocess.TimeoutExpired: return False
+    finally:
+        if os.name == 'posix':
+            try: os.killpg(proc.pid, signal.SIGTERM)
+            except ProcessLookupError: pass
+        elif proc.poll() is None:
+            subprocess.run(['taskkill', '/PID', str(proc.pid), '/T', '/F'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+        try: proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            if os.name == 'posix':
+                try: os.killpg(proc.pid, signal.SIGKILL)
+                except ProcessLookupError: pass
+            else: proc.kill()
+            proc.wait()
+
+
 def main():
     if sys.version_info < (3, 9):
         print('model-mod-note:Codex login: Python 3.9 or newer required', file=sys.stderr)
         return 78
     parser = argparse.ArgumentParser(prog='bridge')
     subs = parser.add_subparsers(dest='command', required=True)
-    for name in ('messages', 'rate-limits', 'check', 'models'):
+    for name in ('messages', 'rate-limits', 'check', 'models', 'prepare-home', 'device-login', 'logout', 'remove-home', 'cleanup-home'):
         sub = subs.add_parser(name)
         sub.add_argument('--codex-home', required=True)
         sub.add_argument('--codex-bin', default='codex')
+        if name in ('prepare-home', 'remove-home', 'cleanup-home'):
+            sub.add_argument('--accounts-dir', required=True)
+            sub.add_argument('--account', required=True)
         if name == 'messages':
             sub.add_argument('--model-map', action='append', default=[])
             sub.add_argument('--idle-seconds', type=float, default=300)
@@ -415,6 +481,30 @@ def main():
         threading.Thread(target=watch_stdout, daemon=True).start()
     try:
         prepared = None
+        if args.command in ('prepare-home', 'remove-home', 'cleanup-home'):
+            if ('..' in args.codex_home.replace('\\', '/').split('/') or
+                    os.path.normcase(os.path.abspath(args.codex_home)) != os.path.normcase(os.path.abspath(os.path.join(args.accounts_dir, args.account)))):
+                raise BridgeError('Codex login: invalid account directory', code='invalid_home')
+            target, created = account_home(args.accounts_dir, args.account, args.command == 'prepare-home')
+            if os.path.normcase(os.path.realpath(args.codex_home)) != os.path.normcase(target):
+                raise BridgeError('Codex login: invalid account directory', code='invalid_home')
+            if args.command == 'remove-home':
+                if os.name == 'posix':
+                    fd = os.open(os.path.dirname(target), os.O_RDONLY | getattr(os, 'O_DIRECTORY', 0))
+                    try: shutil.rmtree(args.account, dir_fd=fd)
+                    finally: os.close(fd)
+                else: shutil.rmtree(target)
+            elif args.command == 'cleanup-home':
+                # Never remove files or nonempty directories on cancellation.
+                for name in ('log', 'tmp'):
+                    path = os.path.join(target, name)
+                    if os.path.isdir(path) and not os.path.islink(path):
+                        try: os.rmdir(path)
+                        except OSError: pass
+                try: os.rmdir(target)
+                except OSError: pass
+            print(json.dumps({'created': created}), flush=True)
+            return 0
         if not os.path.isabs(args.codex_home) or not os.path.isdir(args.codex_home):
             raise BridgeError('Codex login: account home must be an existing absolute directory', code='invalid_home')
         if args.command == 'messages':
@@ -439,7 +529,14 @@ def main():
         clean_old_directories()
         version, version_status = verify_version(args)
         home_warnings = warnings(args.codex_home)
-        if args.command == 'check':
+        if args.command == 'device-login':
+            if not device_login(args): raise BridgeError('Codex login: device login failed', code='codex_not_logged_in')
+        elif args.command == 'logout':
+            try: r = subprocess.run([args.codex_bin, 'logout'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15, env=env(args.codex_home))
+            except (OSError, subprocess.TimeoutExpired): raise BridgeError('Codex login: logout failed', code='codex_unavailable')
+            if r.returncode: raise BridgeError('Codex login: logout failed', code='codex_unavailable')
+            print(json.dumps({'ok': True}), flush=True)
+        elif args.command == 'check':
             try: r = subprocess.run([args.codex_bin, 'login', 'status'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True, timeout=15, env=env(args.codex_home))
             except (OSError, subprocess.TimeoutExpired): raise BridgeError('Codex login: unable to check login status', code='codex_unavailable')
             if r.returncode: raise BridgeError('Codex login: not logged in', 401, 'authentication_error', code='codex_not_logged_in')
