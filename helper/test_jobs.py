@@ -1,0 +1,60 @@
+import os
+import tempfile
+import threading
+import time
+import unittest
+
+import jobs
+
+
+class JobStoreTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory(prefix='model-mod-jobs-')
+        self.store = jobs.Store(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def create(self):
+        return self.store.create(self.tmp.name, 'test', 'chat', None, 'rescue', 'read-only', 'generation')
+
+    def test_terminal_state_race(self):
+        record = self.create()
+        ident = record['id']
+        self.assertFalse(self.store.transition(ident, 'completed'))
+        self.assertTrue(self.store.transition(ident, 'starting'))
+        self.assertTrue(self.store.transition(ident, 'running'))
+        self.assertTrue(self.store.transition(ident, 'cancelling'))
+        outcomes = []
+        threads = [threading.Thread(target=lambda state=state: outcomes.append(self.store.transition(ident, state)))
+                   for state in ('completed', 'cancelled')]
+        for thread in threads: thread.start()
+        for thread in threads: thread.join()
+        self.assertEqual(sorted(outcomes), [False, True])
+        self.assertFalse(self.store.transition(ident, 'failed'))
+
+    def test_private_records_and_cleanup(self):
+        record = self.create()
+        ident = record['id']
+        self.assertEqual(os.stat(self.tmp.name).st_mode & 0o777, 0o700)
+        self.assertEqual(os.stat(self.store.path(ident, '.json')).st_mode & 0o777, 0o600)
+        self.assertTrue(self.store.transition(ident, 'starting'))
+        self.assertTrue(self.store.transition(ident, 'running'))
+        self.assertTrue(self.store.transition(ident, 'completed', result='\x1b[31mhello\x1b[0m'))
+        with open(self.store.path(ident, '.result'), encoding='utf-8') as source:
+            self.assertEqual(source.read(), 'hello')
+        self.assertEqual(os.stat(self.store.path(ident, '.result')).st_mode & 0o777, 0o600)
+        self.assertEqual(self.store.clear(older_than=time.time() - jobs.RETENTION_SECONDS), 0)
+        self.assertEqual(self.store.clear(workspace=jobs.workspace_hash(self.tmp.name)), 1)
+        self.assertEqual(self.store.records(), [])
+
+    def test_limit_and_id_resolution(self):
+        old = jobs.MAX_JOBS
+        jobs.MAX_JOBS = 2
+        try:
+            first, second = self.create(), self.create()
+            self.assertEqual(self.store.resolve(first['id'])['id'], first['id'])
+            with self.assertRaises(ValueError): self.store.create(self.tmp.name, 'test', 'chat', None, 'rescue', 'read-only', 'generation')
+            with self.assertRaises(ValueError): self.store.resolve('../')
+        finally:
+            jobs.MAX_JOBS = old
