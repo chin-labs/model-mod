@@ -65,7 +65,7 @@ claude plugin configure model-mod@model-mod
 |---|---|
 | `/model-mod:setup` | 選擇上游，再設定帳號或網址並選擇模型。取消不會更動設定。 |
 | `/model-mod:model` | 列出你的模型並切換到所選的那個（↑↓ 移動、Enter 選取、Esc 關閉）。終端機太矮、或來自 Remote Control／手機時，改用分頁選單。 |
-| `/model-mod:refresh` | 重新載入提示檔並檢查 Codex 登入狀態、CLI 版本與額度。未設定 schema 更新命令時，更新已設定的 API 模型清單；否則執行該命令更新工具 schema。改過的選項需 `/reload-plugins` 才會生效。 |
+| `/model-mod:refresh` | 重新載入提示檔並檢查 Codex 登入狀態、CLI 版本與額度。若已設定 schema 更新命令，則執行該命令更新工具 schema；否則在已設定 API 金鑰時更新 API 模型清單。改過的選項需 `/reload-plugins` 才會生效。 |
 | `/model-mod:status` | 顯示是否啟用、模型數量及工具設定。回送位址顯示主機名，其他主機顯示 `host=remote`；明文 HTTP 將 API 金鑰以未加密形式送至非回送主機時會提出警告。 |
 | `/model` | Claude Code 原本的指令，維持不變：訂閱模型。直接輸入你的模型 ID（`/model <id>`）也可以。 |
 | `/btw <question>` | 選了你的模型時，經你的上游以唯讀上下文回答，不使用工具。 |
