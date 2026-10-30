@@ -56,6 +56,8 @@ The mod activates with either a valid `apiKey` or a valid combination of `codexA
 | `pythonBin` | Executable name or absolute path; default `python3`. On Windows use `python` (unverified). |
 | `codexKeepReasoning` | `on` (default) or `off`; invalid values use `on` and appear in status. Uses experimental APIs; real Codex replay is unverified. |
 | `codexWebSearch` | `on` (default) or `off`; invalid values use `on` and appear in status. Search is disabled when WebSearch is absent from the session tool list. |
+| `codexStopGate` | `off` (default) or `on`, case-insensitive; invalid values use `off` and appear in status. On may start a read-only Codex review after a main-session turn, send the diff to OpenAI and block ending. |
+| `codexStopGateBlocks` | Maximum blocks per session: `1` (default) or `2`; invalid values use `1` and appear in status. Once the limit is reached, an unpassed result allows ending with a human-review warning. |
 
 Native search and openPage run at OpenAI and are not constrained by Claude permission domain rules (allowed or blocked domains); model-mod makes no `allowed_domains` security claim. Queries are sent to OpenAI.
 

@@ -56,6 +56,8 @@ API 伺服器路徑會把工作階段送往接受 Messages 風格串流請求（
 | `pythonBin` | 執行檔名稱或絕對路徑；預設 `python3`。Windows 請設為 `python`（未驗證）。 |
 | `codexKeepReasoning` | `on`（預設）或 `off`；無效值視為 `on` 並顯示於 status。使用實驗性 API；真實 Codex 重放尚未驗證。 |
 | `codexWebSearch` | `on`（預設）或 `off`；無效值視為 `on` 並顯示於 status。工作階段工具清單沒有 WebSearch 時會停用搜尋。 |
+| `codexStopGate` | `off`（預設）或 `on`，不分大小寫；無效值視為 `off` 並顯示於 status。開啟後可能在主工作階段回合結束時啟動唯讀 Codex 審查、把 diff 送往 OpenAI 並阻擋結束。 |
+| `codexStopGateBlocks` | 每個工作階段最多阻擋 `1` 次（預設）或 `2` 次；無效值視為 `1` 並顯示於 status。達上限後未通過的結果會放行並提示人工審查。 |
 
 原生搜尋與 openPage 在 OpenAI 端執行，不受 Claude 權限的網域規則（allowed／blocked domains）限制；model-mod 不做 `allowed_domains` 的安全宣稱。查詢文字會送往 OpenAI。
 

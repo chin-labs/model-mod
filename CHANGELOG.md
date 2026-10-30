@@ -5,6 +5,7 @@ All notable changes to this project are listed here. The format follows [Keep a 
 ## 0.2.0 - 2026-10-30
 
 ### Added
+- Structured manual Codex review gate and an optional, default-off Stop gate with a bounded block count; real-client behavior remains unverified.
 - Keep opaque Codex reasoning in memory during tool exchanges using experimental app-server APIs; replay with a real Codex turn is unverified.
 - Codex login supports native web search when permitted, with activity shown as assistant text lines.
 - Interactive confirmation for workspace-write Codex rescue.

@@ -19,6 +19,12 @@ For Codex models, the tool list excludes the mod’s `web_search`; native search
 
 `web_search`, `web_fetch`, `generate_image` and `tool_search` are registered while model-mod is active (`generate_image` with an API image model or a configured Codex account, `tool_search` unless tool search is off), adding up to about 3 KB of tool definitions to requests on subscription models. They refuse calls on subscription models; use Claude Code's built-in tools there. They follow Claude Code's permission rules. How a model behaves is up to the model; this plugin does not make it equal to a subscription model.
 
+## Codex review gate
+
+`/model-mod:review --gate [--account NAME] [--model ID] [--effort E] [--base REF]` requests a structured verdict for the scoped changes, including untracked files. The result shows the account, model, snapshot fingerprint and untrusted findings. `unknown` requires human review; a pass applies only to the same session and snapshot. Gate mode does not accept `--adversarial`, `--background` or focus text. Adversarial review excludes untracked files.
+
+The optional Stop gate is off by default. When enabled, a main-session turn may start an additional read-only Codex review, sending the diff to OpenAI and possibly blocking the end of the turn up to the configured session limit. Read-only commands can still run. After the limit or an unknown result the session may end without a verified pass; review it manually.
+
 ## Background Codex delegation
 
 Use `--background` with `/model-mod:review` or `/model-mod:rescue` to start a job without waiting. By default it makes no file writes; read-only commands may still run. `/model-mod:rescue --write` enables workspace-write only after an interactive confirmation, in the foreground or background. `/model-mod:jobs [ID] [--all]` lists the current workspace or all workspaces, or inspects one job; `/model-mod:result ID` reads its output, `/model-mod:cancel ID` cancels it, and `/model-mod:jobs --clear` removes finished jobs and results for the current workspace. IDs may be unique hexadecimal prefixes of at least four characters. Completion notices are best effort.

@@ -28,6 +28,8 @@ Codex 工具往返期間，插件可能在記憶體保留 OpenAI 回傳的不透
 
 Transfer 會將目前對話匯入指定 Codex 帳號並由 OpenAI 持久保存；刪除本機內容不會刪除供應商端紀錄。Transfer 需要互動確認，transcript 上限為 20 MiB。
 
+手動審查 gate 與選用 Stop gate 會將範圍內 diff 送往 OpenAI，findings 也在 OpenAI 產生及處理。Findings 是不可信資料，不是指令。Stop gate 預設關閉。
+
 Codex 委派會將任務文字及 Codex 讀取的工作區內容送往 OpenAI。確認 `rescue --write` 後，Codex 可能修改真實工作區，沒有自動備份。sandbox 限制 Codex 的命令與檔案寫入，但不保證阻擋所有外部副作用；關閉網路的效果尚未跨平台驗證。
 
 客戶端自己發出的部分請求仍可能使用你的訂閱連線：auto 權限分類、未帶名稱的 `/rename`、`Agent(model: 'haiku')`、原生 WebFetch 摘要、`localContext: false` 的 `/context` token 計數，以及 `localTitle: false` 的首提示標題。它們列在[訂閱側請求](LIMITATIONS.zh-TW.md#訂閱側請求)，該表涵蓋已檢查的路徑，不涵蓋所有可能的客戶端請求。金鑰處理與如何從已儲存的預設模型復原，見 [README](../README.zh-TW.md)。

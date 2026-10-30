@@ -92,6 +92,10 @@ Not triggered or inconclusive when checked, so treat them as unverified: tool-us
 
 Codex accounts are not rotated when quota is exhausted; configure a fallback model on another account or upstream. API upstreams have no official rateLimits and are not covered by Codex fallback.
 
+## Review gate limitations
+
+The Stop gate is off by default. Structured verdict quality, missed findings and whether a real Codex honors `outputSchema` are unverified; the gate is not a security or compliance guarantee. Real-client `classic.Stop` behavior, cancellation and ordering alongside the official Codex gate are unverified. A pass is cached in memory for a matching session and fingerprint; reload loses it. Binary or unavailable untracked files and oversized diffs cannot be reviewed by this gate. A changed workspace needs a fresh review, and concurrent changes can occur after the snapshot check. Unknown, error and timeout allow ending with a human-review warning; after the configured maximum of one or two blocks, a further block also allows ending without a pass.
+
 ## Background delegation limitations
 
 - Background commands are unsupported on Windows; foreground delegation remains available. The effects of Ctrl+C and `/reload-plugins` on the broker have not been verified.
