@@ -306,7 +306,9 @@ def messages(args, app, prepared, cwd):
         if obj.get('_model_mod_wait') and not app.wait_interrupted:
             app.wait_interrupted = True
             app.interrupt()
-        if app.wait_interrupted and method != 'turn/completed': continue
+        if app.wait_interrupted and method != 'turn/completed':
+            if method == 'thread/tokenUsage/updated': latest = params.get('tokenUsage', {}).get('total', {})
+            continue
         if method == 'item/agentMessage/delta':
             if calls: continue
             if not opened:

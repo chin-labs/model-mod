@@ -46,6 +46,7 @@ class Contract(unittest.TestCase):
                     self.assertNotIn('model-mod-http:502', r.stderr)
                     self.assertIn('"stop_reason": "end_turn"', r.stdout)
                     self.assertNotIn('discarded', r.stdout)
+                    self.assertIn('"input_tokens": 60', r.stdout)
                     if mode != 'wait_response': self.assertIn('hello', r.stdout)
                     records = [json.loads(x) for x in log.read_text().splitlines()]
                     start = next(x for x in records if x.get('method') == 'thread/start')
