@@ -652,7 +652,13 @@ class DelegateTest(unittest.TestCase):
         (self.repo / 'file').write_text('changed\n')
         self.assertEqual(delegate.execute(req), 'hello')
         turn = next(r for r in self.records() if r.get('method') == 'turn/start')
-        self.assertIn('+changed', turn['params']['input'][0]['text'])
+        prompt = turn['params']['input'][0]['text']
+        self.assertIn('+changed', prompt)
+        self.assertIn('excludes untracked files', prompt)
+        self.assertRegex(prompt, r'<diff_[0-9a-f]{32}>')
+        with patch.object(delegate.secrets, 'token_hex', side_effect=['a' * 32, 'b' * 32]):
+            bounded = delegate.diff_prompt(('diff_' + 'a' * 32).encode())
+        self.assertIn('<diff_' + 'b' * 32 + '>', bounded)
         with self.assertRaisesRegex(delegate.Failure, 'Invalid base ref'): delegate.diff_for(str(self.repo), 'main;touch x')
 
 
