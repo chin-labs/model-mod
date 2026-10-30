@@ -21,6 +21,9 @@ import tempfile
 import threading
 import uuid
 
+for stream in (sys.stdin, sys.stdout, sys.stderr):
+    stream.reconfigure(encoding='utf-8')
+
 from mapping import InvalidRequest, classify, prepare, usage_delta
 
 # Last live-tested version: codex-cli 0.165.0.
