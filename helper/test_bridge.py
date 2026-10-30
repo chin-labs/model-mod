@@ -112,6 +112,9 @@ class Contract(unittest.TestCase):
                 self.assertEqual(result.returncode, 0, result.stderr)
                 argv = json.loads(log.read_text().splitlines()[0])['argv']
                 self.assertIn('web_search="' + ('live' if enabled else 'disabled') + '"', argv)
+                records = [json.loads(line) for line in log.read_text().splitlines()]
+                instructions = next(row['params']['developerInstructions'] for row in records if row.get('method') == 'thread/start')
+                self.assertEqual('native web search' in instructions, enabled)
                 mismatch = self.run_bridge(mode='bad_web_search', extra=extra)
                 self.assertEqual(mismatch.returncode, 65)
                 self.assertIn('incompatible codex app-server protocol (web_search)', mismatch.stdout)

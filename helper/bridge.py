@@ -366,7 +366,9 @@ def messages(args, app, prepared, cwd):
     clamp_effort(app, p, args.codex_home)
     for field in p['ignored']: note('Codex login: ignored field ' + field)
     if p['dropped']: note('Codex login: discarded thinking blocks: ' + str(p['dropped']))
-    result = app.request('thread/start', {'model': p['model'], 'cwd': cwd, 'sandbox': 'read-only', 'approvalPolicy': 'never', 'ephemeral': True, 'baseInstructions': p['system'], 'developerInstructions': TOOL_INSTRUCTIONS, 'dynamicTools': p['tools']})
+    instructions = TOOL_INSTRUCTIONS
+    if app.web_search == 'live': instructions = instructions.replace('Use only the provided function tools.', 'Use the provided function tools and native web search.')
+    result = app.request('thread/start', {'model': p['model'], 'cwd': cwd, 'sandbox': 'read-only', 'approvalPolicy': 'never', 'ephemeral': True, 'baseInstructions': p['system'], 'developerInstructions': instructions, 'dynamicTools': p['tools']})
     try:
         thread_id = result['thread']['id']
         if not isinstance(thread_id, str) or str(uuid.UUID(thread_id)) != thread_id.lower(): raise ValueError()
