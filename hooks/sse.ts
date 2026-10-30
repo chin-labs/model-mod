@@ -3,6 +3,7 @@ import type { TurnStepChunk, TurnStepInput, TurnStepResult, TurnUsage } from 'cl
 /** Incremental Messages SSE decoder; keeps only an unfinished event and tool inputs. */
 export class MessagesStream {
   private buffer = ''
+  private scanOffset = 0
   private tools = new Map<number, { id: string; name: string; json: string; input: unknown }>()
   private pendingTools = new Set<number>()
   private reasoning = new Map<number, { thinking: string; signature: string }>()
@@ -23,16 +24,22 @@ export class MessagesStream {
     this.buffer += piece
     const chunks: TurnStepChunk[] = []
     for (;;) {
-      const boundary = /\r?\n\r?\n/.exec(this.buffer)
+      const pattern = /\r?\n\r?\n/g
+      pattern.lastIndex = this.scanOffset
+      const boundary = pattern.exec(this.buffer)
       if ((!boundary && this.buffer.length >= 16 * 1024 * 1024) ||
         (boundary && boundary.index >= 16 * 1024 * 1024)) {
         this.error = { type: 'invalid_stream' }
         this.buffer = ''
         break
       }
-      if (!boundary) break
+      if (!boundary) {
+        this.scanOffset = Math.max(0, this.buffer.length - 3)
+        break
+      }
       const frame = this.buffer.slice(0, boundary.index)
       this.buffer = this.buffer.slice(boundary.index + boundary[0].length)
+      this.scanOffset = 0
       const lines = frame.split(/\r?\n/)
       const event = lines.find(line => line.startsWith('event:'))?.slice(6).trim()
       if (!event || !['message_start', 'content_block_start', 'content_block_delta',

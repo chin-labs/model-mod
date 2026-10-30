@@ -127,3 +127,10 @@ test('Messages SSE limits an unfinished frame without rejecting multi-megabyte i
   expect(parser.push('event: message_stop\ndata: {}\n\n')).toEqual([])
   expect(parser.complete).toBe(false)
 })
+
+test('Messages SSE detects a CRLF boundary split across pushes', () => {
+  const parser = new MessagesStream('gpt-6-sol')
+  expect(parser.push('event: content_block_start\r\ndata: {"index":0,"content_block":{"type":"text","text":"ok"}}\r')).toEqual([])
+  expect(parser.push('\n\r')).toEqual([])
+  expect(parser.push('\n')).toEqual([{ kind: 'text', index: 0, text: 'ok' }])
+})
