@@ -44,7 +44,7 @@ def git_env():
 
 def git(cwd, args, limit=MAX_DIFF, config_args=(), allow_no_match=False):
     try:
-        proc = subprocess.Popen(['git', '-c', 'core.hooksPath=' + os.devnull, '-c', 'core.fsmonitor=false', *config_args, *args], cwd=cwd,
+        proc = subprocess.Popen(['git', '-c', 'core.hooksPath=' + os.devnull, '-c', 'core.fsmonitor=false', '-c', 'diff.autoRefreshIndex=false', *config_args, *args], cwd=cwd,
                                 env=git_env(), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
         try:
             output = queue.Queue(maxsize=1)
@@ -73,9 +73,9 @@ def validate_ref(cwd, base):
 def diff_for(cwd, base):
     if base:
         validate_ref(cwd, base)
-        args = ['diff', '--no-ext-diff', '--no-textconv', '--ignore-submodules=dirty', base + '...HEAD', '--']
+        args = ['diff', '--no-ext-diff', '--no-textconv', '--submodule=short', '--ignore-submodules=dirty', base + '...HEAD', '--']
     else:
-        args = ['diff', '--no-ext-diff', '--no-textconv', '--ignore-submodules=dirty', 'HEAD', '--']
+        args = ['diff', '--no-ext-diff', '--no-textconv', '--submodule=short', '--ignore-submodules=dirty', 'HEAD', '--']
     names = git(cwd, ['config', '--name-only', '--get-regexp', r'^filter\.'], allow_no_match=True)
     overrides = []
     for key in names.decode('utf-8', 'replace').split('\n'):

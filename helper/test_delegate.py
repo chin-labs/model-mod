@@ -127,6 +127,28 @@ class DelegateTest(unittest.TestCase):
             delegate.diff_for(str(self.repo), None)
         self.assertFalse(flag.exists())
 
+        version = subprocess.check_output(['git', '--version'], text=True).split()[2].split('.')
+        if tuple(map(int, version[:2])) >= (2, 54):
+            hook_repo = self.root / 'hook-repo'
+            subprocess.run(['git', 'clone', '-q', str(self.repo), str(hook_repo)], check=True)
+            subprocess.run(['git', '-C', str(hook_repo), 'config', 'hook.x.command', str(script)], check=True)
+            subprocess.run(['git', '-C', str(hook_repo), 'config', 'hook.x.event', 'post-index-change'], check=True)
+            os.utime(hook_repo / 'file', (1, 1))
+            (hook_repo / 'changed').write_text('real change\n')
+            subprocess.run(['git', '-C', str(hook_repo), 'add', 'changed'], check=True)
+            if flag.exists(): flag.unlink()
+            diff = delegate.diff_for(str(hook_repo), None)
+            self.assertIn(b'real change', diff)
+            self.assertNotIn(b'diff --git a/file', diff)
+            self.assertFalse(flag.exists())
+            os.utime(hook_repo / 'file', (2, 2))
+            self.mode('text')
+            req = dict(self.request, cwd=str(hook_repo), kind='review', options={'adversarial': True})
+            self.assertEqual(delegate.execute(req), 'hello')
+            self.assertFalse(flag.exists())
+        else:
+            print('Git < 2.54: config hook assertion skipped')
+
         super_repo = self.root / 'super'
         subprocess.run(['git', 'init', '-q', str(super_repo)], check=True)
         def super_git(*args):
@@ -148,9 +170,19 @@ class DelegateTest(unittest.TestCase):
         self.assertIn(b'Subproject commit', delegate.diff_for(str(super_repo), None))
         self.assertFalse(flag.exists())
         super_git('branch', 'baseline')
+        super_git('config', 'diff.submodule', 'diff')
+        for key in ('diff.external', 'diff.x.textconv'):
+            subprocess.run(['git', '-C', str(sub), 'config', key, str(script)], check=True)
+            (sub / '.gitattributes').write_text('* diff=x\n')
+            self.assertIn(b'Subproject commit', delegate.diff_for(str(super_repo), None))
+            self.assertFalse(flag.exists())
+            subprocess.run(['git', '-C', str(sub), 'config', '--unset', key], check=True)
         super_git('commit', '-qm', 'update submodule')
-        self.assertIn(b'Subproject commit', delegate.diff_for(str(super_repo), 'baseline'))
-        self.assertFalse(flag.exists())
+        for key in ('diff.external', 'diff.x.textconv'):
+            subprocess.run(['git', '-C', str(sub), 'config', key, str(script)], check=True)
+            self.assertIn(b'Subproject commit', delegate.diff_for(str(super_repo), 'baseline'))
+            self.assertFalse(flag.exists())
+            subprocess.run(['git', '-C', str(sub), 'config', '--unset', key], check=True)
 
     def test_blocked_stdin_times_out(self):
         self.mode('delegate_no_read')
