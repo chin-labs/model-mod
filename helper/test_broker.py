@@ -102,6 +102,26 @@ class BrokerTest(unittest.TestCase):
             time.sleep(.05)
         self.fail('process %s remained alive' % pid)
 
+    def test_write_submission(self):
+        self.configure('abort')
+        self.ensure().communicate(timeout=3)
+        request = self.request()
+        request['options']['write'] = True
+        request['writeRoot'] = os.path.realpath(self.repo)
+        request['cwd'] = request['writeRoot']
+        for changes in ({'writeRoot': '/'}, {'writeRoot': 5}, {'extra': True}):
+            self.assertFalse(self.client('submit', dict(request, **changes))['ok'])
+        for value in ('true', 1, None):
+            invalid = dict(request, options={'text': 'task', 'write': value})
+            self.assertFalse(self.client('submit', invalid)['ok'])
+        first = self.client('submit', request)
+        self.assertTrue(first['ok'], first)
+        self.assertEqual(first['job']['mode'], 'write')
+        second = self.client('submit', request)
+        self.assertFalse(second['ok'])
+        self.assertIn('Only one write job', second['error'])
+        self.call('cancel', {'id': first['job']['id']})
+
     def test_ensure_lock_serializes_launch(self):
         first, second = self.ensure(), self.ensure()
         for proc in (first, second):

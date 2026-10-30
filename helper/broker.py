@@ -166,13 +166,15 @@ class Server(socketserver.ThreadingUnixStreamServer):
             except Exception: continue
 
     def submit(self, req):
-        if 'accountsDir' in req or 'directory' in req:
-            raise ValueError('Background jobs support only the default account root.')
+        if not isinstance(req, dict) or set(req) - {'cwd', 'account', 'model', 'kind', 'options', 'codexBin', 'writeRoot'}:
+            raise ValueError('Invalid job request.')
         cwd, account, model, kind, options, binary = (req.get(k) for k in ('cwd', 'account', 'model', 'kind', 'options', 'codexBin'))
         if not isinstance(cwd, str) or not os.path.isabs(cwd) or not os.path.isdir(cwd): raise ValueError('Invalid working directory.')
         if not isinstance(account, str) or not isinstance(model, str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}', model): raise ValueError('Invalid account or model.')
         if kind not in ('review', 'rescue') or not isinstance(options, dict) or not isinstance(binary, str) or not binary: raise ValueError('Invalid job request.')
-        if set(options) - {'base', 'adversarial', 'effort', 'text'}: raise ValueError('Invalid job options.')
+        if set(options) - {'base', 'adversarial', 'effort', 'text', 'write'}: raise ValueError('Invalid job options.')
+        write = options.get('write', False)
+        if type(write) is not bool or (write and kind != 'rescue') or (not write and 'writeRoot' in req): raise ValueError('Invalid write request.')
         if options.get('effort') not in (None, 'low', 'medium', 'high', 'xhigh'): raise ValueError('Invalid effort.')
         if options.get('base') is not None and not isinstance(options['base'], str): raise ValueError('Invalid base.')
         if not isinstance(options.get('text', ''), str) or not isinstance(options.get('adversarial', False), bool): raise ValueError('Invalid job options.')
@@ -182,7 +184,14 @@ class Server(socketserver.ThreadingUnixStreamServer):
         if not os.path.isdir(home): raise ValueError('Account is unavailable in the default account root.')
         request = {'cwd': cwd, 'account': account, 'model': model, 'kind': kind, 'options': options,
                    'codexBin': binary, 'accountsDir': account_root(), 'directory': home}
-        record = self.store.create(cwd, account, model, options.get('effort'), kind, 'read-only', self.credentials['generation'])
+        if write:
+            from delegate import validate_write_root
+            root = validate_write_root(cwd, account_root(), account)
+            if req.get('writeRoot') != root or cwd != root: raise ValueError('Working directory is not allowed for write delegation.')
+            if any(r['account'] == account and r['mode'] == 'write' and r['state'] not in jobs.TERMINAL for r in self.store.records()):
+                raise jobs.UserError('Only one write job per account can run at a time.')
+            request['writeRoot'] = root
+        record = self.store.create(cwd, account, model, options.get('effort'), kind, 'write' if write else 'read-only', self.credentials['generation'])
         self.pending[record['id']] = request
         self.schedule()
         return {'ok': True, 'job': self.store.resolve(record['id'])}

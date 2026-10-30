@@ -85,7 +85,10 @@ for line in sys.stdin:
             send({'id': ident, 'error': {'code': -32000 if mode == 'bad' else 429, 'message': 'invalid request' if mode == 'bad' else 'rate limit', 'retryAfter': 7}})
         else:
             if mode == 'forbidden_before': event('item/started', {'item': {'type': 'commandExecution'}})
-            send({'id': ident, 'result': {'thread': {'id': 'invalid' if mode == 'invalid_uuid' else '12345678-1234-4234-8234-123456789abc'}, 'approvalPolicy': 'never', 'sandbox': {'type': 'workspaceWrite' if mode == 'delegate_bad_sandbox' else 'readOnly', 'networkAccess': False}}})
+            sandbox = {'type': 'workspaceWrite' if mode == 'delegate_bad_sandbox' else 'readOnly', 'networkAccess': False}
+            if params.get('sandbox') == 'workspace-write' and mode != 'delegate_bad_sandbox':
+                sandbox = {'type': 'workspaceWrite', 'writableRoots': params['config']['sandbox_workspace_write']['writable_roots'], 'networkAccess': False, 'excludeTmpdirEnvVar': True, 'excludeSlashTmp': True}
+            send({'id': ident, 'result': {'thread': {'id': 'invalid' if mode == 'invalid_uuid' else '12345678-1234-4234-8234-123456789abc'}, 'approvalPolicy': 'never', 'sandbox': sandbox}})
     if method == 'thread/start' and mode == 'delegate_no_read':
         while True: time.sleep(1)
     elif method == 'thread/inject_items':

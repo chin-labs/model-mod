@@ -249,6 +249,29 @@ class DelegateTest(unittest.TestCase):
             self.mode(mode)
             with self.assertRaisesRegex(delegate.Failure, error): delegate.execute(dict(self.request))
 
+    def test_write_policy_and_approvals(self):
+        self.mode('delegate_approval')
+        root = os.path.realpath(self.repo)
+        request = dict(self.request, options={'text': 'test', 'write': True}, writeRoot=root)
+        self.assertEqual(delegate.execute(request), 'hello')
+        records = self.records()
+        thread = next(r['params'] for r in records if r.get('method') == 'thread/start')
+        turn = next(r['params'] for r in records if r.get('method') == 'turn/start')
+        self.assertEqual(thread['sandbox'], 'workspace-write')
+        self.assertEqual(thread['approvalPolicy'], 'never')
+        self.assertEqual(turn['sandboxPolicy'], {'type': 'workspaceWrite', 'writableRoots': [root], 'networkAccess': False,
+                                                   'excludeTmpdirEnvVar': True, 'excludeSlashTmp': True})
+        self.assertEqual([r['result'] for r in records if r.get('id') in ('approval1', 'approval2')],
+                         [{'decision': 'decline'}, {'decision': 'decline'}])
+        self.log.unlink()
+        self.mode('delegate_bad_sandbox')
+        with self.assertRaisesRegex(delegate.Failure, 'sandbox'): delegate.execute(dict(request))
+        self.assertFalse(any(r.get('method') == 'turn/start' for r in self.records()))
+        with self.assertRaises(delegate.Failure): delegate.execute(dict(request, writeRoot='/'))
+        for unsafe in ('/', os.path.expanduser('~'), str(self.account_dir), str(self.account_dir.parent)):
+            with self.assertRaises(delegate.Failure):
+                delegate.validate_write_root(unsafe, str(self.account_dir.parent), 'test')
+
     def test_timeout_and_cancel_reap_app_server(self):
         self.mode('abort')
         old = delegate.IDLE_SECONDS

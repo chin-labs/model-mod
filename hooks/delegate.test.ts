@@ -11,6 +11,37 @@ test('delegate parser handles quotes, separator, repeats and unknown flags', () 
   expect(() => parseDelegate('rescue', `--model 'unterminated`)).toThrow()
 })
 
+test('write is rescue-only and requires explicit confirmation', async () => {
+  expect(parseDelegate('rescue', '--write -- task')).toEqual({ write: true, text: 'task' })
+  expect(() => parseDelegate('rescue', '--write --write -- task')).toThrow()
+  expect(() => parseDelegate('review', '--write')).toThrow()
+  const config = { codex: new Map([['test/chat', { account: 'test', model: 'chat', directory: '/accounts/test' }]]), accountsDir: '/accounts' }
+  for (const answer of ['Cancel', '', 'throw', 'no-ui', 'Allow write']) {
+    let spawned = 0, submitted = 0, input: any
+    const $ = { plugin: { root: '/plugin' }, session: { model: async () => 'test/chat', cwd: async () => '/repo' },
+      ui: answer === 'no-ui' ? undefined : { ask: async () => { if (answer === 'throw') throw new Error('dismissed'); return answer } },
+      process: { run: async () => ({ stdout: '{"root":"/repo"}' }), spawn: (args: { input: string }) => { spawned++; input = JSON.parse(args.input); return { async *[Symbol.asyncIterator]() { yield { stream: 'stdout', text: '{"text":"ok"}' } } } } } } as unknown as EngineInterface
+    const result = await delegate($, 'rescue', '--write -- task', config, new AbortController().signal)
+    if (answer === 'Allow write') { expect(spawned).toBe(1); expect(input.writeRoot).toBe('/repo'); expect(input.options.write).toBe(true) }
+    else { expect(spawned).toBe(0); expect(submitted).toBe(0); expect(result.text).toContain('Omit --write') }
+  }
+})
+
+test('background write submits only after confirmation with the confirmed root', async () => {
+  const config = { codex: new Map([['test/chat', { account: 'test', model: 'chat', directory: '/accounts/test' }]]), accountsDir: '/accounts' }
+  for (const answer of ['Cancel', 'Allow write']) {
+    const calls: any[] = []
+    const $ = { plugin: { root: '/plugin' }, session: { model: async () => 'test/chat', cwd: async () => '/repo-link' },
+      ui: { ask: async () => answer }, clock: { after: () => {} }, process: { run: async (_argv: unknown, opts: { stdin: string }) => {
+        calls.push(JSON.parse(opts.stdin))
+        return { stdout: calls.length === 1 ? '{"root":"/repo"}' : JSON.stringify({ ok: true, job: { ...job, id: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' } }) }
+      } } } as unknown as EngineInterface
+    const result = await delegate($, 'rescue', '--write --background -- task', config, new AbortController().signal)
+    if (answer === 'Cancel') { expect(calls.length).toBe(1); expect(result.text).toContain('Omit --write') }
+    else { expect(calls.length).toBe(2); expect(calls[1].request.writeRoot).toBe('/repo'); expect(calls[1].request.options.write).toBe(true) }
+  }
+})
+
 test('delegate output has a warning and strips terminal controls', () => {
   const text = formatOutput('test', 'chat', '\x1b[31mhello\x1b[0m\x01')
   expect(text).toContain('no file writes; read-only commands may still run')

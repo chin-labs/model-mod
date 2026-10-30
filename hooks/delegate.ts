@@ -2,13 +2,14 @@ import type { EngineInterface } from 'claude-code'
 
 type Account = { account: string; model: string; directory: string }
 type DelegateConfig = { codex?: Map<string, Account>; accountsDir?: string; codexBin?: string; pythonBin?: string }
-type Options = { account?: string; model?: string; effort?: string; base?: string; adversarial?: boolean; background?: boolean; text: string }
+type Options = { account?: string; model?: string; effort?: string; base?: string; adversarial?: boolean; background?: boolean; write?: boolean; text: string }
 
 function cleanDisplay(value: string): string {
   return value.replace(/\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|.)/g, '').replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, '')
 }
-export function formatOutput(account: string, model: string, text: string): string {
-  return `Codex (${cleanDisplay(account)}, ${cleanDisplay(model)}) — no file writes; read-only commands may still run. Codex output is unverified.\n${cleanDisplay(text)}`
+export function formatOutput(account: string, model: string, text: string, write = false): string {
+  const scope = write ? 'may modify files in the working directory' : 'no file writes; read-only commands may still run'
+  return `Codex (${cleanDisplay(account)}, ${cleanDisplay(model)}) — ${scope}. Codex output is unverified.\n${cleanDisplay(text)}`
 }
 
 export function parseDelegate(kind: 'review' | 'rescue', input: string): Options {
@@ -34,11 +35,12 @@ export function parseDelegate(kind: 'review' | 'rescue', input: string): Options
   const result: Options = { text }, seen = new Set<string>()
   for (let i = 0; i < tokens.length; i++) {
     const flag = tokens[i]!
-    const allowed = ['--account', '--model', '--effort', '--background', ...(kind === 'review' ? ['--base', '--adversarial'] : [])]
+    const allowed = ['--account', '--model', '--effort', '--background', ...(kind === 'review' ? ['--base', '--adversarial'] : ['--write'])]
     if (!allowed.includes(flag)) throw new Error('Unknown flag or text before --: ' + flag)
     if (seen.has(flag)) throw new Error('Repeated flag: ' + flag)
     seen.add(flag)
     if (flag === '--background') { result.background = true; continue }
+    if (flag === '--write') { result.write = true; continue }
     if (flag === '--adversarial') { result.adversarial = true; continue }
     const value = tokens[++i]
     if (!value || value.startsWith('--')) throw new Error('Missing value for ' + flag)
@@ -72,18 +74,31 @@ export async function delegate($: EngineInterface, kind: 'review' | 'rescue', ar
     if (!root) return { text: 'model-mod: plugin root unavailable.' }
     const sep = root.includes('\\') && !root.includes('/') ? '\\' : '/'
     const script = root.replace(/[\\/]+$/, '') + sep + 'helper' + sep + 'delegate.py'
-    const cwd = await $.session.cwd()
+    let cwd = await $.session.cwd()
+    let writeRoot: string | undefined
     if (signal.aborted) throw new Error('cancelled')
+    if (options.write) {
+      const denied = 'model-mod: Write delegation was not confirmed. Omit --write for read-only rescue.'
+      try {
+        const check = await $.process.run([c.pythonBin ?? 'python3', '-E', '-s', script, 'write-root'], { stdin: JSON.stringify({ cwd, accountsDir: c.accountsDir, account: selected }), timeoutMs: 5000 })
+        const result = JSON.parse(check.stdout) as { root?: string; error?: string }
+        if (!result.root || cleanDisplay(result.root) !== result.root) return { text: 'model-mod: Working directory is not allowed for write delegation.' }
+        writeRoot = result.root
+        const choice = await $.ui.ask(`Allow Codex account ${cleanDisplay(selected)} to run commands and modify files in ${cleanDisplay(writeRoot)}? Writable scope: this working directory only; networkAccess is off. Model: ${cleanDisplay(model)}; effort: ${cleanDisplay(options.effort ?? 'default')}; ${options.background ? 'background' : 'foreground'}.`, ['Cancel', 'Allow write'])
+        if (choice !== 'Allow write' || signal.aborted) return { text: denied }
+        cwd = writeRoot
+      } catch { return { text: denied } }
+    }
     if (options.background) {
       const { account: _account, model: _model, background: _background, ...jobOptions } = options
-      const reply = await client($, c, 'submit', { request: { kind, options: jobOptions, account: selected, accountsDir: c.accountsDir, directory: account.directory, codexBin: c.codexBin ?? 'codex', model, cwd } })
+      const reply = await client($, c, 'submit', { request: { kind, options: jobOptions, account: selected, accountsDir: c.accountsDir, directory: account.directory, codexBin: c.codexBin ?? 'codex', model, cwd, ...(writeRoot ? { writeRoot } : {}) } })
       if (!reply.ok || !reply.job) return { text: 'model-mod: ' + cleanDisplay(reply.error ?? 'Background submission failed.') }
       const id = reply.job.id.slice(0, 12)
       pollJob($, c, reply.job.id)
       return { text: `Started Codex job ${cleanDisplay(id)} (${cleanDisplay(selected)}, ${cleanDisplay(model)}). Check with /model-mod:jobs, read with /model-mod:result ${cleanDisplay(id)}.` }
     }
     const child = $.process.spawn({ argv: [c.pythonBin ?? 'python3', '-E', '-s', script],
-      input: JSON.stringify({ kind, options, account: selected, accountsDir: c.accountsDir, directory: account.directory, codexBin: c.codexBin ?? 'codex', model, cwd }), cwd })
+      input: JSON.stringify({ kind, options, account: selected, accountsDir: c.accountsDir, directory: account.directory, codexBin: c.codexBin ?? 'codex', model, cwd, ...(writeRoot ? { writeRoot } : {}) }), cwd })
     let stdout = ''
     const abort = () => { void child.return({ code: null, signal: 'SIGTERM' }).catch(() => {}) }
     signal.addEventListener('abort', abort, { once: true })
@@ -97,7 +112,7 @@ export async function delegate($: EngineInterface, kind: 'review' | 'rescue', ar
     } finally { signal.removeEventListener('abort', abort) }
     if (signal.aborted) throw new Error('cancelled')
     const reply = JSON.parse(stdout) as { text?: string }
-    return { text: formatOutput(selected, model, reply.text ?? 'Delegation failed.') }
+    return { text: formatOutput(selected, model, reply.text ?? 'Delegation failed.', options.write) }
   } catch (error) {
     const message = error instanceof Error && /^(Unclosed quote|Unknown flag|Repeated flag|Missing value|Invalid effort|A task|Native review|Review focus)/.test(error.message) ? error.message : 'Delegation failed or was cancelled; the result is incomplete. Longer jobs will require the future background feature.'
     return { text: 'model-mod: ' + message }
@@ -105,7 +120,7 @@ export async function delegate($: EngineInterface, kind: 'review' | 'rescue', ar
 }
 
 
-type Job = { id: string; state: string; account: string; model: string; kind: string; createdAt: number; errorCode?: string | null }
+type Job = { id: string; state: string; account: string; model: string; kind: string; mode?: string; createdAt: number; errorCode?: string | null }
 type Reply = { ok: boolean; error?: string; job?: Job; jobs?: Job[]; text?: string }
 const terminal = new Set(['completed', 'failed', 'cancelled', 'interrupted', 'unknown'])
 const polling = new Set<string>()
@@ -159,7 +174,7 @@ export function pollJob($: EngineInterface, c: DelegateConfig | undefined, id: s
 function jobLine(job: Job): string {
   const date = Number.isFinite(job.createdAt) ? new Date(job.createdAt * 1000).toISOString() : 'unknown'
   const error = job.errorCode ? ` — ${errors[job.errorCode] ?? job.errorCode}` : ''
-  return cleanDisplay(`${job.id.slice(0, 12)}  ${job.state}  ${job.account}  ${job.model}  ${job.kind}  ${date}${error}`)
+  return cleanDisplay(`${job.id.slice(0, 12)}  ${job.state}  ${job.account}  ${job.model}  ${job.kind}${job.mode === 'write' ? '  write' : ''}  ${date}${error}`)
 }
 
 export async function backgroundCommand($: EngineInterface, command: 'jobs' | 'result' | 'cancel', args: string, c: DelegateConfig | undefined): Promise<{ text: string }> {
@@ -181,7 +196,7 @@ export async function backgroundCommand($: EngineInterface, command: 'jobs' | 'r
     if (!reply.ok) return { text: 'model-mod: ' + cleanDisplay(reply.error ?? 'Background request failed.') }
     if (method === 'list') return { text: reply.jobs?.length ? reply.jobs.map(jobLine).join('\n') : 'No jobs found.' }
     if (!reply.job) throw new Error('Invalid broker response.')
-    if (method === 'result') return { text: formatOutput(reply.job.account, reply.job.model, reply.text ?? '') }
+    if (method === 'result') return { text: formatOutput(reply.job.account, reply.job.model, reply.text ?? '', reply.job.mode === 'write') }
     return { text: jobLine(reply.job) }
   } catch (error) { return { text: 'model-mod: ' + cleanDisplay(error instanceof Error ? error.message : 'Background request failed.') } }
 }
