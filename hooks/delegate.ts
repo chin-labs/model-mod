@@ -81,10 +81,9 @@ export async function delegate($: EngineInterface, kind: 'review' | 'rescue', ar
     if (options.write) {
       const denied = 'model-mod: Write delegation was not confirmed. Omit --write for read-only rescue.'
       try {
-        const check = await $.process.run([c.pythonBin ?? 'python3', '-E', '-s', script, 'write-root'], { stdin: JSON.stringify({ cwd, accountsDir: c.accountsDir, account: selected }), timeoutMs: 5000 })
-        const result = JSON.parse(check.stdout) as { root?: string; error?: string }
-        if (!result.root || cleanDisplay(result.root) !== result.root) return { text: 'model-mod: Working directory is not allowed for write delegation.' }
-        writeRoot = result.root
+        const result = await $.fs.stat(cwd, { resolve: true })
+        if (result.kind !== 'dir' || !result.realPath || cleanDisplay(result.realPath) !== result.realPath) return { text: 'model-mod: Working directory is not allowed for write delegation.' }
+        writeRoot = result.realPath
         const choice = await $.ui.ask(`Allow Codex account ${cleanDisplay(selected)} to run commands and modify files in ${cleanDisplay(writeRoot)}? Writable scope: this working directory only; networkAccess is off. Model: ${cleanDisplay(model)}; effort: ${cleanDisplay(options.effort ?? 'default')}; ${options.background ? 'background' : 'foreground'}. Allow write?`, ['Cancel', 'Allow write'])
         if (choice !== 'Allow write' || signal.aborted) return { text: denied }
         cwd = writeRoot

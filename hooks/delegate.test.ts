@@ -20,7 +20,8 @@ test('write is rescue-only and requires explicit confirmation', async () => {
     let spawned = 0, submitted = 0, input: any
     const $ = { plugin: { root: '/plugin' }, session: { model: async () => 'test/chat', cwd: async () => '/repo' },
       ui: answer === 'no-ui' ? undefined : { ask: async () => { if (answer === 'throw') throw new Error('dismissed'); return answer } },
-      process: { run: async () => ({ stdout: '{"root":"/repo"}' }), spawn: (args: { input: string }) => { spawned++; input = JSON.parse(args.input); return { async *[Symbol.asyncIterator]() { yield { stream: 'stdout', text: '{"text":"ok"}' } } } } } } as unknown as EngineInterface
+      fs: { stat: async () => ({ kind: 'dir', realPath: '/repo' }) },
+      process: { run: async () => { submitted++; throw new Error('unexpected run') }, spawn: (args: { input: string }) => { spawned++; input = JSON.parse(args.input); return { async *[Symbol.asyncIterator]() { yield { stream: 'stdout', text: '{"text":"ok"}' } } } } } } as unknown as EngineInterface
     const result = await delegate($, 'rescue', '--write -- task', config, new AbortController().signal)
     expect((await delegate($, 'rescue', '--write -- task', config, new AbortController().signal, false)).text).toContain('interactive')
     if (answer === 'Allow write') { expect(spawned).toBe(1); expect(input.writeRoot).toBe('/repo'); expect(input.options.write).toBe(true) }
@@ -33,13 +34,13 @@ test('background write submits only after confirmation with the confirmed root',
   for (const answer of ['Cancel', 'Allow write']) {
     const calls: any[] = []
     const $ = { plugin: { root: '/plugin' }, session: { model: async () => 'test/chat', cwd: async () => '/repo-link' },
-      ui: { ask: async () => answer }, clock: { after: () => {} }, process: { run: async (_argv: unknown, opts: { stdin: string }) => {
+      ui: { ask: async () => answer }, fs: { stat: async () => ({ kind: 'dir', realPath: '/repo' }) }, clock: { after: () => {} }, process: { run: async (_argv: unknown, opts: { stdin: string }) => {
         calls.push(JSON.parse(opts.stdin))
-        return { stdout: calls.length === 1 ? '{"root":"/repo"}' : JSON.stringify({ ok: true, job: { ...job, id: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' } }) }
+        return { stdout: JSON.stringify({ ok: true, job: { ...job, id: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' } }) }
       } } } as unknown as EngineInterface
     const result = await delegate($, 'rescue', '--write --background -- task', config, new AbortController().signal)
-    if (answer === 'Cancel') { expect(calls.length).toBe(1); expect(result.text).toContain('Omit --write') }
-    else { expect(calls.length).toBe(2); expect(calls[1].request.writeRoot).toBe('/repo'); expect(calls[1].request.options.write).toBe(true) }
+    if (answer === 'Cancel') { expect(calls.length).toBe(0); expect(result.text).toContain('Omit --write') }
+    else { expect(calls.length).toBe(1); expect(calls[0].request.writeRoot).toBe('/repo'); expect(calls[0].request.options.write).toBe(true) }
   }
 })
 

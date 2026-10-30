@@ -520,11 +520,5 @@ if __name__ == '__main__':
         runner(sys.argv[2], int(sys.argv[3]))
     elif len(sys.argv) == 3 and sys.argv[1] == 'client':
         print(json.dumps(client(sys.argv[2]), ensure_ascii=False), flush=True)
-    elif len(sys.argv) == 2 and sys.argv[1] == 'write-root':
-        try:
-            data = json.load(sys.stdin)
-            print(json.dumps({'root': validate_write_root(data['cwd'], data['accountsDir'], data['account'])}))
-        except Exception:
-            print(json.dumps({'error': 'Working directory is not allowed for write delegation.'}))
     else:
         main()
