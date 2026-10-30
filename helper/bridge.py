@@ -496,7 +496,11 @@ def main():
             if args.command == 'remove-home':
                 if os.name == 'posix':
                     fd = os.open(os.path.dirname(target), os.O_RDONLY | getattr(os, 'O_DIRECTORY', 0))
-                    try: shutil.rmtree(args.account, dir_fd=fd)
+                    try:
+                        if sys.version_info >= (3, 11): shutil.rmtree(args.account, dir_fd=fd)
+                        else:
+                            os.fchdir(fd)
+                            shutil.rmtree(args.account)
                     finally: os.close(fd)
                 else: shutil.rmtree(target)
             elif args.command == 'cleanup-home':
