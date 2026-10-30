@@ -53,7 +53,7 @@ The mod activates with either a valid `apiKey` or a valid combination of `codexA
 | `codexBin` | Executable name or absolute path; default `codex`. |
 | `pythonBin` | Executable name or absolute path; default `python3`. On Windows use `python` (unverified). |
 
-Paths and commands cannot contain NUL or newline; a command name may contain only letters, digits, `.`, `_` and `-`. An account and a model form ID `<account>/<model>`, displayed as `<model> @ <account>`. Every account is paired with every configured model. When an API model has the same ID, Codex takes precedence. Setup merges and deduplicates accounts but **replaces** `codexModels` with the selected models for all accounts; reselect the complete desired model set when adding an account. `fallbackModel` and `workerModel` may refer to a valid Codex ID.
+Paths and commands cannot contain NUL or newline; a command name may contain only letters, digits, `.`, `_` and `-`. An account and a model form ID `<account>/<model>`, displayed as `<model> @ <account>`. Every account is paired with every configured model. When an API model has the same ID, Codex takes precedence. `/model-mod:setup` merges and deduplicates accounts but **replaces the entire** `codexModels` setting with the selected models for all accounts; reselect the complete desired model set when adding an account. `fallbackModel` and `workerModel` may refer to a valid Codex ID.
 
 Advanced options are not shown in the dialog. Set them in the plugin's `options` object under `pluginConfigs` in your Claude Code settings (key `model-mod@model-mod`, or `model-mod@inline` when loaded with `--plugin-dir`). Keep the API key itself in the secret field.
 
