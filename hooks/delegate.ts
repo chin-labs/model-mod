@@ -13,9 +13,13 @@ export function formatOutput(account: string, model: string, text: string): stri
 
 export function parseDelegate(kind: 'review' | 'rescue', input: string): Options {
   const tokens: string[] = []
-  let word = '', quote = '', active = false
+  let word = '', quote = '', active = false, text = ''
   for (let i = 0; i < input.length; i++) {
     const ch = input[i]!
+    if (!quote && !active && input.slice(i, i + 2) === '--' && (i + 2 === input.length || /\s/.test(input[i + 2]!))) {
+      text = input.slice(i + 2 + (i + 2 < input.length ? 1 : 0))
+      break
+    }
     if (quote) {
       if (ch === quote) quote = ''
       else if (ch === '\\' && quote === '"' && i + 1 < input.length) word += input[++i]
@@ -27,10 +31,9 @@ export function parseDelegate(kind: 'review' | 'rescue', input: string): Options
   }
   if (quote) throw new Error('Unclosed quote.')
   if (active) tokens.push(word)
-  const result: Options = { text: '' }, seen = new Set<string>()
+  const result: Options = { text }, seen = new Set<string>()
   for (let i = 0; i < tokens.length; i++) {
     const flag = tokens[i]!
-    if (flag === '--') { result.text = tokens.slice(i + 1).join(' '); break }
     const allowed = ['--account', '--model', '--effort', ...(kind === 'review' ? ['--base', '--adversarial'] : [])]
     if (!allowed.includes(flag)) throw new Error('Unknown flag or text before --: ' + flag)
     if (seen.has(flag)) throw new Error('Repeated flag: ' + flag)

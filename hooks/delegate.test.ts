@@ -3,11 +3,12 @@ import type { EngineInterface } from 'claude-code'
 import { delegate, formatOutput, parseDelegate } from './delegate.ts'
 
 test('delegate parser handles quotes, separator, repeats and unknown flags', () => {
-  expect(parseDelegate('review', `--base 'feature/test' --adversarial -- "focus text" 'and more'`)).toEqual({ base: 'feature/test', adversarial: true, text: 'focus text and more' })
+  expect(parseDelegate('review', `--base 'feature/test' --adversarial -- "focus text" 'and more'`)).toEqual({ base: 'feature/test', adversarial: true, text: `"focus text" 'and more'` })
   expect(parseDelegate('rescue', `--model "gpt test" -- --account literal`)).toEqual({ model: 'gpt test', text: '--account literal' })
   expect(() => parseDelegate('review', '--base a --base b')).toThrow()
   expect(() => parseDelegate('review', '--unknown')).toThrow()
-  expect(() => parseDelegate('rescue', `-- 'unterminated`)).toThrow()
+  expect(parseDelegate('rescue', `-- 'unterminated`).text).toBe(`'unterminated`)
+  expect(() => parseDelegate('rescue', `--model 'unterminated`)).toThrow()
 })
 
 test('delegate output has a warning and strips terminal controls', () => {
@@ -35,4 +36,16 @@ test('delegate abort closes the foreground helper', async () => {
   expect(closed).toBe(true)
   expect(result.text).toContain('cancelled')
   expect('context' in result).toBe(false)
+})
+
+
+test('delegate passes the exact task text to the helper', async () => {
+  const tasks = ["why doesn't this work", String.raw`explain regex \d+ in C:\tmp and "quoted"  two  spaces`, 'line one\n  line two']
+  for (const text of tasks) {
+    let input = ''
+    const $ = { plugin: { root: '/plugin' }, session: { model: async () => 'test/chat', cwd: async () => '/repo' },
+      process: { spawn: (args: { input: string }) => { input = args.input; return { async *[Symbol.asyncIterator]() { yield { stream: 'stdout', text: '{"text":"ok"}' } } } } } } as unknown as EngineInterface
+    await delegate($, 'rescue', '-- ' + text, { codex: new Map([['test/chat', { account: 'test', model: 'chat', directory: '/accounts/test' }]]), accountsDir: '/accounts' }, new AbortController().signal)
+    expect((JSON.parse(input) as { options: { text: string } }).options.text).toBe(text)
+  }
 })

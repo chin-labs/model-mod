@@ -35,10 +35,17 @@ def cancel(signum, frame):
     raise Cancelled()
 
 
-def git(cwd, args, limit=MAX_DIFF):
+def git_env():
+    allowed = ('PATH', 'HOME', 'SYSTEMROOT', 'WINDIR', 'TMPDIR', 'TEMP', 'TMP')
+    result = {key: os.environ[key] for key in allowed if key in os.environ}
+    result.update(GIT_CONFIG_NOSYSTEM='1', GIT_CONFIG_GLOBAL=os.devnull, GIT_NO_LAZY_FETCH='1')
+    return result
+
+
+def git(cwd, args, limit=MAX_DIFF, config_args=(), allow_no_match=False):
     try:
-        proc = subprocess.Popen(['git', '-c', 'core.hooksPath=/dev/null', *args], cwd=cwd,
-                                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        proc = subprocess.Popen(['git', '-c', 'core.hooksPath=' + os.devnull, '-c', 'core.fsmonitor=false', *config_args, *args], cwd=cwd,
+                                env=git_env(), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
         try:
             output = queue.Queue(maxsize=1)
             threading.Thread(target=lambda: output.put(proc.stdout.read(limit + 1)), daemon=True).start()
@@ -46,7 +53,8 @@ def git(cwd, args, limit=MAX_DIFF):
             except queue.Empty: raise Failure('Git timed out; review was not performed.')
             if len(data) > limit:
                 raise Failure('Diff exceeds the size limit; review was not performed.')
-            if proc.wait(timeout=15): raise Failure('Git could not read the requested repository or ref.')
+            status = proc.wait(timeout=15)
+            if status and not (allow_no_match and status == 1): raise Failure('Git could not read the requested repository or ref.')
             return data
         finally:
             if proc.poll() is None: proc.kill()
@@ -68,7 +76,15 @@ def diff_for(cwd, base):
         args = ['diff', '--no-ext-diff', '--no-textconv', base + '...HEAD', '--']
     else:
         args = ['diff', '--no-ext-diff', '--no-textconv', 'HEAD', '--']
-    return git(cwd, args)
+    names = git(cwd, ['config', '--name-only', '--get-regexp', r'^filter\.'], allow_no_match=True)
+    overrides = []
+    for key in names.decode('utf-8', 'replace').splitlines():
+        match = re.fullmatch(r'filter\.([A-Za-z0-9_-]+)\.[A-Za-z0-9-]+', key)
+        if not match:
+            raise Failure('Unsupported Git filter name; remove or rename the filter before reviewing.')
+        for setting in ('clean', 'smudge', 'process'):
+            overrides.extend(['-c', 'filter.' + match.group(1) + '.' + setting + '='])
+    return git(cwd, args, config_args=overrides)
 
 
 def clean(text):
@@ -95,6 +111,21 @@ class App:
                                      stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1,
                                      start_new_session=(os.name == 'posix'))
         self.queue = queue.Queue()
+        self.writes = queue.Queue()
+        def write():
+            while True:
+                item = self.writes.get()
+                if item is None: return
+                obj, done = item
+                try:
+                    self.proc.stdin.write(json.dumps(obj, ensure_ascii=False) + '\n')
+                    self.proc.stdin.flush()
+                except (OSError, ValueError):
+                    pass
+                finally:
+                    done.set()
+        self.writer = threading.Thread(target=write, daemon=True)
+        self.writer.start()
         def read():
             try:
                 for line in self.proc.stdout:
@@ -104,8 +135,9 @@ class App:
         threading.Thread(target=read, daemon=True).start()
 
     def send(self, obj):
-        self.proc.stdin.write(json.dumps(obj, ensure_ascii=False) + '\n')
-        self.proc.stdin.flush()
+        done = threading.Event()
+        self.writes.put((obj, done))
+        return done
 
     def next(self):
         remaining = self.deadline - time.monotonic()
@@ -129,7 +161,8 @@ class App:
             if obj['method'] in refusals:
                 self.send({'id': obj['id'], 'result': refusals[obj['method']]})
             else:
-                self.send({'id': obj['id'], 'error': {'code': -32601, 'message': 'Unsupported request'}})
+                done = self.send({'id': obj['id'], 'error': {'code': -32601, 'message': 'Unsupported request'}})
+                done.wait(timeout=max(0, min(0.2, self.deadline - time.monotonic())))
                 raise Failure('Unsupported Codex server request; delegation stopped.')
             return self.next()
         params = obj.get('params') or {}
@@ -191,6 +224,8 @@ class App:
             if os.name == 'posix':
                 try: os.killpg(self.proc.pid, signal.SIGKILL)
                 except ProcessLookupError: pass
+            self.writes.put(None)
+            self.writer.join(timeout=1)
             for stream in (self.proc.stdin, self.proc.stdout):
                 if stream: stream.close()
 

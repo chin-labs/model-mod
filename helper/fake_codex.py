@@ -2,6 +2,7 @@
 """Fake app-server for offline JSONL contract tests."""
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
@@ -55,6 +56,10 @@ if mode == 'startup_fail':
     print('unknown option --disable', file=sys.stderr, flush=True)
     sys.exit(2)
 record({'pid': os.getpid(), 'env_keys': sorted(os.environ), 'argv': sys.argv[1:]})
+if mode == 'stubborn':
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    child = subprocess.Popen([sys.executable, '-c', 'import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    record({'child': child.pid})
 for line in sys.stdin:
     req = json.loads(line)
     record(req)
@@ -76,6 +81,8 @@ for line in sys.stdin:
         else:
             if mode == 'forbidden_before': event('item/started', {'item': {'type': 'commandExecution'}})
             send({'id': ident, 'result': {'thread': {'id': 'invalid' if mode == 'invalid_uuid' else '12345678-1234-4234-8234-123456789abc'}, 'approvalPolicy': 'never', 'sandbox': {'type': 'workspaceWrite' if mode == 'delegate_bad_sandbox' else 'readOnly', 'networkAccess': False}}})
+    if method == 'thread/start' and mode == 'delegate_no_read':
+        while True: time.sleep(1)
     elif method == 'thread/inject_items': send({'id': ident, 'result': {}})
     elif method == 'turn/start':
         items = [{'type': 'sleep'}, {'type': 'commandExecution'}] if mode == 'wait_forbidden' else [{'type': 'fileChange'}] if mode == 'forbidden_response' else ([{'type': 'sleep'}] if mode == 'wait_response' else [])
@@ -86,8 +93,10 @@ for line in sys.stdin:
             for _ in range(2):
                 response = json.loads(next(sys.stdin))
                 record(response)
-        if mode == 'delegate_unknown':
-            send({'id': 'unknown1', 'method': 'future/unknown', 'params': {}})
+        if mode in ('delegate_unknown', 'delegate_unknown_number'):
+            send({'id': 7 if mode == 'delegate_unknown_number' else 'unknown1', 'method': 'future/unknown', 'params': {}})
+            response = json.loads(next(sys.stdin))
+            record(response)
             continue
         if mode == 'delegate_filechange':
             event('item/started', {'item': {'type': 'fileChange'}})
@@ -132,10 +141,7 @@ for line in sys.stdin:
     elif method == 'turn/interrupt':
         interrupted.set()
         if mode == 'stubborn':
-            while True:
-                try: event('item/agentMessage/delta', {'delta': 'hello'})
-                except BrokenPipeError: pass
-                time.sleep(0.05)
+            while True: time.sleep(1)
         if mode == 'chatty':
             while True:
                 event('item/agentMessage/delta', {'delta': 'hello'})
@@ -145,3 +151,6 @@ for line in sys.stdin:
         event('turn/completed', {'turn': {'id': 'turn1', 'status': 'interrupted'}})
     elif method == 'model/list': send({'id': ident, 'result': {'data': [{'id': 'chat', 'displayName': 'Chat'}, {'id': 'image', 'displayName': 'Image'}], 'nextCursor': None}})
     elif method == 'account/rateLimits/read': send({'id': ident, 'result': {'rateLimits': {'primary': {'usedPercent': 30}, 'ordinaryUsageAllowed': True}}})
+
+if mode == 'stubborn':
+    while True: time.sleep(1)
