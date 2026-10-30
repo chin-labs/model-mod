@@ -4,7 +4,7 @@
 
 mod 只替它管理的模型 ID 回答。API 路徑設定了 `models` 時，管理範圍就是該清單；否則為上游的 chat 模型。Codex ID 由已設定的帳號與模型組成。含 `claude` 或 `anthropic` 的 ID 與 Claude Code 的官方別名一律不管理，圖片、embedding、語音與 moderation 模型也不會被探索進來。其他模型照 Claude Code 原本的路徑走。
 
-對管理中的模型，對話、壓縮與 `/btw` 都送往你的上游，且**失敗時絕不退回訂閱**：上游出錯，該回合就以錯誤訊息結束。
+對管理中的模型，對話、壓縮與 `/btw` 都送往設定的 API 上游或 Codex 登入路徑，且**失敗時絕不退回訂閱**：上游出錯，該回合就以錯誤訊息結束。
 
 ## Codex 登入資料流
 
@@ -12,7 +12,7 @@ mod 只替它管理的模型 ID 回答。API 路徑設定了 `models` 時，管�
 客戶端 hook -> 本機 Python helper -> codex app-server -> 你以官方 CLI 登入的 Codex 帳號
 ```
 
-hook 透過 stdin 把 Messages 請求 body 傳給 helper。helper 轉換後交給 app-server，並從 stdout 回傳 Messages SSE（非串流呼叫則回傳 JSON）。每個步驟都啟動新的程序。app-server 要求客戶端工具時，helper 中斷回合並回傳 `tool_use`；客戶端執行工具後，後續步驟會建立新 thread，重建對話與工具結果歷史，再繼續執行。登入由官方 CLI 管理；helper 不讀取或複製其憑證。軟隔離界線見 [Codex 登入的限制](LIMITATIONS.zh-TW.md#codex-登入的限制)。
+hook 透過 stdin 把 Messages 請求 body 傳給 helper。helper 轉換後交給 app-server，並從 stdout 回傳 Messages SSE（非串流呼叫則回傳 JSON）。每個步驟都啟動新的程序。app-server 要求客戶端工具時，helper 中斷回合並回傳 `tool_use`；客戶端執行工具後，後續步驟會建立新 thread，重建對話與工具結果歷史，再繼續執行。你自行登入的官方 CLI 將對話內容送往 OpenAI 服務並管理登入；model-mod 不讀取、複製或轉送其憑證。Codex 模型不提供 `generate_image` 與 `web_search`。軟隔離界線見 [Codex 登入的限制](LIMITATIONS.zh-TW.md#codex-登入的限制)。
 
 ## 自訂提示
 
@@ -21,7 +21,7 @@ hook 透過 stdin 把 Messages 請求 body 傳給 helper。helper 轉換後交�
 ## 限制、隱私與合規
 
 - [限制說明](LIMITATIONS.zh-TW.md)列出與訂閱模型的已知差異、尚未驗證的項目，以及哪些 Claude Code 請求仍可能送到你的訂閱。
-- 訊息、系統指示（含專案指示檔）、工具定義與結果、圖片都會送往你的上游及其背後的供應商。Codex 對話經官方 Codex CLI 送往 OpenAI 服務。API 路徑的搜尋查詢送往上游、圖片提示送往圖片端點；擷取的網址送往目標網站。
+- API 路徑的訊息、系統指示（含專案指示檔）、工具定義與結果、圖片都會送往你的上游及其背後的供應商。Codex 對話經官方 Codex CLI 送往 OpenAI 服務。API 路徑的搜尋查詢送往上游、圖片提示送往圖片端點；擷取的網址送往目標網站。
 - mod 使用插件 hook，不修改 Claude Code 執行檔、不攔截 TLS、不讀取訂閱憑證檔，也不把訂閱憑證送往你的上游。API 路徑只使用你設定的上游金鑰，且絕不把你的模型的回合改走訂閱重試。失敗或停滯的請求只會用同一個模型重試；mod 絕不因為請求失敗而改用其他模型。
 - Auto 權限模式會把完整對話與專案指示送到你的訂閱做分類，即使目前選的是你的模型。改用 default 或 acceptEdits 模式搭配 allow 規則即可避免。Claude Code 自己發出的其他請求也可能使用你的訂閱；見[訂閱側請求](LIMITATIONS.zh-TW.md#訂閱側請求)。
 - API 路徑的金鑰透過環境變數而非命令參數交給 curl。錯誤訊息中的金鑰會被遮蔽，但串流輸出不會改寫，因此請使用你信任的上游。

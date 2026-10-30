@@ -4,7 +4,7 @@
 
 The mod answers turns only for the model IDs it owns. For the API path, `models` selects IDs or, when empty, the upstream's chat models. Codex IDs come from the configured accounts and models. IDs containing `claude` or `anthropic` and Claude Code's official aliases are never owned, and image, embedding, speech and moderation models are left out of discovery. Every other model uses Claude Code's normal path.
 
-For an owned model, turns, compaction and `/btw` go to your upstream and **never fall back to the subscription**: if the upstream fails, the turn ends with an error message.
+For an owned model, turns, compaction and `/btw` go to the configured API upstream or Codex login and **never fall back to the subscription**: if the upstream fails, the turn ends with an error message.
 
 ## Codex login data flow
 
@@ -12,7 +12,7 @@ For an owned model, turns, compaction and `/btw` go to your upstream and **never
 client hook -> local Python helper -> codex app-server -> your officially logged-in Codex account
 ```
 
-The hook sends the Messages request body to the helper on stdin. The helper translates it for app-server and returns Messages SSE on stdout (or JSON for non-streaming calls). Each step starts fresh processes. When app-server requests a client tool, the helper interrupts the turn and returns a `tool_use`; after the client runs the tool, a later step creates a new thread and reconstructs conversation and tool-result history before continuing. The official CLI manages its own login; the helper does not read or copy its credentials. See [Codex login limitations](LIMITATIONS.md#codex-login-limitations) for the soft-isolation boundary.
+The hook sends the Messages request body to the helper on stdin. The helper translates it for app-server and returns Messages SSE on stdout (or JSON for non-streaming calls). Each step starts fresh processes. When app-server requests a client tool, the helper interrupts the turn and returns a `tool_use`; after the client runs the tool, a later step creates a new thread and reconstructs conversation and tool-result history before continuing. The official CLI, signed in with your own account, sends conversation content to OpenAI services and manages its own login; model-mod does not read, copy or forward its credentials. Codex models do not offer `generate_image` or `web_search`. See [Codex login limitations](LIMITATIONS.md#codex-login-limitations) for the soft-isolation boundary.
 
 ## Custom prompts
 
@@ -21,7 +21,7 @@ The prompts for compaction, titles, subagents and the worker live in `compact.md
 ## Limitations, privacy and compliance
 
 - [Limitations](LIMITATIONS.md) lists known differences from a subscription model, what has not been verified, and which Claude Code requests can still reach your subscription.
-- Messages, system instructions (including project instruction files), tool definitions and results, and images are sent to your upstream and any provider behind it. Codex conversations go through the official Codex CLI to OpenAI services. On the API path, search queries go to the upstream and image prompts to the image endpoint; fetch URLs go to the target sites.
+- On the API path, messages, system instructions (including project instruction files), tool definitions and results, and images are sent to your upstream and any provider behind it. Codex conversations go through the official Codex CLI to OpenAI services. On the API path, search queries go to the upstream and image prompts to the image endpoint; fetch URLs go to the target sites.
 - The mod uses plugin hooks, changes no Claude Code binary, intercepts no TLS, reads no subscription credential files and never sends subscription credentials to your upstream. On the API path it uses only the upstream key you configure and never retries one of your model's turns through the subscription. A failed or stalled request is retried only against the same model; the mod never switches to another model because a request failed.
 - Auto permission mode sends the full conversation and project instructions to your subscription for classification, even while one of your models is selected. Default or acceptEdits mode with allow rules avoids that. Other requests Claude Code makes by itself can also use your subscription; see [Subscription side requests](LIMITATIONS.md#subscription-side-requests).
 - On the API path, the key is passed to curl through the environment, not as a command argument. It is removed from error text, but streamed output is not rewritten, so use an upstream you trust.
