@@ -85,7 +85,9 @@ class Contract(unittest.TestCase):
             self.assertEqual(kept, ['reason1', 'reason2'])
             self.assertLess(max(i for i, block in enumerate(blocks) if block['type'] == 'thinking'),
                             min(i for i, block in enumerate(blocks) if block['type'] == 'tool_use'))
-            self.assertIn('discarded reasoning items: 1', interleaved.stderr)
+            self.assertIn('discarded reasoning items: 2', interleaved.stderr)
+            for leak in ('RAW-SECRET', 'after-call'):
+                self.assertNotIn(leak, interleaved.stdout + interleaved.stderr)
             text_interleaved = self.run_bridge(body, mode='reasoning_text_interleaved')
             self.assertEqual(text_interleaved.returncode, 0, text_interleaved.stderr)
             blocks = json.loads(text_interleaved.stdout)['content']
@@ -473,6 +475,28 @@ class Contract(unittest.TestCase):
                 if p.poll() is None: p.kill(); p.wait()
                 try: os.killpg(pid, signal.SIGKILL)
                 except ProcessLookupError: pass
+                p.stdout.close(); p.stderr.close()
+        # A rebuilt app-server must still be cancellable.
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, 'fake_config.json').write_text(json.dumps({'mode': 'reasoning_invalid_once', 'hang': True}))
+            reasoning = {'type': 'thinking', 'thinking': '', 'signature': encode_reasoning({'type': 'reasoning', 'id': 'r', 'summary': [], 'content': None, 'encrypted_content': 'opaque'})}
+            replay = dict(BASE, tools=TOOLS, messages=[{'role': 'user', 'content': 'hello'},
+                {'role': 'assistant', 'content': [reasoning, {'type': 'tool_use', 'id': 'call1', 'name': 'one', 'input': {}}]},
+                {'role': 'user', 'content': [{'type': 'tool_result', 'tool_use_id': 'call1', 'content': 'done'}]}])
+            p = subprocess.Popen([sys.executable, str(BRIDGE), 'messages', '--codex-home', tmp, '--codex-bin', str(FAKE), '--model-map', 'test=gpt-6.1-terra', '--max-seconds', '30'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+            try:
+                p.stdin.write(json.dumps(replay)); p.stdin.close()
+                while True:
+                    line = p.stdout.readline()
+                    if not line: self.fail('stream ended before the rebuilt turn')
+                    if line.startswith('event: content_block_delta'): break
+                p.send_signal(signal.SIGTERM)
+                p.wait(timeout=5)
+                stderr = p.stderr.read()
+                self.assertIn('reasoning discarded; retrying once', stderr)
+                self.assertIn('model-mod-http:499', stderr)
+            finally:
+                if p.poll() is None: p.kill(); p.wait()
                 p.stdout.close(); p.stderr.close()
 
     def test_timeout(self):

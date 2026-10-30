@@ -118,13 +118,24 @@ for line in sys.stdin:
             if mode == 'reasoning_invalid_always' or count == 0:
                 event('turn/completed', {'turn': {'id': 'turn1', 'status': 'failed', 'error': {'message': 'invalid_encrypted_content', 'code': 400}}})
                 continue
+            if config.get('hang'):
+                def send_deltas():
+                    while not interrupted.is_set():
+                        event('item/agentMessage/delta', {'delta': 'hello'})
+                        time.sleep(0.05)
+                threading.Thread(target=send_deltas, daemon=True).start()
+                continue
         if mode in ('reasoning_tool', 'reasoning_interleaved', 'reasoning_text_interleaved', 'reasoning_invalid_shape', 'reasoning_large', 'reasoning_many'):
             reasoning = {'type': 'reasoning', 'id': 'reason1', 'summary': [], 'content': None,
                          'encrypted_content': 'x' * (300000 if mode == 'reasoning_large' else 140000 if mode == 'reasoning_many' else 16)}
             if mode == 'reasoning_invalid_shape': reasoning['unexpected'] = 'private'
             event('rawResponseItem/completed', {'item': reasoning, 'threadId': '12345678-1234-4234-8234-123456789abc', 'turnId': 'turn1'})
             if mode == 'reasoning_interleaved':
+                event('rawResponseItem/completed', {'item': {'type': 'message', 'role': 'assistant', 'content': [{'type': 'output_text', 'text': 'RAW-SECRET-message'}]}})
                 event('rawResponseItem/completed', {'item': dict(reasoning, id='reason2')})
+                event('rawResponseItem/completed', {'item': {'type': 'function_call_output', 'call_id': 'raw1', 'output': 'RAW-SECRET-output'}})
+                event('rawResponseItem/completed', {'item': {'type': 'function_call', 'call_id': 'raw1', 'name': 'one', 'arguments': 'RAW-SECRET-call'}})
+                event('rawResponseItem/completed', {'item': dict(reasoning, id='after-call')})
             if mode == 'reasoning_many':
                 for n in range(2, 7): event('rawResponseItem/completed', {'item': dict(reasoning, id='reason' + str(n))})
         if mode == 'delegate_echo':

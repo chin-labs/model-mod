@@ -58,6 +58,12 @@ def cancel(signum, frame):
     raise Cancelled()
 
 
+def install_cancel_handlers():
+    signal.signal(signal.SIGTERM, cancel)
+    signal.signal(signal.SIGINT, cancel)
+    if hasattr(signal, 'SIGHUP'): signal.signal(signal.SIGHUP, cancel)
+
+
 def note(text):
     print('model-mod-note:' + text, file=sys.stderr, flush=True)
 
@@ -670,9 +676,7 @@ def main():
             sub.add_argument('--context-window', type=int)
             sub.add_argument('--catalog-window', type=int)
     args = parser.parse_args()
-    signal.signal(signal.SIGTERM, cancel)
-    signal.signal(signal.SIGINT, cancel)
-    if hasattr(signal, 'SIGHUP'): signal.signal(signal.SIGHUP, cancel)
+    install_cancel_handlers()
     if hasattr(signal, 'SIGPIPE'): signal.signal(signal.SIGPIPE, signal.SIG_IGN)
     app, started, status, exit_code = None, False, 500, 1
     watcher_stop = threading.Event()
@@ -831,6 +835,7 @@ def main():
                             note('Codex login: reasoning discarded; retrying once')
                             prepared['history'] = [item for item in prepared['history'] if item.get('type') != 'reasoning']
                             app.close()
+                            install_cancel_handlers()
                             app = App(args, cwd)
                             app.initialize()
                             messages(args, app, prepared, cwd)
