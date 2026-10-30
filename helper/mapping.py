@@ -15,7 +15,7 @@ def names(tools):
         name = tool.get('name')
         if not isinstance(name, str) or not name or name in forward:
             raise InvalidRequest('invalid or duplicate tool name')
-        encoded = name if re.fullmatch(r'[a-zA-Z0-9_-]{1,128}', name) else 'bridge_' + hashlib.sha256(name.encode()).hexdigest()
+        encoded = name if re.fullmatch(r'[a-zA-Z0-9_-]{1,64}', name) else 'bridge_' + hashlib.sha256(name.encode()).hexdigest()[:57]
         if encoded in reverse:
             raise InvalidRequest('tool name mapping collision')
         forward[name], reverse[encoded] = encoded, name
@@ -132,10 +132,13 @@ def usage_delta(before, after):
 
 
 def classify(error):
-    text = json.dumps(error).lower()
-    compact = re.sub(r'[^a-z0-9]', '', text)
-    if any(s in compact for s in ('ratelimit', 'usagelimit', 'sessionbudgetexceeded', '429')):
+    if not isinstance(error, dict): return 500, 'api_error'
+    code = error.get('code')
+    info = error.get('codexErrorInfo')
+    kind = info if isinstance(info, str) else next(iter(info), None) if isinstance(info, dict) else None
+    message = error.get('message')
+    if code == 429 or kind in ('rateLimit', 'usageLimit', 'sessionBudgetExceeded') or message == 'rate limit':
         return 429, 'rate_limit_error'
-    if any(s in compact for s in ('invalid', 'unsupported', 'badrequest', 'modelnotfound', 'cyberpolicy', 'misalignmentpolicyviolation', '400', '32602')):
+    if code == 400 or kind in ('badRequest', 'modelNotFound', 'cyberPolicy', 'misalignmentPolicyViolation') or message == 'invalid request':
         return 400, 'invalid_request_error'
     return 500, 'api_error'

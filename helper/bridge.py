@@ -72,7 +72,7 @@ def verify_version(args):
         raise BridgeError('Codex login: codex unavailable', code='codex_unavailable')
     version = tuple(map(int, match.group(1, 2, 3)))
     text = result.stdout.strip().split(' ', 1)[1]
-    if version < MIN_TESTED_VERSION:
+    if version < MIN_TESTED_VERSION or (version == MIN_TESTED_VERSION and match.group(4)):
         error = BridgeError('Codex login: codex version is too old', code='codex_too_old')
         error.version = text
         raise error
@@ -203,6 +203,7 @@ class App:
             try:
                 signal.signal(signal.SIGTERM, signal.SIG_IGN)
                 signal.signal(signal.SIGINT, signal.SIG_IGN)
+                if hasattr(signal, 'SIGHUP'): signal.signal(signal.SIGHUP, signal.SIG_IGN)
                 if self.proc.poll() is None:
                     try:
                         self.interrupt()
@@ -370,6 +371,7 @@ def main():
     args = parser.parse_args()
     signal.signal(signal.SIGTERM, cancel)
     signal.signal(signal.SIGINT, cancel)
+    if hasattr(signal, 'SIGHUP'): signal.signal(signal.SIGHUP, cancel)
     if hasattr(signal, 'SIGPIPE'): signal.signal(signal.SIGPIPE, signal.SIG_IGN)
     app, started, status, exit_code = None, False, 500, 1
     watcher_stop = threading.Event()
@@ -475,7 +477,7 @@ def main():
         status = 499
         try: sys.stdout.close()
         except BrokenPipeError: pass
-    except (OSError, KeyError, TypeError, ValueError) as e:
+    except (OSError, KeyError, TypeError, ValueError, AttributeError, subprocess.TimeoutExpired) as e:
         status = 500
         if started: emit('error', {'type': 'error', 'error': {'type': 'api_error', 'message': 'Codex login: bridge failure'}})
         else: print(json.dumps({'type': 'error', 'error': {'type': 'api_error', 'message': 'Codex login: bridge failure'}}), flush=True)

@@ -60,6 +60,11 @@ class Contract(unittest.TestCase):
         self.assertEqual(p['history'][1]['output'][1]['image_url'], 'data:image/png;base64,aGk=')
         self.assertEqual(p['ignored'], ['cache_control', 'max_tokens', 'signature'])
         encoded = names(tools)[0][name]
+        self.assertLessEqual(len(encoded), 64)
+        long_name = 'x' * 100
+        forward, reverse = names([{'name': long_name}])
+        self.assertLessEqual(len(forward[long_name]), 64)
+        self.assertEqual(reverse[forward[long_name]], long_name)
         with self.assertRaises(InvalidRequest): names(tools + [{'name': encoded, 'input_schema': {}}])
 
     def test_errors_and_version(self):
@@ -168,7 +173,7 @@ class Contract(unittest.TestCase):
 
     def test_version_policy(self):
         with tempfile.TemporaryDirectory() as home:
-            for version, code, status in [('0.164.9', 67, 'too_old'), ('0.165.0', 0, 'tested'), ('0.166.0', 0, 'untested'), ('0.165.0-beta.1', 0, 'untested')]:
+            for version, code, status in [('0.164.9', 67, 'too_old'), ('0.165.0', 0, 'tested'), ('0.166.0', 0, 'untested'), ('0.165.0-beta.1', 67, 'too_old')]:
                 Path(home, 'fake_config.json').write_text(json.dumps({'version': version}))
                 r = subprocess.run([sys.executable, str(BRIDGE), 'check', '--codex-home', home, '--codex-bin', str(FAKE)], text=True, capture_output=True)
                 self.assertEqual(r.returncode, code, r.stderr)
