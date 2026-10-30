@@ -63,6 +63,7 @@ for line in sys.stdin:
         send({'id': ident, 'result': {} if mode == 'missing_init' else {'userAgent': 'fake', 'codexHome': os.environ['CODEX_HOME'], 'platformFamily': 'unix', 'platformOs': 'test'}})
     elif method == 'config/read':
         features = dict.fromkeys(('apps', 'multi_agent', 'unified_exec', 'shell_tool', 'view_image', 'image_generation', 'browser_use', 'in_app_browser', 'goals', 'sleep_tool', 'computer_use', 'tool_suggest', 'skill_search', 'plugins', 'remote_plugin', 'hooks', 'guardian_approval', 'incremental_tools', 'browser_annotation_api', 'browser_use_external', 'browser_use_full_cdp_access', 'plugin_sharing', 'skill_mcp_dependency_install'), False)
+        features['memories'] = False
         if mode == 'bad_flag': features['shell_tool'] = True
         if mode == 'bad_unified_exec': features['unified_exec'] = True
         send({'id': ident, 'result': {'config': {'web_search': 'disabled', 'features': features}}})
@@ -74,12 +75,24 @@ for line in sys.stdin:
             send({'id': ident, 'error': {'code': -32000 if mode == 'bad' else 429, 'message': 'invalid request' if mode == 'bad' else 'rate limit', 'retryAfter': 7}})
         else:
             if mode == 'forbidden_before': event('item/started', {'item': {'type': 'commandExecution'}})
-            send({'id': ident, 'result': {'thread': {'id': 'invalid' if mode == 'invalid_uuid' else '12345678-1234-4234-8234-123456789abc'}, 'approvalPolicy': 'never', 'sandbox': {'type': 'readOnly'}}})
+            send({'id': ident, 'result': {'thread': {'id': 'invalid' if mode == 'invalid_uuid' else '12345678-1234-4234-8234-123456789abc'}, 'approvalPolicy': 'never', 'sandbox': {'type': 'workspaceWrite' if mode == 'delegate_bad_sandbox' else 'readOnly', 'networkAccess': False}}})
     elif method == 'thread/inject_items': send({'id': ident, 'result': {}})
     elif method == 'turn/start':
         items = [{'type': 'sleep'}, {'type': 'commandExecution'}] if mode == 'wait_forbidden' else [{'type': 'fileChange'}] if mode == 'forbidden_response' else ([{'type': 'sleep'}] if mode == 'wait_response' else [])
         send({'id': ident, 'result': {'turn': {'id': 'turn1', 'items': items}}})
-        event('item/agentMessage/delta', {'delta': 'hello'})
+        if mode == 'delegate_approval':
+            send({'id': 'approval1', 'method': 'item/commandExecution/requestApproval', 'params': {}})
+            send({'id': 'approval2', 'method': 'item/fileChange/requestApproval', 'params': {}})
+            for _ in range(2):
+                response = json.loads(next(sys.stdin))
+                record(response)
+        if mode == 'delegate_unknown':
+            send({'id': 'unknown1', 'method': 'future/unknown', 'params': {}})
+            continue
+        if mode == 'delegate_filechange':
+            event('item/started', {'item': {'type': 'fileChange'}})
+            continue
+        event('item/agentMessage/delta', {'delta': '\x1b[31mhello\x1b[0m\x01' + 'x' * 65000 if mode == 'delegate_long' else 'hello'})
         if mode == 'wait_tool':
             event('item/started', {'item': {'type': 'sleep'}})
             event('item/tool/call', {'callId': 'call1', 'tool': 'one', 'arguments': {'n': 1}})
