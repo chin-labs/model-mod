@@ -60,6 +60,7 @@ test('stop gate enforces its limit, warns on unknown and protects reentry', asyn
   const gate = runStopGate
   const c = { codex: new Map([['test/chat', { account: 'test', model: 'chat', directory: '/accounts/test' }]]), accountsDir: '/accounts' }
   const $ = { plugin: { root: '/plugin' }, session: { model: async () => 'test/chat' },
+    clock: { after: () => ({ cancel: () => {} }) },
     ui: { status: (s: string) => { warnings.push(s) }, toast: async () => {} },
     process: { run: async (_argv: unknown, opts: { stdin: string }) => {
       const req = JSON.parse(opts.stdin)
@@ -86,6 +87,22 @@ test('stop gate enforces its limit, warns on unknown and protects reentry', asyn
   release(); await pending
   await gate($, { ...e, session_id: 'unknown' }, next, opts, async () => { throw new Error('timeout') }, signal)
   expect(warnings.length).toBe(2)
+})
+
+test('stop gate timeout warns and retains the reentry lock until work settles', async () => {
+  let fire: () => void = () => {}, release: () => void = () => {}, started: () => void = () => {}, calls = 0
+  const ready = new Promise<void>(resolve => { started = resolve })
+  const $ = { clock: { after: (_ms: number, callback: () => void) => { fire = callback; return { cancel: () => {} } } },
+    ui: { status: (s: string) => { expect(s).toContain('not verified') }, toast: async () => {} } } as unknown as EngineInterface
+  const event = { session_id: 'timeout-session', cwd: '/repo', stop_hook_active: false }
+  const config = async () => { calls++; started(); await new Promise<void>(resolve => { release = resolve }); return undefined }
+  const opts = { codexStopGate: 'on' }, signal = new AbortController().signal, next = async () => ({})
+  const pending = runStopGate($, event, next, opts, config, signal)
+  await ready; fire(); expect((await pending).block).toBeUndefined()
+  await runStopGate($, event, next, opts, config, signal)
+  expect(calls).toBe(1)
+  release()
+  await Promise.resolve(); await Promise.resolve()
 })
 
 test('automatic gate caches only the exact snapshot and reruns after changes', async () => {

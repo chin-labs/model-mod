@@ -215,11 +215,26 @@ export async function runStopGate($: EngineInterface, e: StopEvent, next: () => 
   if (!settings.enabled || e.agent_id !== undefined || e.stop_hook_active || e.isAborted || e.error || turnFailed || signal.aborted || !e.session_id) return next()
   if (gateRunning.has(e.session_id)) return next()
   gateRunning.add(e.session_id)
-  let downstream: StopResult | undefined
+  let downstream: StopResult | undefined, retainLock = false
   try {
     downstream = await next()
     if (downstream.block || downstream.preventContinuation) return downstream
-    const result = await automaticGate($, await config(), e.session_id, e.cwd, signal)
+    const controller = new AbortController()
+    const abort = () => controller.abort()
+    signal.addEventListener('abort', abort, { once: true })
+    if (signal.aborted) controller.abort()
+    let timer: { cancel: () => void } | undefined, expired = false
+    const timeout = new Promise<GateResult>(resolve => {
+      timer = $.clock.after(115_000, () => { expired = true; controller.abort(); resolve({ verdict: 'unknown', findings: [], needsHuman: true }) })
+    })
+    const operation = (async () => automaticGate($, await config(), e.session_id, e.cwd, controller.signal))()
+    let result: GateResult | 'skip'
+    try { result = await Promise.race([operation, timeout]) }
+    finally { timer?.cancel(); signal.removeEventListener('abort', abort) }
+    if (expired) {
+      retainLock = true
+      void operation.finally(() => gateRunning.delete(e.session_id)).catch(() => undefined)
+    }
     if (result === 'skip' || result.verdict === 'pass') return downstream
     if (result.verdict === 'block' && (gateBlocks.get(e.session_id) ?? 0) < settings.blocks) {
       gateBlocks.set(e.session_id, (gateBlocks.get(e.session_id) ?? 0) + 1)
@@ -230,7 +245,7 @@ export async function runStopGate($: EngineInterface, e: StopEvent, next: () => 
   } catch {
     try { $.ui.status(warning); await $.ui.toast(warning) } catch { /* status is best effort */ }
     return downstream ?? {}
-  } finally { gateRunning.delete(e.session_id) }
+  } finally { if (!retainLock) gateRunning.delete(e.session_id) }
 }
 
 export async function transfer($: EngineInterface, args: string, c: DelegateConfig | undefined, transcript: string | undefined, signal: AbortSignal, interactive: boolean): Promise<{ text: string }> {
