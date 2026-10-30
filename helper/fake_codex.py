@@ -88,7 +88,8 @@ for line in sys.stdin:
             sandbox = {'type': 'workspaceWrite' if mode == 'delegate_bad_sandbox' else 'readOnly', 'networkAccess': False}
             if params.get('sandbox') == 'workspace-write' and mode != 'delegate_bad_sandbox':
                 sandbox = {'type': 'workspaceWrite', 'writableRoots': params['config']['sandbox_workspace_write']['writable_roots'], 'networkAccess': False, 'excludeTmpdirEnvVar': True, 'excludeSlashTmp': True}
-            send({'id': ident, 'result': {'thread': {'id': 'invalid' if mode == 'invalid_uuid' else '12345678-1234-4234-8234-123456789abc'}, 'approvalPolicy': 'never', 'sandbox': sandbox}})
+            if mode == 'delegate_network': sandbox['networkAccess'] = True
+            send({'id': ident, 'result': {'thread': {'id': 'invalid' if mode == 'invalid_uuid' else '12345678-1234-4234-8234-123456789abc'}, 'approvalPolicy': 'on-request' if mode == 'delegate_approval_mismatch' else 'never', 'sandbox': sandbox}})
     if method == 'thread/start' and mode == 'delegate_no_read':
         while True: time.sleep(1)
     elif method == 'thread/inject_items':
@@ -96,12 +97,14 @@ for line in sys.stdin:
             send({'id': ident, 'error': {'code': -32602, 'message': 'synthetic'}})
         else: send({'id': ident, 'result': {}})
     elif method == 'externalAgentConfig/detect':
-        send({'id': ident, 'result': {'items': [{'itemType': 'CONFIG', 'description': 'ignored'}, {'itemType': 'SESSIONS', 'description': 'sessions', 'cwd': None, 'details': {'sessions': [{'path': config['session_path'], 'cwd': config['session_cwd'], 'title': None}]}}]}})
+        sessions = [{'path': config['session_path'], 'cwd': config['session_cwd'], 'title': None}]
+        if mode == 'transfer_multiple': sessions.append(dict(sessions[0]))
+        send({'id': ident, 'result': {'items': [{'itemType': 'CONFIG', 'description': 'ignored'}, {'itemType': 'SESSIONS', 'description': 'sessions', 'cwd': None, 'details': {'sessions': sessions}}]}})
     elif method == 'externalAgentConfig/import':
         send({'id': ident, 'result': {'importId': 'import1'}})
         if mode == 'transfer_exit': sys.exit(0)
         if mode != 'transfer_timeout':
-            event('externalAgentConfig/import/completed', {'importId': 'import1', 'itemTypeResults': [{'itemType': 'SESSIONS', 'failures': [], 'successes': [{'itemType': 'SESSIONS', 'source': config['session_path'], 'target': 'invalid' if mode == 'transfer_invalid_id' else '12345678-1234-4234-8234-123456789abc'}]}]})
+            event('externalAgentConfig/import/completed', {'importId': 'import1', 'itemTypeResults': [{'itemType': 'SESSIONS', 'failures': [], 'successes': [{'itemType': 'SESSIONS', 'source': '/different/session' if mode == 'transfer_wrong_source' else config['session_path'], 'target': 'invalid' if mode == 'transfer_invalid_id' else '12345678-1234-4234-8234-123456789abc'}]}]})
     elif method == 'turn/start':
         items = [{'type': 'sleep'}, {'type': 'commandExecution'}] if mode == 'wait_forbidden' else [{'type': 'fileChange'}] if mode == 'forbidden_response' else ([{'type': 'sleep'}] if mode == 'wait_response' else [])
         send({'id': ident, 'result': {'turn': {'id': 'turn1', 'items': items}}})
