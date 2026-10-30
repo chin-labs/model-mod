@@ -1086,6 +1086,8 @@ for (const url of ['https://api.anthropic.com', 'https://claude.ai', 'https://te
 test('setup: missing apiKey stops without asking for a key even while inactive', async ($, on) => {
   const w = world(on, null, LOCAL, { stdout: '', code: 0 })
   await $.session.start({ cwd: '/work' } as never)
+  const status = await $.command.run({ ...SETUP, command: 'model-mod:status' })
+  expect(status.text).toContain('/model-mod:setup for Codex login')
   const out = await $.command.run(SETUP)
   expect(out.text).toContain('apiKey is not configured')
   expect(out.text).toContain('/plugin → model-mod configure')
@@ -1251,7 +1253,7 @@ for (const apiKey of [KEY, 'bad key']) {
 test('Codex login: missing account directory leaves the API active and refuses Codex IDs', { options: { ...CODEX_OPTIONS, ...OPTIONS, models: LOCAL } }, async ($, on) => {
   const w = world(on, null, LOCAL, { stdout: SSE_OK, code: 0 }, undefined, { HOME: '', APPDATA: '' })
   expect((await drain($.turn.step(STEP(LOCAL)))).result.answer).toBe('local answer')
-  expect((await drain($.turn.step(STEP(CODEX_MODEL)))).result.answer).toContain('not in the allowlist')
+  expect((await drain($.turn.step(STEP(CODEX_MODEL)))).result.answer).toContain('not in the allowlist; configure codexAccountsDir')
   expect(w.reached).toEqual([])
 })
 

@@ -171,7 +171,7 @@ async function configurePicker($: EngineInterface, c: { baseUrl: string; key?: s
 }
 
 type CodexAccount = { account: string; model: string; directory: string }
-type Config = { codex?: Map<string, CodexAccount>; pythonBin?: string; codexBin?: string; accountsDir?: string; apiInvalid?: boolean; prompts: Prompts; promptsDir?: string; baseUrl: string; headerFile?: string; key?: string; models: string[]; toolsFile?: string; defaultWindow?: number; explicitModels?: boolean; excluded?: Set<string>; imageAuto?: boolean; source?: 'options' | 'file'; maxTokens: number; effortMode: 'suffix' | 'none'; imageModel?: string; contextWindows?: Record<string, number>; sideModel?: string; keepThinking?: boolean; localTitle?: boolean; localContext?: boolean; toolSearch?: 'auto' | 'on' | 'off'; toolSearchPercent?: number; refresh?: string[]; fallbackModel?: string; fallbackPercent?: number; workerModel?: string }
+type Config = { codex?: Map<string, CodexAccount>; pythonBin?: string; codexBin?: string; accountsDir?: string; apiInvalid?: boolean; prompts: Prompts; promptsDir?: string; baseUrl: string; headerFile?: string; key?: string; models: string[]; toolsFile?: string; defaultWindow?: number; explicitModels?: boolean; excluded?: Set<string>; codexDirectoryUnavailable?: Set<string>; imageAuto?: boolean; source?: 'options' | 'file'; maxTokens: number; effortMode: 'suffix' | 'none'; imageModel?: string; contextWindows?: Record<string, number>; sideModel?: string; keepThinking?: boolean; localTitle?: boolean; localContext?: boolean; toolSearch?: 'auto' | 'on' | 'off'; toolSearchPercent?: number; refresh?: string[]; fallbackModel?: string; fallbackPercent?: number; workerModel?: string }
 type Tool = { name: string; description: string; input_schema: Record<string, unknown> }
 
 let config: Config | undefined
@@ -421,7 +421,12 @@ async function loadNow($: EngineInterface) {
       if (!dir) {
         $.ui.status('Codex login: accounts directory unavailable; configure codexAccountsDir.')
         built.excluded ??= new Set()
-        for (const account of candidate.accounts as string[]) for (const model of candidate.codexModels as string[]) built.excluded.add(`${account}/${model}`)
+        built.codexDirectoryUnavailable = new Set()
+        for (const account of candidate.accounts as string[]) for (const model of candidate.codexModels as string[]) {
+          const id = `${account}/${model}`
+          built.excluded.add(id)
+          built.codexDirectoryUnavailable.add(id)
+        }
       }
       if (dir) {
         built.accountsDir = dir
@@ -1111,7 +1116,7 @@ export function loopbackHost(hostname: string): boolean {
 async function configHint($: EngineInterface): Promise<string> {
   return optionsCandidate(pluginOptions) === undefined && await $.env.get('MODEL_MOD_CONFIG')
     ? 'Check the JSON file named by MODEL_MOD_CONFIG (baseUrl, headerFile, models and maxTokens), then reload the plugin.'
-    : 'Configure apiKey through /plugin → model-mod configure.'
+    : 'Run /model-mod:setup for Codex login or configure apiKey through /plugin → model-mod configure.'
 }
 
 function commandText(reply: { text: string }): { text: string } {
@@ -1741,7 +1746,7 @@ export const register: Register = (on, options) => {
     if (e.agentId === undefined) {
       try { await applyWindow($, c, e.model) } catch { /* window stays as it was */ }
     }
-    if (c.excluded?.has(e.model)) return yield* failure(e, 'model is not in the allowlist')
+    if (c.excluded?.has(e.model)) return yield* failure(e, c.codexDirectoryUnavailable?.has(e.model) ? 'model is not in the allowlist; configure codexAccountsDir' : 'model is not in the allowlist')
     if (!c.models.includes(e.model)) return yield* next(e)
     const codex = c.codex?.get(e.model)
     let parser = new MessagesStream(e.model)
