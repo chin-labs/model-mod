@@ -12,6 +12,7 @@ All notable changes to this project are listed here. The format follows [Keep a 
 - Codex turns use client-provided dynamic tools; built-in capabilities are disabled, with two MCP resource-list tools still available. Reserved `mcp__` and incompatible tool names use reversible aliases. Codex CLI versions below 0.165.0 are refused.
 - The client's built-in ToolSearch is no longer offered to your models (API and Codex); the mod's own `tool_search` loads MCP tool schemas instead. `/model-mod:model` labels each model `(Codex login)` or `(API)`.
 - Codex requests use bounded retries and handle upstream 429 responses. Codex models do not offer `generate_image` or `web_search`; their default context window is 128,000 tokens.
+- Side-question command messages no longer repeat the client label, and the informational agent message count status is no longer shown.
 
 ### Fixed
 - On the Codex path, `tool_reference` blocks in tool results are converted to text, one per line, so a conversation that used the client's tool search no longer fails with an invalid-request error.
@@ -19,6 +20,7 @@ All notable changes to this project are listed here. The format follows [Keep a 
 
 ### Documentation
 - Update the English and Traditional Chinese README and documentation for both upstreams. Windows, Python 3.9 and concurrent use of two Codex accounts remain unverified.
+- Record the tested Claude Code versions, explain the unrecognized model warning and link to device authentication instructions.
 
 ## 0.1.2 - 2026-10-30
 
