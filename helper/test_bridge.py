@@ -85,7 +85,10 @@ class Contract(unittest.TestCase):
 
     def test_errors_and_version(self):
         self.assertEqual(classify({'message': 'not a rate limit; 429 in user input'}), (500, 'api_error'))
-        self.assertEqual(classify({'codexErrorInfo': 'usageLimit'}), (429, 'rate_limit_error'))
+        self.assertEqual(classify({'codexErrorInfo': 'rateLimitExceeded'}), (429, 'rate_limit_error'))
+        self.assertEqual(classify({'codexErrorInfo': 'usageLimitExceeded'}), (429, 'rate_limit_error'))
+        for status, expected in ((429, (429, 'rate_limit_error')), (400, (400, 'invalid_request_error')), (503, (500, 'api_error'))):
+            self.assertEqual(classify({'codexErrorInfo': {'httpConnectionFailed': {'httpStatusCode': status}}}), expected)
         self.assertEqual(classify({'code': -32602}), (500, 'api_error'))
         for mode in ('rejected_request', 'rejected_params'):
             r = self.run_bridge(mode=mode)

@@ -137,8 +137,10 @@ def classify(error):
     info = error.get('codexErrorInfo')
     kind = info if isinstance(info, str) else next(iter(info), None) if isinstance(info, dict) else None
     message = error.get('message')
-    if code == 429 or kind in ('rateLimit', 'usageLimit', 'sessionBudgetExceeded') or message == 'rate limit':
+    details = info.get(kind) if isinstance(info, dict) else None
+    status = details.get('httpStatusCode') if isinstance(details, dict) else None
+    if code == 429 or status == 429 or kind in ('rateLimit', 'usageLimit', 'rateLimitExceeded', 'usageLimitExceeded', 'sessionBudgetExceeded') or message == 'rate limit':
         return 429, 'rate_limit_error'
-    if code == 400 or kind in ('badRequest', 'modelNotFound', 'cyberPolicy', 'misalignmentPolicyViolation') or message == 'invalid request':
+    if code == 400 or status == 400 or kind in ('badRequest', 'modelNotFound', 'cyberPolicy', 'misalignmentPolicyViolation') or message == 'invalid request':
         return 400, 'invalid_request_error'
     return 500, 'api_error'
