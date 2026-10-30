@@ -58,10 +58,22 @@ for line in sys.stdin:
             send({'id': ident, 'result': {'thread': {'id': 'invalid' if mode == 'invalid_uuid' else '12345678-1234-4234-8234-123456789abc'}, 'approvalPolicy': 'never', 'sandbox': {'type': 'readOnly'}}})
     elif method == 'thread/inject_items': send({'id': ident, 'result': {}})
     elif method == 'turn/start':
-        send({'id': ident, 'result': {'turn': {'id': 'turn1', 'items': [{'type': 'fileChange'}] if mode == 'forbidden_response' else []}}})
+        items = [{'type': 'fileChange'}] if mode == 'forbidden_response' else ([{'type': 'sleep'}] if mode == 'wait_response' else [])
+        send({'id': ident, 'result': {'turn': {'id': 'turn1', 'items': items}}})
         event('item/agentMessage/delta', {'delta': 'hello'})
+        if mode in ('wait_started', 'wait_completed', 'wait_response', 'wait_turn'):
+            if mode in ('wait_started', 'wait_completed'):
+                event('item/' + mode.removeprefix('wait_'), {'item': {'type': 'collabAgentToolCall'}})
+            elif mode == 'wait_turn':
+                event('turn/started', {'turn': {'id': 'turn1', 'items': [{'type': 'sleep'}]}})
+            event('item/agentMessage/delta', {'delta': 'discarded'})
+            event('item/started', {'item': {'type': 'commandExecution'}})
+            continue
         if mode in ('abort', 'chatty', 'stubborn'): continue
         if mode == 'forbidden_after': event('item/started', {'item': {'type': 'webSearch'}}); continue
+        if mode in ('forbidden_mcp', 'forbidden_unknown'):
+            event('item/completed', {'item': {'type': 'mcpToolCall', 'tool': 'other'} if mode == 'forbidden_mcp' else {'type': 'futureTool'}})
+            continue
         if mode == 'miderror':
             event('error', {'error': {'message': 'upstream error'}, 'willRetry': False})
         elif mode == 'tools':

@@ -30,7 +30,10 @@ from mapping import InvalidRequest, classify, prepare, usage_delta
 MIN_TESTED_VERSION = (0, 165, 0)
 # These item types were observed in the live contract test; MCP is restricted separately.
 ALLOWED_ITEMS = frozenset(('userMessage', 'agentMessage', 'reasoning', 'dynamicToolCall'))
+WAIT_ITEMS = frozenset(('collabAgentToolCall', 'sleep'))
 ALLOWED_MCP_TOOLS = frozenset(('list_mcp_resources', 'list_mcp_resource_templates'))
+TOOL_INSTRUCTIONS = ('Use only the provided function tools. Do not use built-in sleep, wait, collaboration, or subagent tools. '
+                     'To wait for background work, end this turn; the client will notify you when it completes.')
 NOT_CHAT = re.compile(r'claude|anthropic|image|auto-review|embed|tts|whisper|moderation', re.I)
 FEATURES = ('apps', 'multi_agent', 'unified_exec', 'shell_tool', 'view_image', 'image_generation', 'browser_use', 'in_app_browser', 'goals',
             'sleep_tool', 'computer_use', 'tool_suggest', 'skill_search', 'plugins', 'remote_plugin', 'hooks', 'guardian_approval',
@@ -105,6 +108,7 @@ def warnings(home):
 def check_item(value):
     if not isinstance(value, dict) or not isinstance(value.get('type'), str): raise incompatible('item.type')
     kind = value['type']
+    if kind in WAIT_ITEMS: return True
     if kind not in ALLOWED_ITEMS and not (kind == 'mcpToolCall' and value.get('tool') in ALLOWED_MCP_TOOLS):
         safe_kind = kind if re.fullmatch(r'[A-Za-z0-9_]{1,64}', kind) else 'unknown'
         note('Codex login: unsupported codex behavior: ' + safe_kind)
@@ -115,7 +119,8 @@ def check_turn(value):
     if not isinstance(value, dict): return
     if 'items' in value:
         if not isinstance(value['items'], list): raise incompatible('turn.items')
-        for item in value['items']: check_item(item)
+        for item in value['items']:
+            if check_item(item): return True
 
 
 class App:
@@ -145,6 +150,7 @@ class App:
         self.interrupted = False
         self.interrupt_id = None
         self.initialized = False
+        self.wait_interrupted = False
         def reader():
             try:
                 for line in self.proc.stdout:
@@ -170,15 +176,21 @@ class App:
             raise BridgeError('Codex login: app-server exited unexpectedly', 502)
         if isinstance(item, Exception): raise item
         if not isinstance(item, dict): raise incompatible('response')
+        if self.wait_interrupted: return item
+        waiting = False
         if item.get('method') in ('item/started', 'item/completed'):
             params = item.get('params')
-            check_item(params.get('item') if isinstance(params, dict) else None)
+            waiting = bool(check_item(params.get('item') if isinstance(params, dict) else None))
         for container in (item.get('params'), item.get('result')):
-            if isinstance(container, dict):
-                check_turn(container.get('turn'))
+            if isinstance(container, dict) and not waiting:
+                waiting = bool(check_turn(container.get('turn')))
                 thread = container.get('thread')
-                if isinstance(thread, dict) and isinstance(thread.get('turns'), list):
-                    for turn in thread['turns']: check_turn(turn)
+                if not waiting and isinstance(thread, dict) and isinstance(thread.get('turns'), list):
+                    for turn in thread['turns']:
+                        if check_turn(turn):
+                            waiting = True
+                            break
+        if waiting: item['_model_mod_wait'] = True
         return item
 
     def request(self, method, params):
@@ -268,7 +280,7 @@ def messages(args, app, prepared, cwd):
     p = prepared
     for field in p['ignored']: note('Codex login: ignored field ' + field)
     if p['dropped']: note('Codex login: discarded thinking blocks: ' + str(p['dropped']))
-    result = app.request('thread/start', {'model': p['model'], 'cwd': cwd, 'sandbox': 'read-only', 'approvalPolicy': 'never', 'ephemeral': True, 'baseInstructions': p['system'], 'dynamicTools': p['tools']})
+    result = app.request('thread/start', {'model': p['model'], 'cwd': cwd, 'sandbox': 'read-only', 'approvalPolicy': 'never', 'ephemeral': True, 'baseInstructions': p['system'], 'developerInstructions': TOOL_INSTRUCTIONS, 'dynamicTools': p['tools']})
     try:
         thread_id = result['thread']['id']
         if not isinstance(thread_id, str) or str(uuid.UUID(thread_id)) != thread_id.lower(): raise ValueError()
@@ -285,9 +297,16 @@ def messages(args, app, prepared, cwd):
     message = {'id': 'msg_' + uuid.uuid4().hex, 'type': 'message', 'role': 'assistant', 'model': p['client_model'], 'content': [], 'stop_reason': None, 'stop_sequence': None, 'usage': {'input_tokens': 0, 'output_tokens': 0}}
     if p['stream']: emit('message_start', {'type': 'message_start', 'message': message})
     content, opened, calls, latest = [], False, [], {}
+    if check_turn(result.get('turn')):
+        app.wait_interrupted = True
+        app.interrupt()
     while True:
         obj = app.pending.pop(0) if app.pending else app.next()
         method, params = obj.get('method'), obj.get('params', {})
+        if obj.get('_model_mod_wait') and not app.wait_interrupted:
+            app.wait_interrupted = True
+            app.interrupt()
+        if app.wait_interrupted and method != 'turn/completed': continue
         if method == 'item/agentMessage/delta':
             if calls: continue
             if not opened:
@@ -315,7 +334,7 @@ def messages(args, app, prepared, cwd):
             latest = params.get('tokenUsage', {}).get('total', {})
         elif method == 'turn/completed' and params.get('turn', {}).get('id') == app.turn_id:
             status = params['turn'].get('status')
-            if status != 'completed' and not (calls and status == 'interrupted'):
+            if status != 'completed' and not ((calls or app.wait_interrupted) and status == 'interrupted'):
                 code, kind = classify(params['turn'].get('error'))
                 raise BridgeError('Codex login: app-server turn failed', code, kind)
             app.turn_id = None

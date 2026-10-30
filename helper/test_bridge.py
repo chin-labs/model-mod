@@ -35,6 +35,25 @@ class Contract(unittest.TestCase):
         self.assertEqual(json.loads(nonstream.stdout)['content'], [{'type': 'text', 'text': 'hello'}])
         self.assertEqual(nonstream.returncode, 0)
 
+    def test_wait_items_end_turn(self):
+        for mode in ('wait_started', 'wait_completed', 'wait_response', 'wait_turn'):
+            for stream in (True, False):
+                with self.subTest(mode=mode, stream=stream), tempfile.TemporaryDirectory() as tmp:
+                    log = Path(tmp) / 'log'
+                    r = self.run_bridge(dict(BASE, stream=stream, system='client system'), mode, log)
+                    self.assertEqual(r.returncode, 0, r.stderr)
+                    self.assertNotIn('event: error', r.stdout)
+                    self.assertNotIn('model-mod-http:502', r.stderr)
+                    self.assertIn('"stop_reason": "end_turn"', r.stdout)
+                    self.assertNotIn('discarded', r.stdout)
+                    if mode != 'wait_response': self.assertIn('hello', r.stdout)
+                    records = [json.loads(x) for x in log.read_text().splitlines()]
+                    start = next(x for x in records if x.get('method') == 'thread/start')
+                    self.assertEqual(start['params']['baseInstructions'], 'client system')
+                    self.assertIn('provided function tools', start['params']['developerInstructions'])
+                    self.assertEqual(sum(x.get('method') == 'turn/interrupt' for x in records), 1)
+                    with self.assertRaises(ProcessLookupError): os.kill(records[0]['pid'], 0)
+
     def test_parallel_tools_and_interrupt(self):
         with tempfile.TemporaryDirectory() as tmp:
             log = Path(tmp) / 'log'
@@ -236,6 +255,11 @@ class Contract(unittest.TestCase):
             self.assertIn('unsupported codex behavior', r.stdout)
             self.assertEqual('event: error' in r.stdout, streamed)
             self.assertNotIn('message_stop', r.stdout)
+        for mode in ('forbidden_mcp', 'forbidden_unknown'):
+            r = self.run_bridge(mode=mode)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn('model-mod-http:502', r.stderr)
+            self.assertIn('unsupported codex behavior', r.stdout)
         for mode in ('missing_init', 'bad_flag', 'bad_unified_exec', 'startup_fail'):
             r = self.run_bridge(mode=mode)
             self.assertEqual(r.returncode, 65)
