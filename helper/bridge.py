@@ -29,7 +29,7 @@ MIN_TESTED_VERSION = (0, 165, 0)
 ALLOWED_ITEMS = frozenset(('userMessage', 'agentMessage', 'reasoning', 'dynamicToolCall'))
 ALLOWED_MCP_TOOLS = frozenset(('list_mcp_resources', 'list_mcp_resource_templates'))
 NOT_CHAT = re.compile(r'claude|anthropic|image|auto-review|embed|tts|whisper|moderation', re.I)
-FEATURES = ('apps', 'multi_agent', 'shell_tool', 'view_image', 'image_generation', 'browser_use', 'in_app_browser', 'goals',
+FEATURES = ('apps', 'multi_agent', 'unified_exec', 'shell_tool', 'view_image', 'image_generation', 'browser_use', 'in_app_browser', 'goals',
             'sleep_tool', 'computer_use', 'tool_suggest', 'skill_search', 'plugins', 'remote_plugin', 'hooks', 'guardian_approval',
             'incremental_tools', 'browser_annotation_api', 'browser_use_external', 'browser_use_full_cdp_access', 'plugin_sharing', 'skill_mcp_dependency_install')
 

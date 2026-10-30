@@ -44,9 +44,10 @@ class Contract(unittest.TestCase):
             self.assertIn('"stop_reason": "tool_use"', r.stdout)
             calls = [json.loads(x) for x in log.read_text().splitlines()]
             self.assertFalse({'OPENAI_API_KEY', 'CODEX_API_KEY', 'ANTHROPIC_API_KEY'} & set(calls[0]['env_keys']))
-            for feature in ('sleep_tool', 'computer_use', 'tool_suggest', 'skill_search', 'plugins', 'remote_plugin', 'hooks', 'guardian_approval', 'incremental_tools', 'browser_annotation_api', 'browser_use_external', 'browser_use_full_cdp_access', 'plugin_sharing', 'skill_mcp_dependency_install'):
+            for feature in ('unified_exec', 'sleep_tool', 'computer_use', 'tool_suggest', 'skill_search', 'plugins', 'remote_plugin', 'hooks', 'guardian_approval', 'incremental_tools', 'browser_annotation_api', 'browser_use_external', 'browser_use_full_cdp_access', 'plugin_sharing', 'skill_mcp_dependency_install'):
                 self.assertIn(feature, calls[0]['argv'])
                 self.assertEqual(calls[0]['argv'][calls[0]['argv'].index(feature) - 1], '--disable')
+            self.assertNotIn('code_mode_host', calls[0]['argv'])
             for setting in ('include_permissions_instructions=false', 'include_environment_context=false'):
                 self.assertIn(setting, calls[0]['argv'])
                 self.assertEqual(calls[0]['argv'][calls[0]['argv'].index(setting) - 1], '-c')
@@ -222,7 +223,7 @@ class Contract(unittest.TestCase):
             self.assertIn('unsupported codex behavior', r.stdout)
             self.assertEqual('event: error' in r.stdout, streamed)
             self.assertNotIn('message_stop', r.stdout)
-        for mode in ('missing_init', 'bad_flag', 'startup_fail'):
+        for mode in ('missing_init', 'bad_flag', 'bad_unified_exec', 'startup_fail'):
             r = self.run_bridge(mode=mode)
             self.assertEqual(r.returncode, 65)
             self.assertIn('incompatible codex app-server protocol', r.stdout)
