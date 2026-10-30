@@ -34,12 +34,12 @@ GATE_SCHEMA = {
     'properties': {
         'verdict': {'type': 'string', 'enum': ['pass', 'block', 'unknown']},
         'needsHuman': {'type': 'boolean'},
-        'findings': {'type': 'array', 'maxItems': 20, 'items': {
-            'type': 'object', 'additionalProperties': False, 'required': ['severity', 'file', 'summary'],
+        'findings': {'type': 'array', 'items': {
+            'type': 'object', 'additionalProperties': False, 'required': ['severity', 'file', 'line', 'summary'],
             'properties': {'severity': {'type': 'string', 'enum': ['blocking', 'note']},
-                           'file': {'type': 'string', 'maxLength': 500},
-                           'line': {'type': 'integer', 'minimum': 1},
-                           'summary': {'type': 'string', 'maxLength': 500}}}}
+                           'file': {'type': 'string'},
+                           'line': {'type': ['integer', 'null']},
+                           'summary': {'type': 'string'}}}}
     }
 }
 
@@ -58,10 +58,10 @@ def gate_verdict(text):
         if data['verdict'] not in ('pass', 'block', 'unknown') or type(data['needsHuman']) is not bool: return unknown
         if not isinstance(data['findings'], list) or len(data['findings']) > 20: return unknown
         for finding in data['findings']:
-            if not isinstance(finding, dict) or not {'severity', 'file', 'summary'} <= set(finding) or set(finding) - {'severity', 'file', 'summary', 'line'}: return unknown
+            if not isinstance(finding, dict) or set(finding) != {'severity', 'file', 'summary', 'line'}: return unknown
             if finding['severity'] not in ('blocking', 'note'): return unknown
             if any(not isinstance(finding[k], str) or len(finding[k]) > 500 for k in ('file', 'summary')): return unknown
-            if 'line' in finding and (type(finding['line']) is not int or finding['line'] < 1): return unknown
+            if finding.get('line') is not None and (type(finding['line']) is not int or finding['line'] < 1): return unknown
         blocking = any(f['severity'] == 'blocking' for f in data['findings'])
         if data['verdict'] == 'pass' and (blocking or data['needsHuman']): return unknown
         if data['verdict'] == 'block' and not blocking: return unknown
@@ -472,6 +472,7 @@ def execute(request, own_group=True, on_spawn=None):
         app.turn = result.get('turn', {}).get('id') or app.turn
         if not app.turn: raise Failure('Invalid Codex turn.')
         chunks, size, fallback = [], 0, ''
+        completed_agent, gate_final = False, ''
         while True:
             obj = app.pending.pop(0) if app.pending else app.next()
             method, params = obj.get('method'), obj.get('params') or {}
@@ -481,7 +482,10 @@ def execute(request, own_group=True, on_spawn=None):
                     chunks.append(value[:MAX_OUTPUT + 1]); size += len(value)
             elif method == 'item/completed':
                 item = params.get('item', {})
-                if item.get('type') == 'agentMessage' and isinstance(item.get('text'), str): fallback = item['text'][:MAX_OUTPUT + 1]
+                if item.get('type') == 'agentMessage' and isinstance(item.get('text'), str):
+                    fallback = item['text'][:MAX_OUTPUT + 1]
+                    completed_agent = True
+                    if item.get('phase') != 'commentary': gate_final = fallback
                 if item.get('type') == 'exitedReviewMode' and isinstance(item.get('review'), str) and not fallback: fallback = item['review'][:MAX_OUTPUT + 1]
             elif method == 'turn/completed':
                 status = params.get('turn', {}).get('status')
@@ -489,7 +493,8 @@ def execute(request, own_group=True, on_spawn=None):
                 if status != 'completed': raise Failure('Codex turn did not complete; result is incomplete.')
                 raw = ''.join(chunks) or fallback
                 if options.get('gate'):
-                    verdict = gate_verdict(raw) if size <= MAX_OUTPUT and len(raw) <= MAX_OUTPUT else gate_verdict('')
+                    raw = gate_final if completed_agent else raw
+                    verdict = gate_verdict(raw) if len(raw) <= MAX_OUTPUT and (completed_agent or size <= MAX_OUTPUT) else gate_verdict('')
                     after = gate_snapshot(cwd, base, request.get('sessionId'))
                     if snapshot['fingerprint'] != after['fingerprint']: verdict = gate_verdict('')
                     verdict['fingerprint'] = snapshot['fingerprint']

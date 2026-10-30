@@ -104,7 +104,7 @@
     "codexStopGate": {
       "type": "string",
       "title": "Codex Stop review gate",
-      "description": "off or on. When on, completing a main-session turn may start a read-only Codex review that sends the diff to OpenAI and can block ending, up to the configured limit. Read-only can still run commands; review quality and hook behavior are unverified.",
+      "description": "off or on. When on, completing a main-session turn may start a read-only Codex review that sends the diff and full contents of untracked, non-ignored files to OpenAI; gitignored files are not sent and can block ending, up to the configured limit. Read-only can still run commands; review quality and hook behavior are unverified.",
       "default": "off"
     },
     "codexStopGateBlocks": {

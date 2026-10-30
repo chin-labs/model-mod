@@ -653,6 +653,8 @@ class DelegateTest(unittest.TestCase):
                    dict(valid, findings=[blocking] * 21), dict(valid, needsHuman=True)]
         for value in invalid:
             self.assertEqual(delegate.gate_verdict(json.dumps(value))['verdict'], 'unknown')
+        self.assertEqual(delegate.gate_verdict(json.dumps(dict(valid, verdict='block', findings=[dict(blocking, line=None)])))['verdict'], 'block')
+        self.assertEqual(delegate.gate_verdict(json.dumps(dict(valid, verdict='block', findings=[{'severity': 'blocking', 'file': 'file', 'summary': 'issue'}])))['verdict'], 'unknown')
         for text in ('invalid', '{"verdict":"pass","verdict":"pass","findings":[],"needsHuman":false}'):
             self.assertEqual(delegate.gate_verdict(text)['verdict'], 'unknown')
         (self.repo / 'file').write_text('changed\n')
@@ -671,6 +673,18 @@ class DelegateTest(unittest.TestCase):
         self.assertEqual(turn['outputSchema'], delegate.GATE_SCHEMA)
         self.assertEqual(turn['sandboxPolicy'], {'type': 'readOnly', 'networkAccess': False})
         self.assertIn('untracked', turn['input'][0]['text'])
+        self.mode('gate_commentary')
+        self.assertEqual(json.loads(delegate.execute(req))['verdict'], 'pass')
+        (self.account_dir / 'fake_config.json').write_text(json.dumps({'mode': 'gate_commentary', 'log': str(self.log), 'gateText': 'not JSON'}))
+        self.assertEqual(json.loads(delegate.execute(req))['verdict'], 'unknown')
+        def snapshot(base=None): return delegate.gate_snapshot(str(self.repo), base, 'session')['fingerprint']
+        def git(*args): return subprocess.run(['git', '-C', str(self.repo), *args], check=True, stdout=subprocess.PIPE).stdout.decode().strip()
+        before = snapshot()
+        git('commit', '--allow-empty', '-qm', 'empty')
+        self.assertNotEqual(before, snapshot())
+        before = snapshot(); git('add', 'file'); self.assertNotEqual(before, snapshot())
+        before = snapshot(); (self.repo / 'file').write_text('unstaged again\n'); self.assertNotEqual(before, snapshot())
+        self.assertNotEqual(snapshot(), snapshot(git('rev-parse', 'HEAD^')))
         (self.repo / 'new').write_text('modified\n')
         self.assertNotEqual(first['fingerprint'], delegate.gate_snapshot(str(self.repo), None, 'session')['fingerprint'])
         self.log.unlink()

@@ -23,7 +23,7 @@ Codex 模型的工具清單不包含 mod 的 `web_search`；原生搜尋無法�
 
 `/model-mod:review --gate [--account NAME] [--model ID] [--effort E] [--base REF]` 對範圍內變更（含未追蹤檔案）要求結構化裁定，顯示帳號、模型、快照指紋與不可信的 findings。`unknown` 需要人工審查；pass 只適用同一工作階段與快照。Gate 模式不接受 `--adversarial`、`--background` 或焦點文字。Adversarial 審查不包含未追蹤檔案。
 
-選用 Stop gate 預設關閉。啟用後，主工作階段結束回合時可能額外啟動唯讀 Codex 審查，把 diff 送往 OpenAI，並可能阻擋結束，最多達該工作階段的設定次數；唯讀仍可能執行命令。達上限或結果為 unknown 時可能在未驗證通過下結束，需人工審查。
+選用 Stop gate 預設關閉。啟用後，主工作階段結束回合時可能額外啟動唯讀 Codex 審查，把 diff 與未追蹤且未被 gitignore 的檔案全文送往 OpenAI，並可能阻擋結束，最多達該工作階段的設定次數；被 gitignore 的檔案不會送出。唯讀仍可能執行命令。達上限或結果為 unknown 時可能在未驗證通過下結束，需人工審查。
 
 ## 背景 Codex 委派
 
