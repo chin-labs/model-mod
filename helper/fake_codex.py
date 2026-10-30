@@ -69,6 +69,7 @@ for line in sys.stdin:
     elif method == 'config/read':
         features = dict.fromkeys(('apps', 'multi_agent', 'unified_exec', 'shell_tool', 'view_image', 'image_generation', 'browser_use', 'in_app_browser', 'goals', 'sleep_tool', 'computer_use', 'tool_suggest', 'skill_search', 'plugins', 'remote_plugin', 'hooks', 'guardian_approval', 'incremental_tools', 'browser_annotation_api', 'browser_use_external', 'browser_use_full_cdp_access', 'plugin_sharing', 'skill_mcp_dependency_install'), False)
         features['memories'] = False
+        if '--enable' in sys.argv and 'image_generation' in sys.argv: features['image_generation'] = True
         if mode == 'bad_flag': features['shell_tool'] = True
         if mode == 'bad_unified_exec': features['unified_exec'] = True
         send({'id': ident, 'result': {'config': {'web_search': 'disabled', 'features': features, 'mcp_servers': {}}}})
@@ -118,7 +119,16 @@ for line in sys.stdin:
             event('item/agentMessage/delta', {'delta': 'discarded'})
             event('item/started', {'item': {'type': 'commandExecution'}})
             continue
-        if mode in ('abort', 'chatty', 'stubborn'): continue
+        if mode in ('abort', 'chatty', 'stubborn', 'image_wait'): continue
+        if mode.startswith('image_'):
+            import base64
+            raw = b'\x89PNG\r\n\x1a\nimage'
+            item = {'type': 'imageGeneration', 'status': 'failed' if mode == 'image_failure' else 'completed',
+                    'result': base64.b64encode(raw).decode(), 'savedPath': config.get('savedPath')}
+            if mode == 'image_large': item['result'] = 'A' * (28 * 1024 * 1024)
+            event('item/completed', {'item': item})
+            event('turn/completed', {'turn': {'id': 'turn1', 'status': 'completed'}})
+            continue
         if mode == 'forbidden_after': event('item/started', {'item': {'type': 'webSearch'}}); continue
         if mode in ('forbidden_mcp', 'forbidden_unknown'):
             event('item/completed', {'item': {'type': 'mcpToolCall', 'tool': 'other'} if mode == 'forbidden_mcp' else {'type': 'futureTool'}})

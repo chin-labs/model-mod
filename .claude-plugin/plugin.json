@@ -61,7 +61,7 @@
     "imageModel": {
       "type": "string",
       "title": "Image model (optional)",
-      "description": "Model for the generate_image tool. Empty: gpt-image-2 or the first gpt-image* the upstream lists; none: no image tool."
+      "description": "API image model for generate_image. Empty: gpt-image-2 or the first gpt-image* listed; none: disable API images. Codex uses its built-in image model independently."
     },
     "contextWindow": {
       "type": "number",

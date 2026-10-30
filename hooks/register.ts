@@ -583,11 +583,10 @@ async function tools($: EngineInterface, c: Config, model: string, history: read
   // The engine gives a plugin no input schema for an MCP tool; one in the capture file is used, any other is
   // offered with its description and an open object schema (the server's own validation names the arguments).
   const have = new Set(offered.map(tool => tool.name))
-  if (!c.codex?.has(model) && c.imageModel && enabled.has(IMAGE_TOOL)) {
+  if ((c.codex?.has(model) || c.imageModel) && enabled.has(IMAGE_TOOL)) {
     offered.push({ name: IMAGE_TOOL, description: IMAGE_SPEC.description, input_schema: IMAGE_SPEC.inputSchema })
     have.add(IMAGE_TOOL)
   }
-  if (c.codex?.has(model)) have.add(IMAGE_TOOL)
   for (const [name, spec] of [[WEB_SEARCH_TOOL, WEB_SEARCH_SPEC], [WEB_FETCH_TOOL, WEB_FETCH_SPEC]] as const) {
     if (enabled.has(name) && !(name === WEB_SEARCH_TOOL && c.codex?.has(model))) offered.push({ name, description: spec.description, input_schema: spec.inputSchema })
     have.add(name)
@@ -627,7 +626,7 @@ function wireModel(c: Config, e: TurnStepInput): string {
 const IMAGE_SPEC = {
   name: 'generate_image',
   description: 'Generate an image from a text prompt with the local image model and save it as a PNG file in the working ' +
-    'directory. Returns the file path; open it with the Read tool to look at it. Only usable while a local model is selected.',
+    'directory. Returns the file path; open it with the Read tool to look at it. Codex login uses its built-in image model, without imageModel; requested size and quality are not guaranteed. Only usable while a local model is selected.',
   inputSchema: { type: 'object', additionalProperties: false, required: ['prompt'], properties: {
     prompt: { type: 'string', description: 'What the image should show.' },
     size: { type: 'string', enum: ['1024x1024', '1536x1024', '1024x1536', 'auto'], description: 'Default 1024x1024.' },
@@ -856,7 +855,7 @@ async function applyWindowNow($: EngineInterface, c: Config, model: string): Pro
 // size. The response never passes through the engine, whose process output is capped at 4 MiB (a large PNG as base64
 // is not). The JSON is read with tr/grep/sed/base64 (whitespace removed, the first "b64_json" string taken, `\/`
 // unescaped): enough for the response of an images endpoint. Any failing stage fails the whole call; the image is
-// decoded to a private temporary file next to the target, then copied to an exclusively created file.
+// decoded to a private temporary file next to the target, then linked into place without replacing an existing path.
 const IMAGE_PIPELINE = [
   'set -o pipefail',
   'out=$3; dir=$(dirname -- "$out") || exit 1',
@@ -867,7 +866,11 @@ const IMAGE_PIPELINE = [
   'case "$resolved" in "$root"|"${root%/}/"*) ;; *) echo "path resolves outside the working directory"; exit 1 ;; esac',
   'if [ -e "$out" ] || [ -L "$out" ]; then echo "file already exists"; exit 1; fi',
   'mkdir -p -- "$dir" || exit 1',
-  'tmp=$(mktemp -- "$dir/.model-mod-image.XXXXXX") || exit 1',
+  'cd -P -- "$dir" || { echo "cannot resolve the target directory"; exit 1; }',
+  'resolved=$(pwd -P) || exit 1',
+  'case "$resolved" in "$root"|"${root%/}/"*) ;; *) echo "path resolves outside the working directory"; exit 1 ;; esac',
+  'out=./$(basename -- "$out")',
+  'tmp=$(mktemp -- "./.model-mod-image.XXXXXX") || exit 1',
   'trap \'rm -f -- "$tmp"\' EXIT',
   'trap \'exit 1\' HUP INT TERM',
   // The key (options mode, `$1` empty) is given to curl as a configuration line from a process substitution, which
@@ -884,13 +887,7 @@ const IMAGE_PIPELINE = [
     ' base64 -d > "$tmp"',
   'status=$?',
   'if [ "$status" -ne 0 ] || [ ! -s "$tmp" ]; then echo "no image in the response"; exit 1; fi',
-  'set -C',
-  'if ! exec 3> "$out"; then echo "file already exists"; exit 1; fi',
-  'set +C',
-  'trap \'rm -f -- "$tmp" "$out"\' EXIT',
-  'if ! cat "$tmp" >&3; then echo "cannot write image"; exit 1; fi',
-  'exec 3>&-',
-  'trap \'rm -f -- "$tmp"\' EXIT',
+  'if [ -d "$out" ] || ! ln -n -- "$tmp" "$out"; then echo "file already exists or cannot be created"; exit 1; fi',
   'rm -f -- "$tmp" || exit 1',
   'wc -c < "$out"',
 ].join('\n')
@@ -1609,7 +1606,7 @@ export const register: Register = (on, options) => {
     if (c) {
       let imageRegistered = false
       const registerImage = async () => {
-        if (!c.imageModel || imageRegistered) return
+        if ((!c.imageModel && !c.codex?.size) || imageRegistered) return
         imageRegistered = true
         try { await $.tool.register(IMAGE_SPEC) } catch { /* the bridge works without the image tool */ }
       }
@@ -1635,14 +1632,15 @@ export const register: Register = (on, options) => {
     const answer = (text: string, isError = false) => isError ? { deny: text } : { result: text }
     try {
       const c = await load($)
-      if (!c || !c.imageModel) return answer('Image generation is not configured.', true)
-      // Only a turn that already runs on a bridge model may use the image endpoint.
+      if (!c) return answer('Image generation is not configured.', true)
+      // Only a turn that already runs on a bridge model may use image generation.
       const model = await bridgeModel($, e, c)
-      if (model && c.codex?.has(model)) return answer('generate_image is unavailable for Codex login models.', true)
-      if (model !== undefined && c.key === undefined && c.headerFile === undefined) return answer('API server is not configured.', true)
       if (model === undefined) {
         return answer('generate_image is only available while a local model is selected. Select a local model to use this tool.', true)
       }
+      const codex = c.codex?.get(model)
+      if (!codex && !c.imageModel) return answer('Image generation is not configured.', true)
+      if (!codex && c.key === undefined && c.headerFile === undefined) return answer('API server is not configured.', true)
       const input = e as unknown as Record<string, unknown>
       const prompt = typeof input.prompt === 'string' ? input.prompt.trim() : ''
       if (!prompt || prompt.length > 4000) return answer('prompt must be 1-4000 characters.', true)
@@ -1656,8 +1654,43 @@ export const register: Register = (on, options) => {
         return answer('path must be a relative .png path inside the working directory.', true)
       }
       const out = `${cwd}/${given}`
-      const refused = await permitted($, e, IMAGE_TOOL, `Generate an image and save it to ${given}: "${prompt.slice(0, 200)}"?`)
+      const refused = await permitted($, e, IMAGE_TOOL, codex
+        ? `Send this prompt to OpenAI to generate an image and save it to ${out}: "${prompt.slice(0, 200)}"?`
+        : `Generate an image and save it to ${given}: "${prompt.slice(0, 200)}"?`)
       if (refused) return answer(refused, true)
+      if (codex) {
+        if (!c.accountsDir || !$.plugin.root) return answer('Codex account or plugin directory is unavailable.', true)
+        const root = $.plugin.root.replace(/[\\/]+$/, '')
+        const sep = root.includes('\\') && !root.includes('/') ? '\\' : '/'
+        const script = root + sep + 'helper' + sep + 'image.py'
+        const child = $.process.spawn({ argv: [c.pythonBin ?? 'python3', '-E', '-s', script], cwd,
+          input: JSON.stringify({ prompt, size, quality, cwd, account: codex.account, directory: codex.directory,
+            accountsDir: c.accountsDir, codexBin: c.codexBin ?? 'codex', model: codex.model }) })
+        let stdout = ''
+        const abort = () => { void child.return({ code: null, signal: 'SIGTERM' }).catch(() => {}) }
+        next.signal.addEventListener('abort', abort, { once: true })
+        if (next.signal.aborted) abort()
+        try {
+          for await (const chunk of child) {
+            if (chunk.stream === 'stdout') stdout += chunk.text
+            if (stdout.length > 28_100_000) { abort(); return answer('Image exceeds the 20 MB limit; request a smaller image.', true) }
+          }
+        } finally { next.signal.removeEventListener('abort', abort) }
+        if (next.signal.aborted) return answer('Image generation was cancelled.', true)
+        const reply = JSON.parse(stdout) as { ok?: boolean; bytes_b64?: string; message?: string }
+        if (!reply.ok) return answer(reply.message ?? 'Codex image generation failed.', true)
+        const data = reply.bytes_b64
+        if (typeof data !== 'string' || data.length > Math.ceil(20 * 1024 * 1024 / 3) * 4 ||
+            !/^iVBORw0KGg[o-r]/.test(data) || data.length % 4 !== 0 || /[^A-Za-z0-9+/=]/.test(data) || /=/.test(data.slice(0, -2))) {
+          return answer('Codex returned an invalid PNG or an image exceeding 20 MB.', true)
+        }
+        const write = await $.process.run([c.pythonBin ?? 'python3', '-E', '-s', script, '--write'],
+          { stdin: JSON.stringify({ cwd, path: given, bytes_b64: data }), timeoutMs: 30_000 })
+        if (write.exitCode !== 0) return answer('Could not save image; check the path and ensure the file does not already exist.', true)
+        const saved = JSON.parse(write.stdout) as { ok?: boolean; size?: number; message?: string }
+        if (!saved.ok) return answer(saved.message ?? 'Could not save image; check the path and ensure the file does not already exist.', true)
+        return answer(`Saved image to ${out} (${saved.size} bytes). Requested size and quality are not guaranteed. Open it with the Read tool to look at it.`)
+      }
       const body = JSON.stringify({ model: c.imageModel, prompt, size, quality, n: 1 })
       const run = await $.process.run(['bash', '-c', IMAGE_PIPELINE, 'bash', c.headerFile ?? '',
         c.baseUrl + '/v1/images/generations', out, cwd], { stdin: body, timeoutMs: 300_000, ...(c.key !== undefined ? { env: { MODEL_MOD_KEY: c.key } } : {}) })

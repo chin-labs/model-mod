@@ -18,7 +18,7 @@
 | `model is not in the allowlist` | 該 ID 不在 `models` 內 | 選擇允許的 ID，或更新清單。 |
 | 選了模型後出現錯誤 | 模型不可用、上游停機或金鑰被拒絕 | 修正上游、模型或金鑰，再執行 `/model-mod:refresh`。不會退回訂閱。 |
 | effort 後綴被拒絕 | 上游不認得 `model(level)` | 把進階選項 `effortMode` 設為 `none`。 |
-| 圖片工具不存在或被拒絕 | 選了 Codex 模型、沒有圖片模型，或未選你的模型 | 圖片生成僅供 API 使用；設定 `imageModel` 並選擇 API 模型。 |
+| 圖片工具不存在或被拒絕 | 未選本地模型、API 圖片模型未設定、權限遭拒，或 Codex 登入、額度或圖片功能不可用 | 選擇已設定的模型並允許請求。API 模型需設定 `imageModel`；Codex 使用內建圖片模型。Codex 失敗時請檢查登入、額度與 CLI 版本。圖片超過 20 MiB 時請求較小的圖片；輸出路徑已存在或位於工作目錄外時請換路徑。 |
 | `web_fetch` 拒絕某網址 | 不是 HTTP(S)，或目的地是私網 | 改用公開的 HTTP(S) 網址。 |
 | 太早壓縮，或長輸入被拒絕 | 假設的視窗與模型實際視窗不同 | 調整 `contextWindow`。 |
 | 上游正常，但 auto 權限模式下動作被擋 | 分類器跑在你的訂閱上且失敗 | 改用 default 或 acceptEdits 模式搭配 allow 規則。 |

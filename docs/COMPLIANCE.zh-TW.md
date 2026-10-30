@@ -22,7 +22,7 @@ model-mod 是 Claude Code 的插件。這是獨立專案，與 Anthropic 或 Ope
 
 ## 哪些資料會離開你的電腦
 
-API 路徑送往你的模型的請求，會把對話、系統指示、工具定義與結果、圖片送到你的上游及其背後的供應商，但不含客戶端工作階段或使用者身分 metadata，也不含訂閱驗證標頭。Codex 登入路徑的對話內容經你自行登入的官方 `codex app-server` CLI 送往 OpenAI 服務。model-mod 不讀取、複製或轉送 Codex 登入憑證。Codex 模型不提供 `generate_image` 與 `web_search`。Web fetch 連線到你指定的網站；API 路徑的圖片生成與搜尋使用你的上游。
+API 路徑送往你的模型的請求，會把對話、系統指示、工具定義與結果、圖片送到你的上游及其背後的供應商，但不含客戶端工作階段或使用者身分 metadata，也不含訂閱驗證標頭。Codex 登入路徑的對話內容經你自行登入的官方 `codex app-server` CLI 送往 OpenAI 服務。model-mod 不讀取、複製或轉送 Codex 登入憑證。Codex 圖片提示詞與生成圖片內容會送往 OpenAI。即使 sandbox 唯讀，app-server 仍會自行將圖片寫入 `CODEX_HOME/generated_images`；取得位元組後 model-mod 嘗試不跟隨符號連結刪除該字面路徑，失敗僅記內部 note，不使呼叫失敗。Codex 模型不提供 `web_search`。Web fetch 連線到你指定的網站；API 路徑的圖片生成與搜尋使用你的上游。
 
 客戶端自己發出的部分請求仍可能使用你的訂閱連線：auto 權限分類、未帶名稱的 `/rename`、`Agent(model: 'haiku')`、原生 WebFetch 摘要、`localContext: false` 的 `/context` token 計數，以及 `localTitle: false` 的首提示標題。它們列在[訂閱側請求](LIMITATIONS.zh-TW.md#訂閱側請求)，該表涵蓋已檢查的路徑，不涵蓋所有可能的客戶端請求。金鑰處理與如何從已儲存的預設模型復原，見 [README](../README.zh-TW.md)。
 

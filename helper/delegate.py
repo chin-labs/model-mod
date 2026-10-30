@@ -103,7 +103,7 @@ def clean(text):
 
 
 class App:
-    def __init__(self, request, own_group=True, on_spawn=None):
+    def __init__(self, request, own_group=True, on_spawn=None, features=FEATURES, enable_image=False, max_line=None):
         self.own_group = own_group
         self.background = not own_group
         self.deadline = time.monotonic() + (BACKGROUND_TOTAL_SECONDS if self.background else TOTAL_SECONDS)
@@ -114,7 +114,8 @@ class App:
         self.pending = []
         self.interrupted = False
         args = [request['codexBin'], 'app-server', '-c', 'web_search="disabled"', '-c', 'mcp_servers={}']
-        for feature in FEATURES: args.extend(['--disable', feature])
+        for feature in features: args.extend(['--disable', feature])
+        if enable_image: args.extend(['--enable', 'image_generation'])
         self.proc = subprocess.Popen(args, cwd=request['cwd'], env=env(request['directory']), stdin=subprocess.PIPE,
                                      stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1,
                                      start_new_session=(os.name == 'posix' and own_group))
@@ -137,7 +138,12 @@ class App:
         self.writer.start()
         def read():
             try:
-                for line in self.proc.stdout:
+                while True:
+                    line = self.proc.stdout.readline(max_line + 1 if max_line else -1)
+                    if not line: break
+                    if max_line and len(line) > max_line:
+                        self.queue.put(Failure('Image response exceeds the 20 MB limit; request a smaller image.'))
+                        break
                     try: self.queue.put(json.loads(line))
                     except ValueError: self.queue.put(Failure('Invalid app-server response.'))
             finally: self.queue.put(None)
@@ -200,7 +206,8 @@ class App:
             if obj.get('id') == ident and 'method' not in obj:
                 if 'error' in obj:
                     if obj['error'].get('code') == -32601: raise Failure('Codex method unavailable; update Codex CLI.')
-                    raise Failure('Codex rejected the request.')
+                    if obj['error'].get('code') == 429: raise Failure('Codex quota or rate limit reached; check your usage and try again later.')
+                    raise Failure('Codex rejected the request; check login, quota and Codex version.')
                 return obj.get('result', {})
             self.pending.append(obj)
 

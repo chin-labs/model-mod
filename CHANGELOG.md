@@ -10,13 +10,14 @@ All notable changes to this project are listed here. The format follows [Keep a 
 - Management of configured Codex accounts and API upstreams from setup, including logout and optional account-directory deletion.
 - Codex login upstream through the official `codex app-server` and a local Python helper. Models use `<account>/<model>` IDs and display as `<model> @ <account>`; setup offers an upstream choice. Configure `codexAccounts`, `codexModels`, `codexAccountsDir`, `codexBin` and `pythonBin` in plugin options.
 - Status reports Codex accounts and usage limits. API and Codex upstreams can coexist; Codex takes precedence for matching IDs.
+- Codex login models can generate images through a separate isolated app-server session; requested size and quality are not guaranteed.
 
 ### Changed
 - Clamp Codex reasoning effort to the model catalog, show quota windows and plan, and support an optional priority service tier.
 - Use official Codex rate limits for a configured fallback without automatic account rotation.
 - Codex turns use client-provided dynamic tools; built-in capabilities are disabled, with two MCP resource-list tools still available. Reserved `mcp__` and incompatible tool names use reversible aliases. Codex CLI versions below 0.165.0 are refused.
 - The client's built-in ToolSearch is no longer offered to your models (API and Codex); the mod's own `tool_search` loads MCP tool schemas instead. `/model-mod:model` labels each model `(Codex login)` or `(API)`.
-- Codex requests use bounded retries and handle upstream 429 responses. Codex models do not offer `generate_image` or `web_search`; their default context window is 128,000 tokens.
+- Codex requests use bounded retries and handle upstream 429 responses. Codex models do not offer `web_search`; their default context window is 128,000 tokens.
 - Side-question command messages no longer repeat the client label, and the informational agent message count status is no longer shown.
 
 ### Fixed

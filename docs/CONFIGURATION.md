@@ -25,7 +25,7 @@ For the API-server path, model-mod sends a session to a server that accepts Mess
 
 ## System tools
 
-`curl` and `bash` are required. Web fetch also needs `uname` and a system resolver (`getent` on Linux, `dscacheutil` on macOS); image generation also needs `sed`, `grep`, `tr`, `mktemp` and `base64`.
+`curl` and `bash` are required. Web fetch also needs `uname` and a system resolver (`getent` on Linux, `dscacheutil` on macOS); API image generation also needs `sed`, `grep`, `tr`, `mktemp`, `ln` and `base64`. Codex image generation uses Python and the official Codex CLI.
 
 ## Plugin options
 
@@ -38,7 +38,7 @@ The mod activates with either a valid `apiKey` or a valid combination of `codexA
 | `baseUrl` | Base URL of your upstream, without `/v1`. HTTP or HTTPS only; URLs with credentials, queries or fragments, and `anthropic.com` or `claude.ai` hosts, are refused. | `http://127.0.0.1:8317` |
 | `apiKey` | Your API upstream's key (secret). Required for the API path. | none |
 | `models` | Comma-separated model IDs the mod answers for. Empty: every chat model the upstream lists. | empty |
-| `imageModel` | Model for `generate_image`. Empty: `gpt-image-2`, or the first `gpt-image*` the upstream lists. `none` turns the tool off. | empty |
+| `imageModel` | API image model for `generate_image`. Empty: `gpt-image-2`, or the first `gpt-image*` the upstream lists. `none` disables the API image path. Codex uses its built-in image model independently of this setting. | empty |
 | `contextWindow` | Input tokens assumed for a model whose window is unknown (minimum 32000). An explicit value overrides the Codex catalog window (see [Limitations](LIMITATIONS.md)). | `272000` (API); catalog effective window or 128,000 (Codex) |
 | `fallbackModel` | Model to switch to when a subscription or Codex login quota is reached; no account rotation, and the same account cannot be the fallback. Empty: off. | empty |
 | `fallbackPercent` | Used share of a rate-limit window (50–100) at which the switch happens. Only read when `fallbackModel` is set. | `100` |
@@ -84,7 +84,7 @@ Instead of `apiKey`, the file names a `headerFile`: a file of HTTP header lines 
 | `maxTokens` (required) | Positive integer sent as `max_tokens`. |
 | `toolsFile` | JSON file `{"tools": [{"name", "description", "input_schema"}]}` with Claude Code's built-in tools and their input schemas. Without it, the mod lists the tools with an open object schema. |
 | `refresh` | Command run by `/model-mod:refresh` to rewrite `toolsFile`: an array of 4 to 64 strings whose first two items are absolute paths (the program and its script). Anything else is ignored. |
-| `effortMode`, `imageModel`, `sideModel`, `keepThinking`, `localTitle`, `localContext`, `toolSearch`, `toolSearchPercent`, `promptsDir` | Same as the options of the same name. The defaults differ in the file: `effortMode` is `none` unless set to `suffix`, `imageModel` has no automatic choice (the tool is off without it) and `sideModel` has no default. |
+| `effortMode`, `imageModel`, `sideModel`, `keepThinking`, `localTitle`, `localContext`, `toolSearch`, `toolSearchPercent`, `promptsDir` | Same as the options of the same name. The defaults differ in the file: `effortMode` is `none` unless set to `suffix`, `imageModel` has no automatic choice (the API image path is off without it) and `sideModel` has no default. |
 | `contextWindows` | Object mapping a model ID from `models` to its context window in tokens (32000 to 4000000). |
 
 `contextWindow`, `fallbackModel`, `fallbackPercent` and `workerModel` are read only from the plugin options.

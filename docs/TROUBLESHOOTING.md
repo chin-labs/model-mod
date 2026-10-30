@@ -18,7 +18,7 @@ After `/model-mod:setup`:
 | `model is not in the allowlist` | The ID is outside `models` | Choose an allowed ID or update the list. |
 | Errors after selecting a model | Model unavailable, upstream down or key rejected | Fix the upstream, model or key, then `/model-mod:refresh`. There is no subscription fallback. |
 | Effort suffix rejected | The upstream does not understand `model(level)` | Set the advanced option `effortMode` to `none`. |
-| Image tool missing or refused | Codex model selected, no image model, or no model of yours selected | Image generation is API-only; configure `imageModel` and select an API model. |
+| Image tool missing or refused | No local model selected, API image model missing, permission denied, or Codex login, quota or image generation unavailable | Select a configured model and approve the request. API models need `imageModel`; Codex uses its built-in image model. For Codex failures check login, quota and the CLI version. If the image exceeds 20 MiB, request a smaller image; if the output path exists or is outside the working directory, choose another path. |
 | `web_fetch` refuses a URL | Not HTTP(S), or a private destination | Use a public HTTP(S) URL. |
 | Compacts too early, or long input is rejected | The assumed window differs from the model's real one | Adjust `contextWindow`. |
 | Actions blocked in auto permission mode although the upstream works | The classifier runs on your subscription and failed | Use default or acceptEdits mode with allow rules. |

@@ -1,8 +1,10 @@
+import ast
 import json
 import os
 import signal
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -10,6 +12,7 @@ from unittest.mock import patch
 from pathlib import Path
 
 import delegate
+import image
 
 FAKE = str(Path(__file__).with_name('fake_codex.py').resolve())
 HELPER = str(Path(__file__).with_name('delegate.py').resolve())
@@ -18,7 +21,7 @@ HELPER = str(Path(__file__).with_name('delegate.py').resolve())
 class DelegateTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix='model-mod-delegate-test-')
-        self.root = Path(self.tmp.name)
+        self.root = Path(self.tmp.name).resolve()
         self.account_dir = self.root / 'accounts' / 'test'
         self.account_dir.mkdir(parents=True)
         self.log = self.root / 'log'
@@ -77,6 +80,126 @@ class DelegateTest(unittest.TestCase):
              patch.object(delegate.os, 'killpg') as kill:
             delegate.stop_orphan_runner()
             kill.assert_called_once_with(42, signal.SIGKILL)
+
+    def test_image_generation_and_isolation(self):
+        generated = self.account_dir / 'generated_images'
+        generated.mkdir()
+        saved = generated / 'image.png'
+        saved.write_bytes(b'fake')
+        (self.account_dir / 'fake_config.json').write_text(json.dumps({'mode': 'image_success', 'log': str(self.log), 'savedPath': str(saved)}))
+        request = dict(self.request, prompt='red dot', size='auto', quality='low')
+        result = image.execute(request)
+        self.assertTrue(result['ok'])
+        self.assertFalse(saved.exists())
+        records = self.records()
+        argv = next(r['argv'] for r in records if 'argv' in r)
+        self.assertIn(['--enable', 'image_generation'], [argv[i:i+2] for i in range(len(argv)-1)])
+        for feature in ('shell_tool', 'unified_exec', 'view_image', 'apps', 'multi_agent', 'browser_use', 'in_app_browser', 'goals', 'memories', 'sleep_tool', 'computer_use', 'tool_suggest', 'skill_search', 'plugins', 'remote_plugin', 'hooks', 'guardian_approval', 'incremental_tools', 'browser_annotation_api', 'browser_use_external', 'browser_use_full_cdp_access', 'plugin_sharing', 'skill_mcp_dependency_install'):
+            self.assertIn(['--disable', feature], [argv[i:i+2] for i in range(len(argv)-1)])
+        thread = next(r['params'] for r in records if r.get('method') == 'thread/start')
+        self.assertEqual(thread['serviceName'], 'model_mod')
+        self.assertEqual(thread['sandbox'], 'read-only')
+        self.assertEqual(thread['approvalPolicy'], 'never')
+        for mode in ('image_failure', 'image_large'):
+            self.mode(mode)
+            with self.assertRaises(delegate.Failure): image.execute(dict(request))
+        self.mode('rate')
+        with self.assertRaisesRegex(delegate.Failure, 'quota or rate limit'): image.execute(dict(request))
+        (self.account_dir / 'fake_config.json').write_text(json.dumps({'mode': 'image_success', 'account': None}))
+        with self.assertRaisesRegex(delegate.Failure, 'not logged in'): image.execute(dict(request))
+        target = self.root / 'outside.png'
+        target.write_bytes(b'untouched')
+        saved.symlink_to(target)
+        (self.account_dir / 'fake_config.json').write_text(json.dumps({'mode': 'image_success', 'log': str(self.log), 'savedPath': str(saved)}))
+        self.assertTrue(image.execute(dict(request))['ok'])
+        self.assertTrue(saved.is_symlink())
+        self.assertEqual(target.read_bytes(), b'untouched')
+        image.remove_generated(str(self.account_dir), str(generated / 'missing.png'))
+
+    def test_image_writer(self):
+        import base64
+        data = base64.b64encode(b'\x89PNG\r\n\x1a\nimage').decode()
+        request = {'cwd': str(self.repo), 'path': 'new/image.png', 'bytes_b64': data}
+        result = image.write_image(request)
+        self.assertTrue(result['ok'])
+        target = self.repo / 'new' / 'image.png'
+        self.assertEqual(target.read_bytes(), base64.b64decode(data))
+        self.assertEqual(target.stat().st_mode & 0o777, 0o600)
+        with self.assertRaises(FileExistsError): image.write_image(request)
+        (self.repo / 'link').symlink_to(self.root, target_is_directory=True)
+        with self.assertRaises(OSError): image.write_image(dict(request, path='link/outside.png'))
+        self.assertFalse((self.root / 'outside.png').exists())
+        with self.assertRaises(delegate.Failure): image.write_image(dict(request, path='../outside.png'))
+        with self.assertRaises(delegate.Failure): image.write_image(dict(request, path='other.png', bytes_b64=base64.b64encode(b'bad').decode()))
+        self.assertFalse((self.repo / 'other.png').exists())
+
+    @unittest.skipUnless(os.name == 'posix', 'process groups require POSIX')
+    def test_image_cancellation(self):
+        self.mode('stubborn')
+        request = dict(self.request, prompt='red dot', size='auto', quality='low')
+        script = str(Path(__file__).with_name('image.py').resolve())
+        proc = subprocess.Popen([sys.executable, script], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+        proc.stdin.write(json.dumps(request))
+        proc.stdin.close()
+        for _ in range(150):
+            if any(r.get('method') == 'turn/start' for r in self.records()): break
+            time.sleep(0.02)
+        records = self.records()
+        parent = next(r['pid'] for r in records if 'pid' in r)
+        child = next(r['child'] for r in records if 'child' in r)
+        try:
+            proc.send_signal(signal.SIGTERM)
+            self.assertIn('cancelled', proc.stdout.read().lower())
+            self.assertEqual(proc.wait(timeout=10), 0)
+            for pid in (parent, child):
+                for _ in range(100):
+                    try: os.kill(pid, 0)
+                    except ProcessLookupError: break
+                    time.sleep(0.02)
+                else: self.fail('process survived cancellation')
+        finally:
+            proc.stdout.close()
+            if proc.poll() is None: proc.kill()
+            try: os.killpg(parent, signal.SIGKILL)
+            except ProcessLookupError: pass
+
+    def test_api_image_pipeline(self):
+        source = Path(__file__).resolve().parent.parent.joinpath('hooks', 'register.ts').read_text()
+        array = source.split('const IMAGE_PIPELINE = [', 1)[1].split('].join', 1)[0]
+        lines, current = [], ''
+        for line in array.splitlines():
+            line = line.strip()
+            if not line or line.startswith('//'): continue
+            continued = line.endswith('+')
+            literal = line[:-1].strip() if continued else line.rstrip(',')
+            current += ast.literal_eval(literal)
+            if not continued:
+                lines.append(current)
+                current = ''
+        pipeline = '\n'.join(lines)
+        bindir = self.root / 'bin'
+        bindir.mkdir()
+        curl = bindir / 'curl'
+        curl.write_text('#!/bin/sh\nprintf "{\\\"data\\\":[{\\\"b64_json\\\":\\\"aGVsbG8=\\\"}]}"\nexit "${FAKE_EXIT:-0}"\n')
+        curl.chmod(0o755)
+        env = dict(os.environ, PATH=str(bindir) + os.pathsep + os.environ['PATH'], MODEL_MOD_KEY='fake')
+        def run(path, code='0'):
+            return subprocess.run(['bash', '-c', pipeline, 'bash', '', 'http://example.invalid', str(path), str(self.repo)],
+                                  input='{}', text=True, capture_output=True, env=dict(env, FAKE_EXIT=code), timeout=10)
+        out = self.repo / 'new' / 'image.png'
+        self.assertEqual(run(out).returncode, 0)
+        self.assertEqual(out.read_bytes(), b'hello')
+        self.assertNotEqual(run(out).returncode, 0)
+        self.assertEqual(out.read_bytes(), b'hello')
+        outside = self.root / 'outside'
+        outside.mkdir()
+        (self.repo / 'link').symlink_to(outside, target_is_directory=True)
+        self.assertNotEqual(run(self.repo / 'link' / 'escape.png').returncode, 0)
+        self.assertEqual(list(outside.iterdir()), [])
+        failed = self.repo / 'new' / 'failed.png'
+        self.assertNotEqual(run(failed, '22').returncode, 0)
+        self.assertFalse(failed.exists())
+        self.assertEqual(sorted(p.name for p in out.parent.iterdir()), ['image.png'])
 
     def test_protocol_safety(self):
         self.mode('delegate_approval')

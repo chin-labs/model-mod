@@ -1472,20 +1472,42 @@ test('Codex login: startup and unsupported behavior failures do not retry', { op
   expect(w.ran.filter(argv => argv.includes('check')).length).toBe(1)
 })
 
-test('Codex login: cancellation closes the helper and never forwards API-only tools', { options: { ...CODEX_OPTIONS, imageModel: 'gpt-image-2' } }, async ($, on) => {
+test('Codex login: cancellation closes the helper and excludes API-only web search', { options: { ...CODEX_OPTIONS, imageModel: 'gpt-image-2' } }, async ($, on) => {
   const w = world(on, null, CODEX_MODEL, { stdout: SSE_OK, code: 0, hang: true })
   w.toolsList = ['ToolSearch', 'mcp__model-mod__generate_image', 'mcp__model-mod__web_search', 'mcp__model-mod__web_fetch']
   const stream = $.turn.step(STEP(CODEX_MODEL))
   const first = await stream.next()
   expect(first.done).toBe(false)
   const body = JSON.parse(w.spawned[0]!.input!) as { tools?: { name: string }[] }
-  expect((body.tools ?? []).map(tool => tool.name)).toEqual(['mcp__model-mod__web_fetch'])
+  expect((body.tools ?? []).map(tool => tool.name)).toEqual(['mcp__model-mod__generate_image', 'mcp__model-mod__web_fetch'])
   await stream.return(undefined as never)
   expect(w.killed).toBe(1)
-  for (const name of ['generate_image', 'web_search']) {
-    const outcome = await $.tool.call({ tool: `mcp__model-mod__${name}` } as never).then(value => JSON.stringify(value), error => String(error))
-    expect(outcome).toContain('unavailable for Codex login')
-  }
+  const outcome = await $.tool.call({ tool: 'mcp__model-mod__web_search' } as never).then(value => JSON.stringify(value), error => String(error))
+  expect(outcome).toContain('unavailable for Codex login')
+})
+
+test('Codex image generation requests permission and validates PNG before writing', { options: CODEX_OPTIONS }, async ($, on) => {
+  const good = JSON.stringify({ ok: true, bytes_b64: 'iVBORw0KGgppbWFnZQ==', size: 13 })
+  const bad = JSON.stringify({ ok: true, bytes_b64: 'YmFk', size: 3 })
+  const w = world(on, null, CODEX_MODEL, [{ stdout: good, code: 0 }, { stdout: bad, code: 0 }, { stdout: good, code: 0 }], (_argv, input) => {
+    const path = (JSON.parse(input ?? '{}') as { path?: string }).path
+    return { exitCode: 0, stdout: JSON.stringify(path === 'new.png' ? { ok: true, size: 13 } : { ok: false, message: 'Could not save image.' }) }
+  })
+  on('tool.check', { tool: 'mcp__model-mod__generate_image' }, async () => ({ decision: 'ask' as const }))
+  w.answers = ['Yes', 'Yes', 'No', 'Yes', 'Yes']
+  const call = (path: string) => $.tool.call({ tool: 'mcp__model-mod__generate_image', prompt: 'red dot', path } as never).then(value => JSON.stringify(value), error => String(error))
+  expect(await call('new.png')).toContain('Saved image to /work/new.png')
+  expect(w.questions[0]!.question).toContain('OpenAI')
+  expect(w.questions[0]!.question).toContain('/work/new.png')
+  expect(w.spawned[0]!.argv).toContain('python3')
+  expect(w.ran.some(argv => argv.includes('--write'))).toBe(true)
+  expect(await call('bad.png')).toContain('invalid PNG')
+  expect(await call('declined.png')).toContain('declined')
+  expect(await call('../escape.png')).toContain('relative .png path')
+  expect(w.spawned.length).toBe(2)
+  expect(await call('existing.png')).toContain('Could not save image')
+  expect(await call('link/escape.png')).toContain('Could not save image')
+  expect(w.spawned.length).toBe(4)
 })
 
 test('Codex login: at most four helpers run concurrently', { options: CODEX_OPTIONS }, async ($, on) => {
