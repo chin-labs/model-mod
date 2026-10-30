@@ -63,7 +63,7 @@ Run `/model-mod:status` to check activation, then select your model and send a s
 |---|---|
 | `/model-mod:setup` | Choose an upstream, then configure its account or URL and select models. Cancelling changes nothing. |
 | `/model-mod:model` | List your models and switch to the one you pick (↑↓ to move, Enter to select, Esc to close). On a short terminal, Remote Control or mobile, a paged menu is used instead. |
-| `/model-mod:refresh` | Re-read prompts and configuration; refresh the API model list when configured. |
+| `/model-mod:refresh` | Reload prompts, check Codex account status, and refresh the API model list and tool schemas when configured. Changed options need `/reload-plugins`. |
 | `/model-mod:status` | Show activation, model count and tool setup. Loopback hostnames are shown; other hosts appear as `host=remote`. Warns when plain HTTP sends the API key unencrypted to a non-loopback host. |
 | `/model` | Claude Code's own command, unchanged: subscription models. Typing one of your model IDs (`/model <id>`) also works. |
 | `/btw <question>` | With one of your models selected, answered through your upstream with read-only context and no tools. |
