@@ -1438,6 +1438,8 @@ test('manage: an API cannot silently take over a removed Codex model', { options
   w.answers = ['Manage configured upstreams', 'Codex main; dir=/fake-home/.config/model-mod/accounts/main; login=ok; models=1', 'Remove', 'Keep directory (recommended)']
   expect((await $.command.run(SETUP)).text).toContain('Codex account main removed')
   await $.session.start({ cwd: '/work' } as never)
+  expect(w.store.models).not.toContain(CODEX_MODEL)
+  expect((await $.command.run({ ...MODEL, args: CODEX_MODEL })).text).toContain('not in the allowlist')
   expect((await drain($.turn.step(STEP(CODEX_MODEL)))).result.answer).toContain('not in the allowlist; use /model')
   expect(w.reached).not.toContain('turn.step')
 })
@@ -1489,6 +1491,16 @@ test('manage: failed logout retains credentials or deletes an empty account', { 
   const second = await $.command.run(SETUP)
   expect(second.text).toContain('Logout failed; directory deletion was attempted')
   expect(w.ran.some(argv => argv.includes('remove-home'))).toBe(true)
+})
+
+test('manage: refusing to clear the custom model leaves settings intact', { options: CODEX_OPTIONS }, async ($, on) => {
+  const w = world(on, null, CODEX_MODEL, { stdout: '', code: 0 }, () => ({ exitCode: 0, stdout: '{}' }), { ANTHROPIC_CUSTOM_MODEL_OPTION: CODEX_MODEL })
+  w.failEnvName = 'ANTHROPIC_CUSTOM_MODEL_OPTION'
+  w.chooseUpstream = true
+  w.answers = ['Manage configured upstreams', 'Codex main; dir=/fake-home/.config/model-mod/accounts/main; login=ok; models=1', 'Remove', 'Keep directory (recommended)']
+  expect((await $.command.run(SETUP)).text).toContain('previous values restored')
+  expect(w.saved).toEqual([])
+  expect(w.store.retiredModels).toEqual([])
 })
 
 test('manage: a failed rollback is reported', { options: CODEX_OPTIONS }, async ($, on) => {

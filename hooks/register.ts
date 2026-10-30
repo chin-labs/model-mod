@@ -1329,9 +1329,9 @@ async function removeSettings($: EngineInterface, changes: Record<string, string
   try {
     await $.store.set('retiredModels', retired)
     await $.store.set('models', kept)
-    if (clearCustom) await $.env.set('ANTHROPIC_CUSTOM_MODEL_OPTION', undefined)
+    if (clearCustom && (await $.env.set('ANTHROPIC_CUSTOM_MODEL_OPTION', undefined))?.deny) throw new Error('environment update refused')
   } catch {
-    try { await $.store.set('retiredModels', oldRetired); await $.store.set('models', oldCache ?? []); if (clearCustom) await $.env.set('ANTHROPIC_CUSTOM_MODEL_OPTION', custom) } catch { return 'model cache update failed and rollback failed' }
+    try { await $.store.set('retiredModels', oldRetired); await $.store.set('models', oldCache ?? []); if (clearCustom && (await $.env.set('ANTHROPIC_CUSTOM_MODEL_OPTION', custom))?.deny) throw new Error('environment rollback refused') } catch { return 'model cache update failed and rollback failed' }
     return 'model cache could not be updated; previous values restored'
   }
   const written: typeof entries = []
@@ -1348,7 +1348,7 @@ async function removeSettings($: EngineInterface, changes: Record<string, string
       const previous = entry.field === 'apiKey' && typeof pluginOptions.apiKey === 'string' ? pluginOptions.apiKey : entry.row!.value
       try { if ('deny' in await $.config.set({ key: entry.row!.key, value: previous })) rollbackFailed = true } catch { rollbackFailed = true }
     }
-    try { await $.store.set('retiredModels', oldRetired); await $.store.set('models', oldCache ?? []); if (clearCustom) await $.env.set('ANTHROPIC_CUSTOM_MODEL_OPTION', custom) } catch { rollbackFailed = true }
+    try { await $.store.set('retiredModels', oldRetired); await $.store.set('models', oldCache ?? []); if (clearCustom && (await $.env.set('ANTHROPIC_CUSTOM_MODEL_OPTION', custom))?.deny) throw new Error('environment rollback refused') } catch { rollbackFailed = true }
     return rollbackFailed ? 'configuration failed and rollback failed; restore the previous settings in /plugin' : 'configuration failed; previous settings restored'
   }
   pluginOptions = { ...pluginOptions, ...changes }

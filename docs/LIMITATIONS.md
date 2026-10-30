@@ -29,6 +29,8 @@ At startup Claude Code may warn that a non-Claude model ID is not recognized and
 
 ## Known limitations
 
+Previously saved legacy `/model` custom rows may remain visible after an upstream is removed; selecting a removed model is refused, so choose another model or remove the old row from your settings. APIs supplied by `MODEL_MOD_CONFIG` cannot be removed from setup; edit that file yourself.
+
 | Area | What to expect | Workaround |
 |---|---|---|
 | Output length and context | `maxTokens` defaults to 32000, and CLIProxyAPI with Codex did not enforce a smaller value; the true maximum output is unknown. For API models the default context window is 272000 (set `contextWindow`, minimum 32000). A very small window makes Claude Code's auto-compact threshold negative, so it compacts over and over. | Set `contextWindow` to the model's real limit. |

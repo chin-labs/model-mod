@@ -31,6 +31,8 @@ Marketplace 安裝已用本機 clone 與使用標準 HTTP 協定的 Git 伺服�
 
 ## 已知限制
 
+移除上游後，先前儲存的舊版 `/model` 自訂列可能仍會顯示；選取已移除的模型會被拒絕，請改選其他模型或從設定中移除舊列。`MODEL_MOD_CONFIG` 提供的 API 無法在 setup 中移除，須自行編輯該檔。
+
 | 項目 | 會發生什麼 | 變通方法 |
 |---|---|---|
 | 輸出長度與 context | `maxTokens` 預設 32000；CLIProxyAPI 搭配 Codex 未強制較小的值，實際最大輸出未知。API 模型的預設 context 視窗為 272000（可設 `contextWindow`，最小 32000）。視窗過小時，客戶端的自動壓縮門檻會變負值，造成反覆壓縮。 | 把 `contextWindow` 設為模型的實際上限。 |
