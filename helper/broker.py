@@ -17,7 +17,7 @@ import time
 
 import job_process
 import jobs
-from bridge import account_home
+from bridge import BridgeError, account_home
 
 MAX_REQUEST = 256_000
 IDLE_SECONDS = 30 * 60
@@ -90,17 +90,20 @@ def ensure():
                 except BlockingIOError:
                     if time.monotonic() >= deadline: return
                     time.sleep(.02)
+            instance = os.open(os.path.join(root, '.instance.lock'), os.O_CREAT | os.O_RDWR, 0o600)
             try:
-                with open(tokenpath, encoding='utf-8') as source: previous = json.load(source)
-                reply = connect(root, 'ping', timeout=.2)
-                if reply.get('ok') and reply.get('generation') == previous.get('generation'): return
-            except (OSError, ValueError, KeyError): pass
-            credentials = {'token': secrets.token_hex(32), 'generation': secrets.token_hex(16)}
-            jobs.atomic_write(tokenpath, json.dumps(credentials).encode())
-            proc = subprocess.Popen([sys.executable, HELPER, 'broker'], stdin=subprocess.DEVNULL,
-                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                    env=minimal_env(), start_new_session=True, close_fds=True)
-            jobs.atomic_write(pidpath, str(proc.pid).encode())
+                os.fchmod(instance, 0o600)
+                try: fcntl.flock(instance, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError: return
+                credentials = {'token': secrets.token_hex(32), 'generation': secrets.token_hex(16)}
+                jobs.atomic_write(tokenpath, json.dumps(credentials).encode())
+                child_env = dict(minimal_env(), MODEL_MOD_BROKER_LOCK_FD=str(instance))
+                proc = subprocess.Popen([sys.executable, HELPER, 'broker'], stdin=subprocess.DEVNULL,
+                                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                        env=child_env, start_new_session=True, close_fds=True, pass_fds=(instance,))
+                jobs.atomic_write(pidpath, str(proc.pid).encode())
+            finally:
+                os.close(instance)
             while time.monotonic() < deadline:
                 try:
                     reply = connect(root, 'ping', timeout=.1)
@@ -114,14 +117,14 @@ def ensure():
         pass
 
 
-def terminate_group(pgid):
+def terminate_group(pgid, proc=None):
     try: os.killpg(pgid, signal.SIGTERM)
     except ProcessLookupError: return True
-    except PermissionError: return False
+    except PermissionError: return proc is not None and proc.poll() is not None
     time.sleep(.15)
     try: os.killpg(pgid, signal.SIGKILL)
     except ProcessLookupError: pass
-    except PermissionError: return False
+    except PermissionError: return proc is not None and proc.poll() is not None
     return True
 
 
@@ -150,14 +153,17 @@ class Server(socketserver.ThreadingUnixStreamServer):
 
     def recover(self):
         for record in self.store.records():
-            if record['state'] in jobs.TERMINAL: continue
-            members = [m for m in (record.get('runner'), record.get('appServer')) if isinstance(m, dict)]
-            pgid = record.get('pgid')
-            if job_process.verified_group(pgid, members):
-                error = 'broker_restarted' if terminate_group(pgid) else 'possible_leftover'
-            else:
-                error = 'possible_leftover'
-            self.store.transition(record['id'], 'interrupted', error=error)
+            try:
+                if record['state'] in jobs.TERMINAL: continue
+                members = [m for m in (record.get('runner'), record.get('appServer')) if isinstance(m, dict)]
+                pgid = record.get('pgid')
+                if (record.get('runner') and record['runner']['pid'] == pgid and
+                        job_process.verified_group(pgid, members)):
+                    error = 'broker_restarted' if terminate_group(pgid) else 'possible_leftover'
+                else:
+                    error = 'possible_leftover'
+                self.store.transition(record['id'], 'interrupted', error=error)
+            except Exception: continue
 
     def submit(self, req):
         if 'accountsDir' in req or 'directory' in req:
@@ -183,26 +189,28 @@ class Server(socketserver.ThreadingUnixStreamServer):
 
     def schedule(self):
         for ident, request in list(self.pending.items()):
-            if sum(child['account'] == request['account'] for child in self.children.values()) >= 2: continue
-            if not self.store.transition(ident, 'starting'):
-                self.pending.pop(ident, None)
-                continue
             try:
-                proc = subprocess.Popen([sys.executable, HELPER, 'runner', ident, str(os.getpid())], stdin=subprocess.PIPE,
-                                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                        env=minimal_env(), start_new_session=True, close_fds=True)
-                self.children[ident] = {'proc': proc, 'account': request['account'], 'cancel': False}
-                self.store.set_process(ident, pgid=proc.pid, runner={'pid': proc.pid, 'started': job_process.start_time(proc.pid)})
-                proc.stdin.write(json.dumps(request, ensure_ascii=False).encode())
-                proc.stdin.close()
-            except (OSError, ValueError):
-                child = self.children.pop(ident, None)
-                if child is not None:
-                    terminate_group(child['proc'].pid)
-                    child['proc'].wait(timeout=2)
-                self.store.transition(ident, 'failed', error='runner_start_failed')
-            finally:
-                self.pending.pop(ident, None)
+                if sum(child['account'] == request['account'] for child in self.children.values()) >= 2: continue
+                if not self.store.transition(ident, 'starting'):
+                    self.pending.pop(ident, None)
+                    continue
+                try:
+                    proc = subprocess.Popen([sys.executable, HELPER, 'runner', ident, str(os.getpid())], stdin=subprocess.PIPE,
+                                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                            env=minimal_env(), start_new_session=True, close_fds=True)
+                    self.children[ident] = {'proc': proc, 'account': request['account'], 'cancel': False}
+                    self.store.set_process(ident, pgid=proc.pid, runner={'pid': proc.pid, 'started': job_process.start_time(proc.pid)})
+                    proc.stdin.write(json.dumps(request, ensure_ascii=False).encode())
+                    proc.stdin.close()
+                except Exception:
+                    child = self.children.pop(ident, None)
+                    if child is not None:
+                        terminate_group(child['proc'].pid, child['proc'])
+                        child['proc'].wait(timeout=2)
+                    self.store.transition(ident, 'failed', error='runner_start_failed')
+                finally:
+                    self.pending.pop(ident, None)
+            except Exception: continue
 
     def dispatch(self, request):
         if not isinstance(request, dict) or not hmac.compare_digest(str(request.get('token', '')), self.credentials['token']) or request.get('generation') != self.credentials['generation']:
@@ -222,7 +230,7 @@ class Server(socketserver.ThreadingUnixStreamServer):
                 ident = record['id']
                 if method == 'status': return {'ok': True, 'job': record}
                 if method == 'result':
-                    if not record['resultRef']: raise ValueError('No result is available.')
+                    if not record['resultRef']: raise jobs.UserError('No result is available.')
                     from delegate import clean
                     with open(self.store.path(ident, '.result'), encoding='utf-8') as source: text = clean(source.read(1_000_001))
                     return {'ok': True, 'job': record, 'text': text}
@@ -233,7 +241,7 @@ class Server(socketserver.ThreadingUnixStreamServer):
                     self.store.transition(ident, 'cancelling')
                     child = self.children[ident]
                     child['cancel'] = True
-                    cleaned = terminate_group(child['proc'].pid)
+                    cleaned = terminate_group(child['proc'].pid, child['proc'])
                     self.store.transition(ident, 'cancelled', error=None if cleaned else 'possible_leftover')
                 return {'ok': True, 'job': self.store.resolve(ident)}
             if method == 'shutdown':
@@ -244,13 +252,19 @@ class Server(socketserver.ThreadingUnixStreamServer):
     def tick(self):
         with self.guard:
             for ident, child in list(self.children.items()):
-                if child['proc'].poll() is None: continue
-                cleaned = terminate_group(child['proc'].pid)
-                record = self.store.resolve(ident)
-                if record['state'] not in jobs.TERMINAL:
-                    error = 'possible_leftover' if not cleaned else None if child['cancel'] else 'runner_exited'
-                    self.store.transition(ident, 'cancelled' if child['cancel'] else 'interrupted', error=error)
-                del self.children[ident]
+                finished = False
+                try:
+                    finished = child['proc'].poll() is not None
+                    if not finished: continue
+                    cleaned = terminate_group(child['proc'].pid, child['proc'])
+                    record = self.store.resolve(ident)
+                    if record['state'] not in jobs.TERMINAL:
+                        error = 'possible_leftover' if not cleaned else None if child['cancel'] else 'runner_exited'
+                        self.store.transition(ident, 'cancelled' if child['cancel'] else 'interrupted', error=error)
+                except Exception:
+                    pass
+                finally:
+                    if finished: self.children.pop(ident, None)
             self.schedule()
             now = time.monotonic()
             if now - self.last_cleanup >= CLEANUP_INTERVAL:
@@ -259,25 +273,24 @@ class Server(socketserver.ThreadingUnixStreamServer):
             if not self.children and not self.pending and now - self.last_ipc >= IDLE_SECONDS: self.stopping = True
 
     def finish(self):
-        with self.guard:
-            for ident, child in list(self.children.items()):
-                cleaned = terminate_group(child['proc'].pid)
-                child['proc'].wait(timeout=2)
-                self.store.transition(ident, 'interrupted', error='broker_stopped' if cleaned else 'possible_leftover')
-            for ident in self.pending: self.store.transition(ident, 'interrupted', error='broker_stopped')
-            self.server_close()
-        sockpath, tokenpath, pidpath, lockpath = paths(self.root)
-        fd = os.open(lockpath, os.O_CREAT | os.O_RDWR, 0o600)
         try:
-            fcntl.flock(fd, fcntl.LOCK_EX)
-            try:
-                with open(tokenpath, encoding='utf-8') as source: current = json.load(source)
-                if current.get('generation') == self.credentials['generation']:
-                    for path in (sockpath, tokenpath, pidpath):
-                        try: os.unlink(path)
-                        except FileNotFoundError: pass
-            except (OSError, ValueError): pass
-        finally: os.close(fd)
+            with self.guard:
+                for ident, child in list(self.children.items()):
+                    try:
+                        cleaned = terminate_group(child['proc'].pid, child['proc'])
+                        child['proc'].wait(timeout=2)
+                        self.store.transition(ident, 'interrupted', error='broker_stopped' if cleaned else 'possible_leftover')
+                    except Exception: continue
+                for ident in self.pending:
+                    try: self.store.transition(ident, 'interrupted', error='broker_stopped')
+                    except Exception: continue
+        finally:
+            try: self.server_close()
+            finally:
+                for path in paths(self.root)[:3]:
+                    try: os.unlink(path)
+                    except OSError: pass
+
 
 
 class Handler(socketserver.StreamRequestHandler):
@@ -289,7 +302,11 @@ class Handler(socketserver.StreamRequestHandler):
             line = self.rfile.readline(MAX_REQUEST + 1)
             if len(line) > MAX_REQUEST or not line.endswith(b'\n'): return
             response = self.server.dispatch(json.loads(line))
-        except (OSError, ValueError, KeyError, TypeError):
+        except jobs.UserError as exc:
+            response = {'ok': False, 'error': str(exc)}
+        except BridgeError:
+            response = {'ok': False, 'error': 'Invalid account.'}
+        except Exception:
             response = {'ok': False, 'error': 'Invalid or unavailable request.'}
         try: self.wfile.write(json.dumps(response, ensure_ascii=False).encode() + b'\n')
         except OSError: pass
@@ -297,12 +314,28 @@ class Handler(socketserver.StreamRequestHandler):
 
 def serve():
     root = root_path()
-    with open(paths(root)[1], encoding='utf-8') as source: credentials = json.load(source)
-    server = Server(root, credentials)
+    jobs.Store(root)
+    inherited = os.environ.pop('MODEL_MOD_BROKER_LOCK_FD', None)
+    instance = int(inherited) if inherited is not None else os.open(os.path.join(root, '.instance.lock'), os.O_CREAT | os.O_RDWR, 0o600)
+    os.fchmod(instance, 0o600)
+    if inherited is None:
+        try: fcntl.flock(instance, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            os.close(instance)
+            return
+    try:
+        with open(paths(root)[1], encoding='utf-8') as source: credentials = json.load(source)
+        server = Server(root, credentials)
+    except BaseException:
+        os.close(instance)
+        raise
     def stop(signum, frame): server.stopping = True
     signal.signal(signal.SIGTERM, stop)
     try:
         while not server.stopping:
             server.handle_request()
-            server.tick()
-    finally: server.finish()
+            try: server.tick()
+            except Exception: pass
+    finally:
+        try: server.finish()
+        finally: os.close(instance)

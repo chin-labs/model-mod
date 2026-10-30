@@ -103,25 +103,127 @@ class BrokerTest(unittest.TestCase):
         self.fail('process %s remained alive' % pid)
 
     def test_ensure_lock_serializes_launch(self):
-        launched = []
-        active = {}
-        class Process:
-            pid = 12345
-            def poll(self): return None
-        def launch(*args, **kwargs):
-            time.sleep(.1)
-            with open(broker.paths(self.root)[1]) as source: active.update(json.load(source))
-            launched.append(True)
-            return Process()
-        def ping(root, method, timeout):
-            if not active: raise OSError('not running')
-            return {'ok': True, 'generation': active['generation']}
-        with patch.dict(os.environ, self.env, clear=True), patch.object(broker.subprocess, 'Popen', side_effect=launch), \
-             patch.object(broker, 'connect', side_effect=ping):
-            threads = [threading.Thread(target=broker.ensure) for _ in range(2)]
-            for thread in threads: thread.start()
-            for thread in threads: thread.join(3)
-        self.assertEqual(len(launched), 1)
+        first, second = self.ensure(), self.ensure()
+        for proc in (first, second):
+            self.assertEqual(proc.communicate(timeout=3), (b'', b''))
+            self.assertEqual(proc.returncode, 0)
+        self.assertTrue(self.call('ping')['ok'])
+
+    def test_ensure_with_locked_instance(self):
+        import fcntl
+        jobs.Store(self.root)
+        path = os.path.join(self.root, '.instance.lock')
+        fd = os.open(path, os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            with patch.dict(os.environ, self.env, clear=True), patch.object(broker.subprocess, 'Popen') as launch:
+                broker.ensure()
+                launch.assert_not_called()
+            self.assertFalse(os.path.exists(broker.paths(self.root)[1]))
+        finally:
+            os.close(fd)
+
+    def test_stopped_broker_and_duplicate_start(self):
+        self.configure('delegate_delay')
+        self.ensure().communicate(timeout=3)
+        ident = self.submit()
+        self.wait_state(ident, {'running'})
+        sockpath, tokenpath, pidpath, _ = broker.paths(self.root)
+        pid = int(Path(pidpath).read_text())
+        original_token = Path(tokenpath).read_bytes()
+        original_socket = os.stat(sockpath).st_ino
+        os.kill(pid, signal.SIGSTOP)
+        try:
+            self.assertEqual(self.ensure().communicate(timeout=3), (b'', b''))
+            self.assertEqual(Path(tokenpath).read_bytes(), original_token)
+            self.assertEqual(int(Path(pidpath).read_text()), pid)
+            duplicate = subprocess.run([sys.executable, HELPER, 'broker'], env=self.env, capture_output=True, timeout=3)
+            self.assertEqual(duplicate.returncode, 0)
+            self.assertEqual(os.stat(sockpath).st_ino, original_socket)
+            self.assertEqual(Path(tokenpath).read_bytes(), original_token)
+        finally:
+            os.kill(pid, signal.SIGCONT)
+        self.assertEqual(self.wait_state(ident, {'completed', 'interrupted', 'failed'})['state'], 'completed')
+
+    def test_concurrent_broker_start(self):
+        jobs.Store(self.root)
+        tokenpath = broker.paths(self.root)[1]
+        credentials = {'token': 'test-token', 'generation': 'test-generation'}
+        jobs.atomic_write(tokenpath, json.dumps(credentials).encode())
+        procs = [subprocess.Popen([sys.executable, HELPER, 'broker'], env=self.env,
+                                  stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                 for _ in range(2)]
+        try:
+            deadline = time.monotonic() + 4
+            while time.monotonic() < deadline:
+                if sum(proc.poll() is None for proc in procs) == 1 and os.path.exists(broker.paths(self.root)[0]): break
+                time.sleep(.02)
+            self.assertEqual(sum(proc.poll() is None for proc in procs), 1)
+            self.assertEqual([proc.returncode for proc in procs if proc.poll() is not None], [0])
+            self.assertEqual(json.loads(Path(tokenpath).read_text()), credentials)
+            self.assertTrue(self.call('ping')['ok'])
+        finally:
+            try: self.call('shutdown')
+            except (OSError, ValueError): pass
+            for proc in procs:
+                try: proc.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    proc.terminate()
+                    proc.wait(timeout=3)
+
+    def test_user_errors(self):
+        self.configure('abort')
+        self.ensure().communicate(timeout=3)
+        self.assertEqual(self.client('status', {'id': 'f' * 32})['error'], 'Job not found.')
+        self.assertEqual(self.client('submit', dict(self.request(), account='BAD NAME'))['error'], 'Invalid account.')
+        ids = [self.submit() for _ in range(7)]
+        self.assertEqual(self.client('result', {'id': ids[0]})['error'], 'No result is available.')
+        self.assertEqual(self.client('submit', self.request())['error'], 'Account queue is full; wait for a job to start.')
+        for ident in ids: self.call('cancel', {'id': ident})
+
+    def test_bad_records_do_not_stop_other_jobs(self):
+        self.configure('delegate_delay')
+        store = jobs.Store(self.root)
+        valid = store.create(str(self.repo), 'test', 'chat', None, 'rescue', 'read-only', 'generation')
+        samples = [dict(valid, state=[]), dict(valid, updatedAt='old'), '{broken', '[' * 200000, 'x' * 1_000_001]
+        for index, sample in enumerate(samples):
+            ident = '%032x' % (index + 1)
+            if isinstance(sample, dict): sample = json.dumps(dict(sample, id=ident))
+            Path(store.path(ident, '.json')).write_text(sample)
+        self.ensure().communicate(timeout=3)
+        first, second = self.submit(), self.submit()
+        self.wait_state(first, {'running'})
+        self.wait_state(second, {'running'})
+        Path(store.path(first, '.json')).write_text('{broken')
+        self.assertEqual(self.wait_state(second, {'completed', 'failed', 'interrupted'})['state'], 'completed')
+        self.assertTrue(self.call('ping')['ok'])
+        self.call('shutdown')
+        for _ in range(60):
+            if not os.path.exists(broker.paths(self.root)[0]): break
+            time.sleep(.05)
+        self.assertFalse(os.path.exists(broker.paths(self.root)[0]))
+
+    def test_normal_cancel_and_shutdown(self):
+        self.configure('abort')
+        self.ensure().communicate(timeout=3)
+        first = self.submit()
+        self.wait_state(first, {'running'})
+        self.assertIsNone(self.call('cancel', {'id': first})['job']['errorCode'])
+        second = self.submit()
+        self.wait_state(second, {'running'})
+        pid = int(Path(broker.paths(self.root)[2]).read_text())
+        os.kill(pid, signal.SIGTERM)
+        self.wait_dead(pid)
+        record = jobs.Store(self.root).resolve(second)
+        self.assertEqual((record['state'], record['errorCode']), ('interrupted', 'broker_stopped'))
+
+    def test_reaped_child_permission_error(self):
+        proc = unittest.mock.Mock()
+        proc.poll.return_value = 0
+        with patch.object(broker.os, 'killpg', side_effect=[None, PermissionError]), patch.object(broker.time, 'sleep'):
+            self.assertTrue(broker.terminate_group(123, proc))
+        with patch.object(broker.os, 'killpg', side_effect=[None, PermissionError]), patch.object(broker.time, 'sleep'):
+            self.assertFalse(broker.terminate_group(123))
 
     def test_ensure_auth_and_result(self):
         self.configure('text')
@@ -144,6 +246,7 @@ class BrokerTest(unittest.TestCase):
         ident = self.submit()
         record = self.wait_state(ident, {'completed', 'failed', 'interrupted'})
         self.assertEqual(record['state'], 'completed')
+        self.assertIsNone(record['errorCode'])
         self.assertEqual(self.call('result', {'id': ident})['text'], 'hello')
         for suffix in ('.json', '.result'):
             data = Path(self.root, ident + suffix).read_text()
@@ -162,7 +265,7 @@ class BrokerTest(unittest.TestCase):
         path.write_text('unique private diff\n')
         self.ensure().communicate(timeout=3)
         request = self.request()
-        request.update(kind='review', options={'adversarial': True, 'text': 'unique private prompt'})
+        request.update(kind='review', options={'adversarial': True, 'text': 'unique private prompt for redaction testing'})
         reply = self.client('submit', request)
         self.assertTrue(reply['ok'])
         ident = reply['job']['id']
@@ -219,6 +322,38 @@ class BrokerTest(unittest.TestCase):
         finally:
             left.close()
             right.close()
+
+    def test_per_job_write_failure_is_isolated(self):
+        server = object.__new__(broker.Server)
+        server.store = unittest.mock.Mock()
+        server.store.records.return_value = [
+            {'id': ident, 'state': 'running', 'pgid': None, 'runner': None, 'appServer': None}
+            for ident in ('a' * 32, 'b' * 32)]
+        server.store.transition.side_effect = [OSError('disk'), True]
+        server.recover()
+        self.assertEqual(server.store.transition.call_count, 2)
+        server.guard = threading.RLock()
+        server.children = {ident: {'proc': unittest.mock.Mock(pid=index, poll=lambda: 0), 'cancel': False}
+                           for index, ident in enumerate(('a' * 32, 'b' * 32), 10)}
+        server.pending = {}
+        server.last_cleanup = server.last_ipc = time.monotonic()
+        server.stopping = False
+        server.store.resolve.return_value = {'state': 'running'}
+        server.store.transition.reset_mock(side_effect=True)
+        server.store.transition.side_effect = [OSError('disk'), True]
+        with patch.object(broker, 'terminate_group', return_value=True): server.tick()
+        self.assertEqual(server.store.transition.call_count, 2)
+        self.assertEqual(server.children, {})
+        server.root = self.root
+        jobs.Store(self.root)
+        server.server_close = unittest.mock.Mock()
+        for path in broker.paths(self.root)[:3]: Path(path).touch()
+        server.pending = {'c' * 32: {}, 'd' * 32: {}}
+        server.store.transition.reset_mock(side_effect=True)
+        server.store.transition.side_effect = [OSError('disk'), True]
+        server.finish()
+        self.assertEqual(server.store.transition.call_count, 2)
+        for path in broker.paths(self.root)[:3]: self.assertFalse(os.path.exists(path))
 
     def test_recovery_checks_identity(self):
         member = {'pid': 23, 'started': 'expected'}

@@ -3,6 +3,7 @@ import contextlib
 import fcntl
 import hashlib
 import json
+import math
 import os
 import re
 import secrets
@@ -23,6 +24,31 @@ ID = re.compile(r'^[0-9a-f]{32}$')
 FIELDS = frozenset(('version', 'id', 'workspaceHash', 'account', 'model', 'effort', 'kind', 'mode',
                     'createdAt', 'updatedAt', 'state', 'phase', 'errorCode', 'resultRef', 'brokerGeneration',
                     'pgid', 'runner', 'appServer'))
+
+
+class UserError(ValueError):
+    pass
+
+
+def valid_record(record, ident):
+    if not isinstance(record, dict) or set(record) != FIELDS: return False
+    if record['id'] != ident or type(record['version']) is not int or record['version'] != 1: return False
+    if not isinstance(record['state'], str) or record['state'] not in set(TRANSITIONS) | TERMINAL: return False
+    if not all(type(record[k]) is int or (type(record[k]) is float and math.isfinite(record[k]))
+               for k in ('createdAt', 'updatedAt')): return False
+    if not isinstance(record['account'], str) or not re.fullmatch(r'[a-z0-9][a-z0-9-]{0,31}', record['account']): return False
+    if not isinstance(record['workspaceHash'], str) or not re.fullmatch(r'[0-9a-f]{16}', record['workspaceHash']): return False
+    if not all(isinstance(record[k], str) for k in ('model', 'kind', 'mode', 'phase', 'brokerGeneration')): return False
+    if not all(record[k] is None or isinstance(record[k], str) for k in ('effort', 'errorCode', 'resultRef')): return False
+    if record['resultRef'] not in (None, ident + '.result'): return False
+    def positive(value): return type(value) is int and value > 0
+    if record['pgid'] is not None and not positive(record['pgid']): return False
+    for key in ('runner', 'appServer'):
+        member = record[key]
+        if member is not None and (not isinstance(member, dict) or set(member) != {'pid', 'started'} or
+                                   not positive(member['pid']) or
+                                   (member['started'] is not None and not isinstance(member['started'], str))): return False
+    return True
 
 
 def workspace_hash(cwd):
@@ -73,19 +99,22 @@ class Store:
         for filename in os.listdir(self.root):
             if not re.fullmatch(r'[0-9a-f]{32}\.json', filename): continue
             try:
-                with open(os.path.join(self.root, filename), encoding='utf-8') as source:
-                    record = json.load(source)
-                if record.get('id') == filename[:-5] and record.get('version') == 1 and set(record) == FIELDS:
-                    result.append(record)
-            except (OSError, ValueError, TypeError, AttributeError):
+                path = os.path.join(self.root, filename)
+                if os.stat(path).st_size > 1_000_000: continue
+                with open(path, encoding='utf-8') as source:
+                    data = source.read(1_000_001)
+                if len(data.encode('utf-8')) > 1_000_000: continue
+                record = json.loads(data)
+                if valid_record(record, filename[:-5]): result.append(record)
+            except (OSError, ValueError, TypeError, RecursionError):
                 continue
         return result
 
     def resolve(self, prefix):
         if not isinstance(prefix, str) or not re.fullmatch(r'[0-9a-f]{1,32}', prefix): raise ValueError('Invalid job ID.')
         matches = [record for record in self.records() if record['id'].startswith(prefix)]
-        if not matches: raise ValueError('Job not found.')
-        if len(matches) != 1: raise ValueError('Ambiguous job ID; provide more characters.')
+        if not matches: raise UserError('Job not found.')
+        if len(matches) != 1: raise UserError('Ambiguous job ID; provide more characters.')
         return matches[0]
 
     def write(self, record):
@@ -95,9 +124,9 @@ class Store:
     def create(self, cwd, account, model, effort, kind, mode, generation):
         with self.locked():
             records = self.records()
-            if len(records) >= MAX_JOBS: raise ValueError('Job limit reached; clear completed jobs.')
+            if len(records) >= MAX_JOBS: raise UserError('Job limit reached; clear completed jobs.')
             if sum(r['account'] == account and r['state'] == 'queued' for r in records) >= 5:
-                raise ValueError('Account queue is full; wait for a job to start.')
+                raise UserError('Account queue is full; wait for a job to start.')
             now = time.time()
             record = {'version': 1, 'id': secrets.token_hex(16), 'workspaceHash': workspace_hash(cwd),
                       'account': account, 'model': model, 'effort': effort, 'kind': kind, 'mode': mode,
@@ -135,7 +164,19 @@ class Store:
     def clear(self, workspace=None, older_than=None):
         with self.locked():
             removed = 0
-            for record in self.records():
+            records = self.records()
+            valid_ids = {record['id'] for record in records}
+            for filename in os.listdir(self.root):
+                if not re.fullmatch(r'[0-9a-f]{32}\.json', filename) or filename[:-5] in valid_ids: continue
+                path = os.path.join(self.root, filename)
+                try:
+                    if older_than is not None and os.stat(path).st_mtime >= older_than: continue
+                    os.unlink(path)
+                    try: os.unlink(self.path(filename[:-5], '.result'))
+                    except FileNotFoundError: pass
+                    removed += 1
+                except OSError: continue
+            for record in records:
                 if record['state'] not in TERMINAL: continue
                 if workspace is not None and record['workspaceHash'] != workspace: continue
                 if older_than is not None and record['updatedAt'] >= older_than: continue

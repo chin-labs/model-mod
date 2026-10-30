@@ -85,6 +85,32 @@ class JobStoreTest(unittest.TestCase):
             self.assertFalse(job_process.cleanup_verified(42, [member]))
             kill.assert_not_called()
 
+    def test_invalid_record_cleanup(self):
+        import json
+        record = self.create()
+        ident = record['id']
+        path = self.store.path(ident, '.json')
+        for field, value in [('state', []), ('updatedAt', 'old'), ('account', 'BAD NAME'),
+                             ('pgid', True), ('runner', {'pid': -1, 'started': 'x'})]:
+            with open(path, 'w') as output: json.dump(dict(record, **{field: value}), output)
+            self.assertEqual(self.store.records(), [])
+        for content in ('{broken', '[' * 200000, 'x' * 1_000_001):
+            with open(path, 'w') as output: output.write(content)
+            self.assertEqual(self.store.records(), [])
+        os.utime(path, (1, 1))
+        self.assertEqual(self.store.clear(older_than=time.time() - jobs.RETENTION_SECONDS), 1)
+        with open(path, 'w') as output: output.write('{broken')
+        self.assertEqual(self.store.clear(workspace='unavailable'), 1)
+
+    def test_runner_group_mismatch(self):
+        member = {'pid': 23, 'started': 'start'}
+        with patch.object(job_process, 'start_time', return_value='start'), \
+             patch.object(job_process.os, 'getpgid', return_value=42), \
+             patch.object(job_process.os, 'killpg') as kill:
+            self.assertFalse(job_process.cleanup_verified(42, [member]))
+            kill.assert_not_called()
+        self.assertFalse(job_process.verified_group(os.getpgrp(), [{'pid': os.getpgrp(), 'started': 'start'}]))
+
     def test_ttl_and_queue_limit(self):
         records = [self.create() for _ in range(5)]
         with self.assertRaisesRegex(ValueError, 'queue'):

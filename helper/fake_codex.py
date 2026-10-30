@@ -140,6 +140,7 @@ for line in sys.stdin:
             event('item/tool/call', {'callId': 'call1', 'tool': 'one', 'arguments': {'n': 1}})
             event('item/tool/call', {'callId': 'call2', 'tool': 'two', 'arguments': {'n': 2}})
         else:
+            if mode == 'delegate_delay': time.sleep(1)
             event('thread/tokenUsage/updated', {'tokenUsage': {'total': {'inputTokens': 100, 'cachedInputTokens': 40, 'outputTokens': 9}}})
             event('turn/completed', {'turn': {'id': 'turn1', 'status': 'completed'}})
     elif method == 'turn/interrupt':

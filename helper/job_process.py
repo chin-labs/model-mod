@@ -24,7 +24,8 @@ def start_time(pid):
 
 
 def verified_group(pgid, members):
-    if not isinstance(pgid, int) or isinstance(pgid, bool) or pgid <= 1: return False
+    if not isinstance(pgid, int) or isinstance(pgid, bool) or pgid <= 1 or pgid == os.getpgrp(): return False
+    if not members or members[0].get('pid') != pgid: return False
     for member in members:
         try:
             pid, started = member['pid'], member['started']

@@ -43,6 +43,41 @@ class DelegateTest(unittest.TestCase):
     def records(self):
         return [json.loads(line) for line in self.log.read_text().splitlines()] if self.log.exists() else []
 
+    def test_background_limits_and_codes(self):
+        from bridge import BridgeError
+        self.assertEqual((delegate.TOTAL_SECONDS, delegate.IDLE_SECONDS), (300, 120))
+        self.assertEqual((delegate.BACKGROUND_TOTAL_SECONDS, delegate.BACKGROUND_IDLE_SECONDS), (1800, 300))
+        self.mode('abort')
+        with patch.object(delegate, 'BACKGROUND_IDLE_SECONDS', .1):
+            with self.assertRaises(delegate.Failure) as caught:
+                delegate.execute(dict(self.request), own_group=False)
+        self.assertEqual(caught.exception.code, 'idle_timeout')
+        self.assertIn('Background jobs', str(caught.exception))
+        self.assertNotIn('future background', str(caught.exception))
+        app = object.__new__(delegate.App)
+        app.background = True
+        app.deadline = time.monotonic() - 1
+        with self.assertRaises(delegate.Failure) as caught: app.next()
+        self.assertEqual(caught.exception.code, 'timeout')
+        for code in ('timeout', 'idle_timeout', 'account_mismatch', 'codex_too_old'):
+            self.assertEqual(delegate.failure_code(BridgeError('sensitive', code=code)), code)
+        self.assertEqual(delegate.failure_code(BridgeError('sensitive', code='codex_not_logged_in')), 'not_logged_in')
+        self.assertEqual(delegate.failure_code(Exception('sensitive')), 'delegation_failed')
+        self.assertEqual(delegate.redact_result('hello', 'l', '', ''), 'hello')
+        secret = 'x' * 32
+        self.assertEqual(delegate.redact_result(secret + ' home', secret, '', 'home'), '[redacted] [redacted]')
+
+    def test_orphan_runner_group_safety(self):
+        with patch.object(delegate.os, 'getpgrp', return_value=42), patch.object(delegate.os, 'getpid', return_value=43), \
+             patch.object(delegate.os, 'killpg') as kill, patch.object(delegate.os, '_exit') as exit_process:
+            delegate.stop_orphan_runner()
+            kill.assert_not_called()
+            exit_process.assert_called_once_with(1)
+        with patch.object(delegate.os, 'getpgrp', return_value=42), patch.object(delegate.os, 'getpid', return_value=42), \
+             patch.object(delegate.os, 'killpg') as kill:
+            delegate.stop_orphan_runner()
+            kill.assert_called_once_with(42, signal.SIGKILL)
+
     def test_protocol_safety(self):
         self.mode('delegate_approval')
         self.assertEqual(delegate.execute(dict(self.request)), 'hello')

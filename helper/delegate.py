@@ -21,10 +21,15 @@ MAX_DIFF = 200_000
 MAX_OUTPUT = 64_000
 TOTAL_SECONDS = 300
 IDLE_SECONDS = 120
+BACKGROUND_TOTAL_SECONDS = 30 * 60
+BACKGROUND_IDLE_SECONDS = 5 * 60
+MIN_REDACT_LENGTH = 32
 
 
 class Failure(Exception):
-    pass
+    def __init__(self, message, code="delegation_failed"):
+        super().__init__(message)
+        self.code = code
 
 
 class Cancelled(Exception):
@@ -100,8 +105,9 @@ def clean(text):
 class App:
     def __init__(self, request, own_group=True, on_spawn=None):
         self.own_group = own_group
-        self.deadline = time.monotonic() + TOTAL_SECONDS
-        self.idle = IDLE_SECONDS
+        self.background = not own_group
+        self.deadline = time.monotonic() + (BACKGROUND_TOTAL_SECONDS if self.background else TOTAL_SECONDS)
+        self.idle = BACKGROUND_IDLE_SECONDS if self.background else IDLE_SECONDS
         self.counter = 0
         self.thread = None
         self.turn = None
@@ -144,9 +150,11 @@ class App:
 
     def next(self):
         remaining = self.deadline - time.monotonic()
-        if remaining <= 0: raise Failure('Timed out; result is incomplete. Longer jobs require the future background feature.')
+        message = ('Timed out; result is incomplete. Background jobs are limited to 30 minutes total and 5 minutes idle.'
+                   if self.background else 'Timed out; result is incomplete. Longer jobs require the future background feature.')
+        if remaining <= 0: raise Failure(message, 'timeout')
         try: obj = self.queue.get(timeout=min(self.idle, remaining))
-        except queue.Empty: raise Failure('Timed out; result is incomplete. Longer jobs require the future background feature.')
+        except queue.Empty: raise Failure(message, 'timeout' if remaining <= self.idle else 'idle_timeout')
         if obj is None: raise Failure('Codex app-server exited unexpectedly.')
         if isinstance(obj, Exception): raise obj
         if not isinstance(obj, dict): raise Failure('Invalid app-server response.')
@@ -251,11 +259,11 @@ def execute(request, own_group=True, on_spawn=None):
         return 'No changes to review.'
     verify_version(SimpleNamespace(codex_bin=request['codexBin'], codex_home=home))
     app = App(request, own_group=own_group, on_spawn=on_spawn)
-    app.deadline = started + TOTAL_SECONDS
+    app.deadline = started + (TOTAL_SECONDS if own_group else BACKGROUND_TOTAL_SECONDS)
     try:
         init = app.request('initialize', {'clientInfo': {'name': 'model-mod-delegate', 'version': '0.2.0'}, 'capabilities': {'experimentalApi': True}})
         if not isinstance(init.get('codexHome'), str) or os.path.realpath(init['codexHome']) != home:
-            raise Failure('Codex account directory mismatch.')
+            raise Failure('Codex account directory mismatch.', 'account_mismatch')
         app.send({'method': 'initialized', 'params': {}})
         config = app.request('config/read', {'includeLayers': False, 'cwd': cwd}).get('config', {})
         if config.get('web_search') != 'disabled' or any(config.get('features', {}).get(f) is not False for f in FEATURES):
@@ -329,6 +337,23 @@ def main():
     print(json.dumps({'text': text}, ensure_ascii=False), flush=True)
 
 
+def failure_code(exc):
+    code = getattr(exc, 'code', '')
+    code = {'codex_not_logged_in': 'not_logged_in'}.get(code, code)
+    return code if code in ('timeout', 'idle_timeout', 'account_mismatch', 'not_logged_in', 'codex_too_old') else 'delegation_failed'
+
+
+def redact_result(result, text, diff, home):
+    for secret in (text, diff):
+        if len(secret) >= MIN_REDACT_LENGTH: result = result.replace(secret, '[redacted]')
+    return result.replace(home, '[redacted]') if home else result
+
+
+def stop_orphan_runner():
+    if os.getpgrp() == os.getpid(): os.killpg(os.getpgrp(), signal.SIGKILL)
+    else: os._exit(1)
+
+
 def runner(ident, parent):
     import broker
     import job_process
@@ -338,7 +363,7 @@ def runner(ident, parent):
         while True:
             time.sleep(.1)
             if os.getppid() != parent:
-                os.killpg(os.getpgrp(), signal.SIGKILL)
+                stop_orphan_runner()
     threading.Thread(target=watch_parent, daemon=True).start()
     try:
         request = json.load(sys.stdin)
@@ -351,11 +376,11 @@ def runner(ident, parent):
         options = request['options']
         diff = diff_for(request['cwd'], options.get('base')) if options.get('adversarial') else b''
         result = execute(request, own_group=False, on_spawn=on_spawn)
-        for secret in (options.get('text', ''), diff.decode('utf-8', 'replace'), home):
-            if secret: result = result.replace(secret, '[redacted]')
+        result = redact_result(result, options.get('text', ''), diff.decode('utf-8', 'replace'), home)
         store.transition(ident, 'completed', result=result)
-    except Exception:
-        store.transition(ident, 'failed', error='delegation_failed')
+    except Exception as exc:
+        try: store.transition(ident, 'failed', error=failure_code(exc))
+        except Exception: pass
 
 
 def client(method):
