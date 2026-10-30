@@ -29,6 +29,15 @@ test('write is rescue-only and requires explicit confirmation', async () => {
   }
 })
 
+test('write rejects a misleading working-directory display before asking', async () => {
+  let asked = 0
+  const $ = { plugin: { root: '/plugin' }, session: { model: async () => 'test/chat', cwd: async () => '/repo' },
+    fs: { stat: async () => ({ kind: 'dir', realPath: '/repo\nother' }) }, ui: { ask: async () => { asked++; return 'Allow write' } } } as unknown as EngineInterface
+  const config = { codex: new Map([['test/chat', { account: 'test', model: 'chat', directory: '/accounts/test' }]]), accountsDir: '/accounts' }
+  const result = await delegate($, 'rescue', '--write -- task', config, new AbortController().signal)
+  expect(asked).toBe(0); expect(result.text).toContain('not allowed')
+})
+
 test('background write submits only after confirmation with the confirmed root', async () => {
   const config = { codex: new Map([['test/chat', { account: 'test', model: 'chat', directory: '/accounts/test' }]]), accountsDir: '/accounts' }
   for (const answer of ['Cancel', 'Allow write']) {

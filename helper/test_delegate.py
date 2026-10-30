@@ -276,6 +276,9 @@ class DelegateTest(unittest.TestCase):
         for unsafe in ('/', os.path.expanduser('~'), str(self.account_dir), str(self.account_dir.parent)):
             with self.assertRaises(delegate.Failure):
                 delegate.validate_write_root(unsafe, str(self.account_dir.parent), 'test')
+        alias = str(self.account_dir.parent).replace('accounts', 'ACCOUNTS')
+        if os.path.isdir(alias):
+            with self.assertRaises(delegate.Failure): delegate.validate_write_root(alias, str(self.account_dir.parent), 'test')
 
     def test_transfer(self):
         projects = self.root / '.claude' / 'projects'
@@ -296,6 +299,8 @@ class DelegateTest(unittest.TestCase):
             self.assertEqual(items[0]['details']['sessions'], [{'path': os.path.realpath(transcript), 'cwd': str(self.repo), 'title': None}])
             self.assertTrue(all(not v for k, v in items[0]['details'].items() if k != 'sessions'))
             mode('transfer_invalid_id')
+            with self.assertRaisesRegex(delegate.Failure, 'not confirmed'): delegate.transfer(request)
+            mode('transfer_exit')
             with self.assertRaisesRegex(delegate.Failure, 'not confirmed'): delegate.transfer(request)
             mode('transfer_timeout')
             with patch.object(delegate, 'IDLE_SECONDS', .1):

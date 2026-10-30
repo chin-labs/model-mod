@@ -82,9 +82,9 @@ export async function delegate($: EngineInterface, kind: 'review' | 'rescue', ar
       const denied = 'model-mod: Write delegation was not confirmed. Omit --write for read-only rescue.'
       try {
         const result = await $.fs.stat(cwd, { resolve: true })
-        if (result.kind !== 'dir' || !result.realPath || cleanDisplay(result.realPath) !== result.realPath) return { text: 'model-mod: Working directory is not allowed for write delegation.' }
+        if (result.kind !== 'dir' || !result.realPath || /[\x00-\x1f\x7f-\x9f]/.test(result.realPath)) return { text: 'model-mod: Working directory is not allowed for write delegation.' }
         writeRoot = result.realPath
-        const choice = await $.ui.ask(`Allow Codex account ${cleanDisplay(selected)} to run commands and modify files in ${cleanDisplay(writeRoot)}? Writable scope: this working directory only; networkAccess is off. Model: ${cleanDisplay(model)}; effort: ${cleanDisplay(options.effort ?? 'default')}; ${options.background ? 'background' : 'foreground'}. Allow write?`, ['Cancel', 'Allow write'])
+        const choice = await $.ui.ask(`Allow Codex account ${cleanDisplay(selected)} to run commands and modify files in ${cleanDisplay(writeRoot)}? Writable scope: this working directory only; networkAccess is off. Model: ${cleanDisplay(model).replace(/[\r\n\t]/g, ' ')}; effort: ${cleanDisplay(options.effort ?? 'default')}; ${options.background ? 'background' : 'foreground'}. Allow write?`, ['Cancel', 'Allow write'])
         if (choice !== 'Allow write' || signal.aborted) return { text: denied }
         cwd = writeRoot
       } catch { return { text: denied } }

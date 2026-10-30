@@ -259,12 +259,22 @@ def validate_write_root(cwd, accounts_dir, account):
     home = os.path.realpath(os.path.expanduser('~'))
     account_dir, _ = account_home(accounts_dir, account)
     protected = [os.path.join(home, '.codex'), os.path.join(home, '.config', 'model-mod'), account_dir, os.path.realpath(accounts_dir)]
-    if root in (os.path.abspath(os.sep), home): raise Failure(message)
+    def same(a, b):
+        try: return os.path.samefile(a, b)
+        except OSError: return False
+    def ancestors(path):
+        while True:
+            yield path
+            parent = os.path.dirname(path)
+            if parent == path: break
+            path = parent
+    if root in (os.path.abspath(os.sep), home) or same(root, home) or same(root, os.path.abspath(os.sep)): raise Failure(message)
     for path in protected:
         path = os.path.realpath(path)
         try: common = os.path.commonpath([root, path])
         except ValueError: continue
-        if common in (root, path): raise Failure(message)
+        if common in (root, path) or any(same(part, path) for part in ancestors(root)) or any(same(part, root) for part in ancestors(path)):
+            raise Failure(message)
     return root
 
 
@@ -380,10 +390,11 @@ def transcript_path(path):
 def transfer(request):
     path = transcript_path(request.get('transcript'))
     home, _ = account_home(request['accountsDir'], request['account'])
-    if not os.path.isdir(home) or os.path.realpath(request['directory']) != home: raise Failure('Invalid Codex account directory.')
+    if not os.path.isdir(home) or os.path.realpath(request['directory']) != home or any(ord(ch) < 32 or 127 <= ord(ch) <= 159 for ch in home): raise Failure('Invalid Codex account directory.')
     request['directory'] = home
     verify_version(SimpleNamespace(codex_bin=request['codexBin'], codex_home=home))
     app = App(request)
+    import_started = False
     try:
         init = app.request('initialize', {'clientInfo': {'name': 'model-mod-delegate', 'version': '0.2.0'}, 'capabilities': {'experimentalApi': True}})
         if not isinstance(init.get('codexHome'), str) or os.path.realpath(init['codexHome']) != home: raise Failure('Codex account directory mismatch.')
@@ -400,6 +411,7 @@ def transfer(request):
         item_cwd, session_cwd = matches[0]
         details = {'sessions': [{'path': path, 'cwd': session_cwd, 'title': None}], 'commands': [], 'hooks': [],
                    'mcpServers': [], 'memory': [], 'plugins': [], 'skills': [], 'subagents': []}
+        import_started = True
         result = app.request('externalAgentConfig/import', {'migrationItems': [{'itemType': 'SESSIONS', 'description': 'Session', 'cwd': item_cwd, 'details': details}]})
         import_id = result.get('importId')
         if not isinstance(import_id, str) or not import_id: raise Failure('Transfer was not confirmed.')
@@ -418,11 +430,12 @@ def transfer(request):
                 raise Failure('Transfer was not confirmed.')
             if os.name == 'nt': return "$env:CODEX_HOME='" + home.replace("'", "''") + "'; codex resume '" + ident + "'"
             return 'CODEX_HOME=' + shlex.quote(home) + ' codex resume ' + shlex.quote(ident)
-    except Failure as exc:
-        if exc.code in ('timeout', 'idle_timeout'): raise Failure('Transfer was not confirmed.')
+    except Exception:
+        if import_started: raise Failure('Transfer was not confirmed; it may have been imported.')
         raise
     finally:
-        app.close()
+        try: app.close()
+        except PermissionError: raise Failure('Transfer was not confirmed; process cleanup could not be verified.')
 
 
 def main():

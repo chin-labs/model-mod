@@ -99,6 +99,7 @@ for line in sys.stdin:
         send({'id': ident, 'result': {'items': [{'itemType': 'CONFIG', 'description': 'ignored'}, {'itemType': 'SESSIONS', 'description': 'sessions', 'cwd': None, 'details': {'sessions': [{'path': config['session_path'], 'cwd': config['session_cwd'], 'title': None}]}}]}})
     elif method == 'externalAgentConfig/import':
         send({'id': ident, 'result': {'importId': 'import1'}})
+        if mode == 'transfer_exit': sys.exit(0)
         if mode != 'transfer_timeout':
             event('externalAgentConfig/import/completed', {'importId': 'import1', 'itemTypeResults': [{'itemType': 'SESSIONS', 'failures': [], 'successes': [{'itemType': 'SESSIONS', 'source': config['session_path'], 'target': 'invalid' if mode == 'transfer_invalid_id' else '12345678-1234-4234-8234-123456789abc'}]}]})
     elif method == 'turn/start':
