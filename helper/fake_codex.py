@@ -118,7 +118,7 @@ for line in sys.stdin:
             if mode == 'reasoning_invalid_always' or count == 0:
                 event('turn/completed', {'turn': {'id': 'turn1', 'status': 'failed', 'error': {'message': 'invalid_encrypted_content', 'code': 400}}})
                 continue
-        if mode in ('reasoning_tool', 'reasoning_interleaved', 'reasoning_invalid_shape', 'reasoning_large'):
+        if mode in ('reasoning_tool', 'reasoning_interleaved', 'reasoning_text_interleaved', 'reasoning_invalid_shape', 'reasoning_large'):
             reasoning = {'type': 'reasoning', 'id': 'reason1', 'summary': [], 'content': None,
                          'encrypted_content': 'x' * (300000 if mode == 'reasoning_large' else 16)}
             if mode == 'reasoning_invalid_shape': reasoning['unexpected'] = 'private'
@@ -130,6 +130,8 @@ for line in sys.stdin:
         else:
             text = '\x1b[31mhello\x1b[0m\x01' + 'x' * 65000 if mode == 'delegate_long' else 'hello'
         event('item/agentMessage/delta', {'delta': text})
+        if mode == 'reasoning_text_interleaved':
+            event('rawResponseItem/completed', {'item': {'type': 'reasoning', 'id': 'after-text', 'summary': [], 'encrypted_content': 'opaque'}})
         if mode == 'wait_tool':
             event('item/started', {'item': {'type': 'sleep'}})
             event('item/tool/call', {'callId': 'call1', 'tool': 'one', 'arguments': {'n': 1}})
@@ -177,7 +179,7 @@ for line in sys.stdin:
             event('item/completed', {'item': {'type': 'contextCompaction'}})
             event('thread/tokenUsage/updated', {'tokenUsage': {'modelContextWindow': 475000, 'total': {'inputTokens': 10}}})
             event('turn/completed', {'turn': {'id': 'turn1', 'status': 'completed'}})
-        elif mode in ('tools', 'reasoning_tool', 'reasoning_interleaved', 'reasoning_invalid_shape', 'reasoning_large'):
+        elif mode in ('tools', 'reasoning_tool', 'reasoning_interleaved', 'reasoning_text_interleaved', 'reasoning_invalid_shape', 'reasoning_large'):
             event('item/tool/call', {'callId': 'call1', 'tool': 'one', 'arguments': {'n': 1}})
             if mode == 'reasoning_interleaved':
                 event('rawResponseItem/completed', {'item': {'type': 'reasoning', 'id': 'reason3', 'summary': [], 'encrypted_content': 'opaque'}})

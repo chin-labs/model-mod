@@ -1536,6 +1536,24 @@ for (const setting of ['on', 'off', 'invalid'] as const) {
   })
 }
 
+test('Codex helper owns the single reasoning retry', { options: CODEX_OPTIONS }, async ($, on) => {
+  const sse = [
+    ['content_block_start', { index: 0, content_block: { type: 'thinking', thinking: '', signature: 'mmcx1:YWJj' } }],
+    ['content_block_stop', { index: 0 }],
+    ['content_block_start', { index: 1, content_block: { type: 'tool_use', id: 'retry-call', name: 'Read', input: {} } }],
+    ['content_block_stop', { index: 1 }], ['message_delta', { delta: { stop_reason: 'tool_use' } }], ['message_stop', {}],
+  ].map(([event, data]) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`).join('')
+  const error = JSON.stringify({ type: 'error', error: { type: 'invalid_request_error', code: 'invalid_encrypted_content' } })
+  const w = world(on, null, CODEX_MODEL, [{ stdout: sse, code: 0 }, { stdout: error, stderr: 'model-mod-http:400\n', code: 1 }])
+  await drain($.turn.step(STEP(CODEX_MODEL)))
+  w.messages = [{ role: 'user', content: [{ type: 'text', text: 'hi' }] },
+    { role: 'assistant', content: [{ type: 'tool_use', id: 'retry-call', name: 'Read', input: {} }] },
+    { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'retry-call', content: 'ok' }] }]
+  await drain($.turn.step(STEP(CODEX_MODEL)))
+  expect(w.spawned.length).toBe(2)
+  expect(JSON.parse(w.spawned[1]!.input!).messages[1].content[0].type).toBe('thinking')
+})
+
 test('API reasoning is never replayed to Codex', { options: { ...OPTIONS, ...CODEX_OPTIONS, models: LOCAL } }, async ($, on) => {
   const sse = [
     ['content_block_start', { index: 0, content_block: { type: 'thinking', thinking: '', signature: 'gAAAAfake' } }],

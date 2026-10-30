@@ -2283,7 +2283,7 @@ export const register: Register = (on, options) => {
               if (codex && (httpStatus === 429 || type === 'rate_limit_error')) codexLimitFailed.add(codex.directory)
               return yield* failure(e, `${reason}${httpStatus && httpStatus !== 429 ? ` (HTTP ${httpStatus})` : ''}, retry after ${retryAfter}s`, parser.nextIndex)
             }
-            if (!streamed && sendThinking && type === 'invalid_request_error') {
+            if (!codex && !streamed && sendThinking && type === 'invalid_request_error') {
               // The API did not accept the remembered reasoning (another credential, a changed format): go without it.
               sendThinking = false
               attempt--
