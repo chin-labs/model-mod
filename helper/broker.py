@@ -1,4 +1,4 @@
-"""Local supervisor and private IPC for read-only background delegation."""
+"""Local supervisor and private IPC for background delegation."""
 import errno
 import fcntl
 import hmac
@@ -157,7 +157,9 @@ class Server(socketserver.ThreadingUnixStreamServer):
                 if record['state'] in jobs.TERMINAL: continue
                 members = [m for m in (record.get('runner'), record.get('appServer')) if isinstance(m, dict)]
                 pgid = record.get('pgid')
-                if (record.get('runner') and record['runner']['pid'] == pgid and
+                if record['state'] == 'queued':
+                    error = 'broker_restarted'
+                elif (record.get('runner') and record['runner']['pid'] == pgid and
                         job_process.verified_group(pgid, members)):
                     error = 'broker_restarted' if terminate_group(pgid) else 'possible_leftover'
                 else:
@@ -233,7 +235,7 @@ class Server(socketserver.ThreadingUnixStreamServer):
                 if request.get('clear'): self.store.clear(workspace=jobs.workspace_hash(request['cwd']))
                 records = self.store.records()
                 if not request.get('all'): records = [r for r in records if r['workspaceHash'] == jobs.workspace_hash(request['cwd'])]
-                return {'ok': True, 'jobs': records}
+                return {'ok': True, 'jobs': sorted(records, key=lambda r: r['createdAt'], reverse=True)}
             if method in ('status', 'result', 'cancel'):
                 record = self.store.resolve(request.get('id'))
                 ident = record['id']
@@ -243,6 +245,8 @@ class Server(socketserver.ThreadingUnixStreamServer):
                     from delegate import clean
                     with open(self.store.path(ident, '.result'), encoding='utf-8') as source: text = clean(source.read(1_000_001))
                     return {'ok': True, 'job': record, 'text': text}
+                if record['state'] in jobs.TERMINAL:
+                    return {'ok': False, 'error': 'Job already finished; it was not cancelled.'}
                 if record['state'] == 'queued':
                     self.store.transition(ident, 'cancelled')
                     self.pending.pop(ident, None)

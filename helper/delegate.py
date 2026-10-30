@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Foreground, read-only Codex delegation over a separate app-server."""
+"""Codex delegation over a separate app-server."""
 import hashlib
 import json
 import os
@@ -269,7 +269,7 @@ class App:
     def next(self):
         remaining = self.deadline - time.monotonic()
         message = ('Timed out; result is incomplete. Background jobs are limited to 30 minutes total and 5 minutes idle.'
-                   if self.background else 'Timed out; result is incomplete. Longer jobs require the future background feature.')
+                   if self.background else 'Timed out; result is incomplete. Use --background for longer jobs.')
         if remaining <= 0: raise Failure(message, 'timeout')
         try: obj = self.queue.get(timeout=min(self.idle, remaining))
         except queue.Empty: raise Failure(message, 'timeout' if remaining <= self.idle else 'idle_timeout')
@@ -343,17 +343,17 @@ class App:
             try:
                 if os.name == 'posix' and self.own_group: os.killpg(self.proc.pid, signal.SIGTERM)
                 elif self.proc.poll() is None: self.proc.terminate()
-            except ProcessLookupError: pass
+            except (ProcessLookupError, PermissionError): pass
             try: self.proc.wait(timeout=3)
             except subprocess.TimeoutExpired:
                 if os.name == 'posix' and self.own_group:
                     try: os.killpg(self.proc.pid, signal.SIGKILL)
-                    except ProcessLookupError: pass
+                    except (ProcessLookupError, PermissionError): pass
                 else: self.proc.kill()
                 self.proc.wait()
             if os.name == 'posix' and self.own_group:
                 try: os.killpg(self.proc.pid, signal.SIGKILL)
-                except ProcessLookupError: pass
+                except (ProcessLookupError, PermissionError): pass
             self.writes.put(None)
             self.writer.join(timeout=1)
             for stream in (self.proc.stdin, self.proc.stdout):
@@ -652,8 +652,10 @@ def client(method):
             request.pop('directory', None)
             payload = {'request': request}
         return broker.connect(broker.root_path(), method, payload, timeout=3)
-    except (OSError, ValueError, KeyError, TypeError):
-        return {'ok': False, 'error': 'Background broker unavailable; start a new session to launch it.'}
+    except OSError:
+        return {'ok': False, 'error': 'Background broker socket is unavailable; check the broker and start a new session.'}
+    except (ValueError, KeyError, TypeError):
+        return {'ok': False, 'error': 'Background client request or broker response was invalid; check the installation.'}
 
 
 if __name__ == '__main__':

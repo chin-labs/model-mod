@@ -46,7 +46,13 @@ def remove_generated(home, path):
         note('Could not remove the Codex generated image; remove it manually from generated_images.')
 
 
+def check_platform():
+    if os.name != 'posix' or not hasattr(os, 'O_DIRECTORY') or not hasattr(os, 'O_NOFOLLOW'):
+        raise Failure('Image output requires POSIX no-follow directory support; use a supported platform.')
+
+
 def execute(request):
+    check_platform()
     started = time.monotonic()
     prompt = request.get('prompt')
     if not isinstance(prompt, str) or not 1 <= len(prompt.strip()) <= 4000:
@@ -111,6 +117,7 @@ def execute(request):
 
 
 def write_image(request):
+    check_platform()
     cwd, path, data = request['cwd'], request['path'], request['bytes_b64']
     if not isinstance(path, str) or path.startswith('/') or not path.endswith('.png') or any(p in ('', '.', '..') for p in path.split('/')):
         raise Failure('Invalid output path.')

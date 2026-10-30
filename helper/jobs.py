@@ -124,9 +124,16 @@ class Store:
     def create(self, cwd, account, model, effort, kind, mode, generation):
         with self.locked():
             records = self.records()
-            if len(records) >= MAX_JOBS: raise UserError('Job limit reached; clear completed jobs.')
             if sum(r['account'] == account and r['state'] == 'queued' for r in records) >= 5:
                 raise UserError('Account queue is full; wait for a job to start.')
+            if len(records) >= MAX_JOBS:
+                terminal = sorted((r for r in records if r['state'] in TERMINAL), key=lambda r: r['createdAt'])
+                if not terminal: raise UserError('Job limit reached; clear completed jobs.')
+                oldest = terminal[0]
+                for suffix in ('.json', '.result'):
+                    try: os.unlink(self.path(oldest['id'], suffix))
+                    except FileNotFoundError: pass
+                records.remove(oldest)
             now = time.time()
             record = {'version': 1, 'id': secrets.token_hex(16), 'workspaceHash': workspace_hash(cwd),
                       'account': account, 'model': model, 'effort': effort, 'kind': kind, 'mode': mode,
@@ -167,6 +174,14 @@ class Store:
             records = self.records()
             valid_ids = {record['id'] for record in records}
             for filename in os.listdir(self.root):
+                if older_than is not None and filename.startswith('.pending-'):
+                    path = os.path.join(self.root, filename)
+                    try:
+                        if os.lstat(path).st_mtime < older_than:
+                            os.unlink(path)
+                            removed += 1
+                    except OSError: pass
+                    continue
                 if not re.fullmatch(r'[0-9a-f]{32}\.json', filename) or filename[:-5] in valid_ids: continue
                 path = os.path.join(self.root, filename)
                 try:

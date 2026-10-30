@@ -151,7 +151,7 @@ export async function delegate($: EngineInterface, kind: 'review' | 'rescue', ar
     }
     return { text: formatOutput(selected, model, reply.text ?? 'Delegation failed.', options.write) }
   } catch (error) {
-    const message = error instanceof Error && /^(Unclosed quote|Unknown flag|Repeated flag|Missing value|Invalid effort|A task|Native review|Review focus|Gate accepts)/.test(error.message) ? error.message : gateMode ? 'Gate verdict: unknown. Not verified; human review required.' : 'Delegation failed or was cancelled; the result is incomplete. Longer jobs will require the future background feature.'
+    const message = error instanceof Error && /^(Unclosed quote|Unknown flag|Repeated flag|Missing value|Invalid effort|A task|Native review|Review focus|Gate accepts)/.test(error.message) ? error.message : gateMode ? 'Gate verdict: unknown. Not verified; human review required.' : 'Delegation failed or was cancelled; the result is incomplete. Use --background for longer jobs.'
     return { text: 'model-mod: ' + message }
   } finally {
     if (lockedSession) gateRunning.delete(lockedSession)
@@ -309,10 +309,9 @@ async function client($: EngineInterface, c: DelegateConfig | undefined, method:
   try {
     const run = await $.process.run([c?.pythonBin ?? 'python3', '-E', '-s', script, 'client', method], { stdin: JSON.stringify(payload), timeoutMs: 5000 })
     const reply = JSON.parse(run.stdout) as Reply
-    if (reply.error === 'Background broker unavailable; start a new session to launch it.') reply.error = 'Background jobs need a new session to start the broker; restart Claude Code.'
     return reply
   } catch {
-    return { ok: false, error: 'Background jobs need a new session to start the broker; restart Claude Code.' }
+    return { ok: false, error: 'Background client could not run or returned an invalid response; check Python and the plugin installation.' }
   }
 }
 
