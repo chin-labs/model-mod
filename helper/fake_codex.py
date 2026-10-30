@@ -101,7 +101,11 @@ for line in sys.stdin:
         if mode == 'delegate_filechange':
             event('item/started', {'item': {'type': 'fileChange'}})
             continue
-        event('item/agentMessage/delta', {'delta': '\x1b[31mhello\x1b[0m\x01' + 'x' * 65000 if mode == 'delegate_long' else 'hello'})
+        if mode == 'delegate_echo':
+            text = params['input'][0]['text'] + '\n' + os.environ['CODEX_HOME']
+        else:
+            text = '\x1b[31mhello\x1b[0m\x01' + 'x' * 65000 if mode == 'delegate_long' else 'hello'
+        event('item/agentMessage/delta', {'delta': text})
         if mode == 'wait_tool':
             event('item/started', {'item': {'type': 'sleep'}})
             event('item/tool/call', {'callId': 'call1', 'tool': 'one', 'arguments': {'n': 1}})

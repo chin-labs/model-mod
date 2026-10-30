@@ -151,6 +151,27 @@ class BrokerTest(unittest.TestCase):
             self.assertNotIn(str(self.account), data)
             self.assertEqual(os.stat(Path(self.root, ident + suffix)).st_mode & 0o777, 0o600)
 
+    def test_redacts_echoed_input(self):
+        self.configure('delegate_echo')
+        subprocess.run(['git', '-C', str(self.repo), 'config', 'user.name', 'Test'], check=True)
+        subprocess.run(['git', '-C', str(self.repo), 'config', 'user.email', 'test@example.invalid'], check=True)
+        path = self.repo / 'file'
+        path.write_text('original\n')
+        subprocess.run(['git', '-C', str(self.repo), 'add', 'file'], check=True)
+        subprocess.run(['git', '-C', str(self.repo), 'commit', '-qm', 'initial'], check=True)
+        path.write_text('unique private diff\n')
+        self.ensure().communicate(timeout=3)
+        request = self.request()
+        request.update(kind='review', options={'adversarial': True, 'text': 'unique private prompt'})
+        reply = self.client('submit', request)
+        self.assertTrue(reply['ok'])
+        ident = reply['job']['id']
+        self.assertEqual(self.wait_state(ident, {'completed', 'failed'})['state'], 'completed')
+        for suffix in ('.json', '.result'):
+            data = Path(self.root, ident + suffix).read_text()
+            for private in ('unique private prompt', 'unique private diff', str(self.account)):
+                self.assertNotIn(private, data)
+
     def test_queued_and_running_cancel(self):
         self.configure('stubborn')
         self.ensure().communicate(timeout=3)
