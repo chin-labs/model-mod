@@ -5,6 +5,8 @@ All notable changes to this project are listed here. The format follows [Keep a 
 ## 0.2.0 - 2026-10-30
 
 ### Added
+- Guided Codex device authentication during setup, with account directories shown in setup and status.
+- Management of configured Codex accounts and API upstreams from setup, including logout and optional account-directory deletion.
 - Codex login upstream through the official `codex app-server` and a local Python helper. Models use `<account>/<model>` IDs and display as `<model> @ <account>`; setup offers an upstream choice. Configure `codexAccounts`, `codexModels`, `codexAccountsDir`, `codexBin` and `pythonBin` in plugin options.
 - Status reports Codex accounts and usage limits. API and Codex upstreams can coexist; Codex takes precedence for matching IDs.
 

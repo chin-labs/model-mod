@@ -28,7 +28,7 @@ After `/model-mod:setup`:
 
 | Symptom | What to do |
 |---|---|
-| Not logged in or account directory missing | Run `/model-mod:setup`, select Codex login and follow its displayed directory creation and `CODEX_HOME=... codex login` commands in your terminal; then rerun setup. Windows uses PowerShell commands instead. |
+| Not logged in or account directory missing | Run `/model-mod:setup`, select Codex login and follow the device-auth link and code; select Continue after logging in. If setup cannot obtain the link or code, follow its manual terminal commands and rerun setup. Windows uses PowerShell commands instead. |
 | `model is not in the allowlist; configure codexAccountsDir` | The accounts directory could not be determined, so Codex model IDs were excluded. Set an absolute `codexAccountsDir`, or make sure `HOME` or `APPDATA` is available for the default directory; create the account directory and log in if needed. Reload the plugin. |
 | Codex too old | Upgrade the official CLI to at least 0.165.0, then retry. |
 | Helper cannot start | Install Python 3.9+ and check `pythonBin`; check `codexBin` and `codexAccountsDir` paths. Executables must be command names or absolute paths. |
@@ -38,7 +38,9 @@ After `/model-mod:setup`:
 | 429, quota or rate limit | Check your Codex subscription's quota and reset time. Before output, retries use `Retry-After` up to 15 seconds; a longer requested wait ends the turn. No automatic account rotation occurs. |
 | Account configuration refused and rollback failed | Open `/plugin configure model-mod@model-mod` and manually restore the previous `codexModels` value; check `codexAccounts` too. Then rerun setup if needed. |
 
-For device authentication, create each account directory as in the README and run `CODEX_HOME=<codexAccountsDir>/<account> codex login --device-auth` once for each account. On Windows, use the account-specific `CODEX_HOME` in PowerShell. Then run setup.
+If setup cannot display the device-auth link and code, follow its displayed commands or create the account directory yourself and run `CODEX_HOME=<codexAccountsDir>/<account> codex login --device-auth`. On Windows, use the account-specific `CODEX_HOME` in PowerShell. Then run setup again.
+
+In setup, **Manage configured upstreams** offers **Log out** (retains settings and the account directory) and **Remove** (removes settings and retains the directory unless you confirm deletion separately). Deletion is limited to that account's directory and attempts logout first. If a removed model remains selected, use `/model` to choose another model. A file-provided API must be removed by editing its configuration file yourself.
 
 ## Update
 

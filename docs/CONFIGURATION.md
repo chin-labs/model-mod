@@ -4,7 +4,9 @@
 
 ## Choose an upstream
 
-Codex login and a Messages-compatible API server are equal alternatives and can coexist. For Codex, install Python 3.9+ and the official `codex` CLI, then use `/model-mod:setup` and select **Codex login** first. Setup displays commands to create a dedicated account home and run `codex login` in your terminal if needed; run setup again after login. For an API server, follow the next section and choose **Compatible API server** in setup.
+Codex login and a Messages-compatible API server are equal alternatives and can coexist. For Codex, install Python 3.9+ and the official `codex` CLI, then use `/model-mod:setup` and select **Codex login**. If login is needed, setup creates a dedicated account directory and runs `codex login --device-auth`. Open the displayed link, enter the code and select **Continue (after logging in)**, then choose models. If the link is unavailable, setup displays manual terminal commands instead. For an API server, follow the next section and choose **Compatible API server** in setup.
+
+Choose **Manage configured upstreams** in setup to log out or remove a Codex account, or remove an API from plugin options. Logout retains the account settings and directory. Removal retains the directory by default; deleting it requires a second confirmation and is limited to that account's directory. An API supplied by `MODEL_MOD_CONFIG` must be removed by editing that file yourself.
 
 ## Set up your upstream first
 

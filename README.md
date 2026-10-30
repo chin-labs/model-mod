@@ -18,14 +18,7 @@ model-mod is a plugin (a "mod") for Claude Code that puts models from your own C
 
 ## Quick start
 
-Choose either or both upstreams. For Codex login, install Python 3.9+ and the official `codex` CLI. In your terminal, create a dedicated home and log in yourself (example for macOS/Linux):
-
-```bash
-mkdir -p ~/.config/model-mod/accounts/main
-CODEX_HOME="$HOME/.config/model-mod/accounts/main" codex login
-```
-
-On a remote or browserless machine, use `CODEX_HOME=<codexAccountsDir>/<account> codex login --device-auth`; see [Troubleshooting](docs/TROUBLESHOOTING.md) for details.
+Choose either or both upstreams. For Codex login, install Python 3.9+ and the official `codex` CLI. Setup creates a dedicated account directory and guides you through device authentication; see [Troubleshooting](docs/TROUBLESHOOTING.md) for the manual alternative.
 
 For an API server, [prepare your upstream](docs/CONFIGURATION.md#set-up-your-upstream-first) and its API key. Then run these in an interactive Claude Code session:
 
@@ -37,7 +30,7 @@ For an API server, [prepare your upstream](docs/CONFIGURATION.md#set-up-your-ups
 /model-mod:model
 ```
 
-`/model-mod:setup` first asks which upstream to configure. For Codex, select the account and models; if login is missing, follow the displayed terminal commands and run setup again. For an API server, enter its API key in the configuration dialog, where it is stored as a secret rather than typed into chat; setup confirms the URL and lets you choose models. `/model-mod:model` lists both kinds. If the plugin is not active after configuring, run `/reload-plugins` or restart Claude Code.
+`/model-mod:setup` first asks which upstream to configure. For Codex, choose an account; if it is not logged in, open the displayed link, enter the one-time code, then select **Continue (after logging in)** and choose models. For an API server, enter its API key in the configuration dialog, where it is stored as a secret rather than typed into chat; setup confirms the URL and lets you choose models. The setup menu also manages configured upstreams. `/model-mod:model` lists both kinds; `/model-mod:status` shows each Codex account directory. If the plugin is not active after configuring, run `/reload-plugins` or restart Claude Code.
 
 Alternatively, add and install from a shell:
 
@@ -63,7 +56,7 @@ Run `/model-mod:status` to check activation, then select your model and send a s
 
 | Command | What it does |
 |---|---|
-| `/model-mod:setup` | Choose an upstream, then configure its account or URL and select models. Cancelling changes nothing. |
+| `/model-mod:setup` | Configure an upstream and select models, or manage configured upstreams. Cancelling setup leaves the configuration unchanged. |
 | `/model-mod:model` | List your models and switch to the one you pick (↑↓ to move, Enter to select, Esc to close). On a short terminal, Remote Control or mobile, a paged menu is used instead. |
 | `/model-mod:refresh` | Reload prompts and check Codex login status, CLI version and quota. If a schema-refresh command is configured, run it to refresh tool schemas; otherwise refresh the API model list when an API key is configured. Changed options need `/reload-plugins`. |
 | `/model-mod:status` | Show activation, model count and tool setup. Loopback hostnames are shown; other hosts appear as `host=remote`. Warns when plain HTTP sends the API key unencrypted to a non-loopback host. |

@@ -18,14 +18,7 @@ model-mod 是供 Claude Code 使用的插件（mod），讓你把自己的 Codex
 
 ## 快速開始
 
-可選擇其中一種或同時使用兩種上游。使用 Codex 登入時，先安裝 Python 3.9 以上版本與官方 `codex` CLI，再於終端機建立專用家目錄並自行登入（以下為 macOS／Linux 範例）：
-
-```bash
-mkdir -p ~/.config/model-mod/accounts/main
-CODEX_HOME="$HOME/.config/model-mod/accounts/main" codex login
-```
-
-遠端或沒有瀏覽器的機器可使用 `CODEX_HOME=<codexAccountsDir>/<account> codex login --device-auth`；詳見[疑難排解](docs/TROUBLESHOOTING.zh-TW.md)。
+可選擇其中一種或同時使用兩種上游。使用 Codex 登入時，先安裝 Python 3.9 以上版本與官方 `codex` CLI。setup 會建立專用帳號目錄並引導裝置驗證；手動登入方式見[疑難排解](docs/TROUBLESHOOTING.zh-TW.md)。
 
 使用 API 伺服器時，先[準備好上游](docs/CONFIGURATION.zh-TW.md#先準備好你的上游)及其 API 金鑰。接著在 Claude Code 的互動工作階段中執行：
 
@@ -37,7 +30,7 @@ CODEX_HOME="$HOME/.config/model-mod/accounts/main" codex login
 /model-mod:model
 ```
 
-`/model-mod:setup` 第一步會詢問要設定哪種上游。Codex 登入路徑可選帳號與模型；若尚未登入，請依畫面指示在終端機執行命令，再重新執行 setup。API 伺服器的金鑰請在設定對話框填入，會當作機密儲存，不必在對話中輸入；setup 會確認網址並讓你選模型。`/model-mod:model` 會列出兩種模型。設定完成後若插件尚未啟用，請執行 `/reload-plugins` 或重新啟動 Claude Code。
+`/model-mod:setup` 第一步會詢問要設定哪種上游。選擇 Codex 帳號後，若尚未登入，請開啟顯示的網址並輸入一次性代碼，再選 **Continue (after logging in)** 並選擇模型。API 伺服器的金鑰請在設定對話框填入，會當作機密儲存，不必在對話中輸入；setup 會確認網址並讓你選模型。setup 選單也可管理已設定的上游；`/model-mod:model` 列出兩種模型，`/model-mod:status` 顯示每個 Codex 帳號目錄。設定完成後若插件尚未啟用，請執行 `/reload-plugins` 或重新啟動 Claude Code。
 
 也可從 shell 加入 marketplace 並安裝：
 
@@ -63,7 +56,7 @@ claude plugin configure model-mod@model-mod
 
 | 指令 | 用途 |
 |---|---|
-| `/model-mod:setup` | 選擇上游，再設定帳號或網址並選擇模型。取消不會更動設定。 |
+| `/model-mod:setup` | 設定上游並選擇模型，或管理已設定的上游。取消設定流程不會更動設定。 |
 | `/model-mod:model` | 列出你的模型並切換到所選的那個（↑↓ 移動、Enter 選取、Esc 關閉）。終端機太矮、或來自 Remote Control／手機時，改用分頁選單。 |
 | `/model-mod:refresh` | 重新載入提示檔並檢查 Codex 登入狀態、CLI 版本與額度。若已設定 schema 更新命令，則執行該命令更新工具 schema；否則在已設定 API 金鑰時更新 API 模型清單。改過的選項需 `/reload-plugins` 才會生效。 |
 | `/model-mod:status` | 顯示是否啟用、模型數量及工具設定。回送位址顯示主機名，其他主機顯示 `host=remote`；明文 HTTP 將 API 金鑰以未加密形式送至非回送主機時會提出警告。 |

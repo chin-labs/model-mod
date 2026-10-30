@@ -28,7 +28,7 @@
 
 | 症狀 | 處理方式 |
 |---|---|
-| 尚未登入或帳號目錄不存在 | 執行 `/model-mod:setup` 並選 Codex login，在終端機依畫面指示建立目錄並執行 `CODEX_HOME=... codex login`，之後重新執行 setup。Windows 會顯示 PowerShell 命令。 |
+| 尚未登入或帳號目錄不存在 | 執行 `/model-mod:setup` 並選 Codex login，依顯示的網址與代碼完成裝置驗證，登入後選 Continue。若 setup 無法取得網址或代碼，請依顯示的終端機命令手動登入，再重新執行 setup；Windows 會顯示 PowerShell 命令。 |
 | `model is not in the allowlist; configure codexAccountsDir` | 無法決定帳號目錄，因而排除 Codex 模型 ID。請設定絕對路徑 `codexAccountsDir`，或確認 `HOME` 或 `APPDATA` 可供決定預設目錄；必要時建立帳號目錄並登入，再重新載入插件。 |
 | Codex 版本過舊 | 將官方 CLI 升級至至少 0.165.0，再重試。 |
 | helper 無法啟動 | 安裝 Python 3.9 以上版本並檢查 `pythonBin`，也檢查 `codexBin` 與 `codexAccountsDir` 路徑。執行檔須為命令名稱或絕對路徑。 |
@@ -38,7 +38,9 @@
 | 429、額度或速率限制 | 查看你的 Codex 訂閱額度與重置時間。尚未輸出前，重試會遵循最多 15 秒的 `Retry-After`；要求等待更久時直接結束回合。不會自動輪替帳號。 |
 | 帳號設定被拒且回復失敗 | 開啟 `/plugin configure model-mod@model-mod`，手動將 `codexModels` 還原成先前的值，也檢查 `codexAccounts`；需要時再執行 setup。 |
 
-需要裝置驗證時，依 README 為每個帳號建立目錄，並各執行一次 `CODEX_HOME=<codexAccountsDir>/<帳號> codex login --device-auth`。Windows 請在 PowerShell 設定各帳號專用的 `CODEX_HOME`。然後執行 setup。
+若 setup 無法顯示裝置驗證網址與代碼，請依顯示的命令操作，或自行建立帳號目錄並執行 `CODEX_HOME=<codexAccountsDir>/<帳號> codex login --device-auth`。Windows 請在 PowerShell 設定各帳號專用的 `CODEX_HOME`。之後重新執行 setup。
+
+在 setup 的 **Manage configured upstreams** 中，**Log out** 會保留設定及帳號目錄；**Remove** 會移除設定並預設保留目錄，除非另行確認刪除。刪除範圍僅限該帳號目錄，並會先嘗試登出。若目前仍選著已移除的模型，請用 `/model` 改選。由檔案提供的 API 須自行編輯設定檔移除。
 
 ## 更新
 
