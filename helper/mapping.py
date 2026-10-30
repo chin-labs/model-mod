@@ -16,17 +16,22 @@ METADATA_FIELD = 'internal_chat_message_' + 'metadata_passthrough'
 
 
 def valid_reasoning(item):
+    def valid_text(value):
+        if not isinstance(value, str): return False
+        try: value.encode('utf-8')
+        except UnicodeError: return False
+        return True
     if not isinstance(item, dict) or set(item) - {'type', 'id', 'summary', 'content', 'encrypted_content', METADATA_FIELD}:
         return False
     if item.get('type') != 'reasoning' or not isinstance(item.get('summary'), list): return False
     for field in ('id', 'encrypted_content'):
-        if field in item and item[field] is not None and not isinstance(item[field], str): return False
+        if field in item and item[field] is not None and not valid_text(item[field]): return False
     def text_items(value, allowed):
-        return isinstance(value, list) and all(isinstance(x, dict) and set(x) == {'type', 'text'} and x['type'] in allowed and isinstance(x['text'], str) for x in value)
+        return isinstance(value, list) and all(isinstance(x, dict) and set(x) == {'type', 'text'} and x['type'] in allowed and valid_text(x['text']) for x in value)
     if not text_items(item['summary'], ('summary_text',)): return False
     if item.get('content') is not None and not text_items(item['content'], ('text', 'reasoning_text')): return False
     metadata = item.get(METADATA_FIELD)
-    if metadata is not None and (not isinstance(metadata, dict) or set(metadata) - {'turn_id'} or (metadata.get('turn_id') is not None and not isinstance(metadata['turn_id'], str))): return False
+    if metadata is not None and (not isinstance(metadata, dict) or set(metadata) - {'turn_id'} or (metadata.get('turn_id') is not None and not valid_text(metadata['turn_id']))): return False
     return True
 
 

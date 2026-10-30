@@ -38,6 +38,8 @@ class Contract(unittest.TestCase):
         for raw in ('[]', '{"type":"reasoning","summary":[],"extra":1}',
                     '{"type":"reasoning","type":"message","summary":[]}', '{"type":"message","summary":[]}'):
             self.assertIsNone(decode_reasoning(raw_signature(raw)))
+        self.assertIsNone(decode_reasoning(raw_signature('{"type":"reasoning","summary":[],"id":"\\ud800"}')))
+        self.assertIsNone(encode_reasoning(dict(item, encrypted_content='\ud800')))
         self.assertIsNone(encode_reasoning(dict(item, extra='no')))
         self.assertIsNone(encode_reasoning(dict(item, summary=[{'type': 'bad', 'text': 'no'}])))
         self.assertIsNone(encode_reasoning(dict(item, encrypted_content='x' * REASONING_ITEM_LIMIT)))
