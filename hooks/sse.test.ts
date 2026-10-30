@@ -151,3 +151,12 @@ test('Messages SSE reports invalid event and tool JSON without processing later 
     expect(parser.complete).toBe(false)
   }
 })
+
+test('Messages SSE ignores frames after message_stop in the same push', () => {
+  const parser = new MessagesStream('gpt-6-sol')
+  expect(parser.push('event: message_stop\ndata: {}\n\nevent: content_block_start\ndata: {"content_block":{"type":"text","text":"late"}}\n\nevent: error\ndata: {"error":{"type":"late"}}\n\n'))
+    .toEqual([{ kind: 'stop', stopReason: 'end_turn', usage: { ...parser.usage } }])
+  expect(parser.complete).toBe(true)
+  expect(parser.error).toBeUndefined()
+  expect(parser.answer).toBe('')
+})
