@@ -272,6 +272,38 @@ class DelegateTest(unittest.TestCase):
             with self.assertRaises(delegate.Failure):
                 delegate.validate_write_root(unsafe, str(self.account_dir.parent), 'test')
 
+    def test_transfer(self):
+        projects = self.root / '.claude' / 'projects'
+        projects.mkdir(parents=True)
+        transcript = projects / 'fake.jsonl'
+        transcript.write_text('{"message":"synthetic"}\n')
+        request = dict(self.request, kind='transfer', transcript=str(transcript))
+        def mode(name):
+            (self.account_dir / 'fake_config.json').write_text(json.dumps({'mode': name, 'log': str(self.log), 'session_path': str(transcript), 'session_cwd': str(self.repo)}))
+        with patch.dict(os.environ, {'HOME': str(self.root)}):
+            mode('transfer')
+            output = delegate.transfer(request)
+            self.assertIn('codex resume 12345678-1234-4234-8234-123456789abc', output)
+            calls = [r for r in self.records() if r.get('method') == 'externalAgentConfig/import']
+            items = calls[0]['params']['migrationItems']
+            self.assertEqual(len(items), 1)
+            self.assertEqual(items[0]['itemType'], 'SESSIONS')
+            self.assertEqual(items[0]['details']['sessions'], [{'path': os.path.realpath(transcript), 'cwd': str(self.repo), 'title': None}])
+            self.assertTrue(all(not v for k, v in items[0]['details'].items() if k != 'sessions'))
+            mode('transfer_invalid_id')
+            with self.assertRaisesRegex(delegate.Failure, 'not confirmed'): delegate.transfer(request)
+            mode('transfer_timeout')
+            with patch.object(delegate, 'IDLE_SECONDS', .1):
+                with self.assertRaisesRegex(delegate.Failure, 'not confirmed'): delegate.transfer(request)
+            outside = self.root / 'outside'
+            outside.write_text('synthetic')
+            link = projects / 'escape'
+            link.symlink_to(outside)
+            for invalid in (str(outside), str(link), str(projects)):
+                with self.assertRaises(delegate.Failure): delegate.transcript_path(invalid)
+            with transcript.open('wb') as f: f.truncate(20 * 1024 * 1024 + 1)
+            with self.assertRaises(delegate.Failure): delegate.transcript_path(str(transcript))
+
     def test_timeout_and_cancel_reap_app_server(self):
         self.mode('abort')
         old = delegate.IDLE_SECONDS

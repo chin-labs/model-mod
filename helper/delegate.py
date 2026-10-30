@@ -5,6 +5,8 @@ import os
 import queue
 import re
 import signal
+import shlex
+import stat
 import subprocess
 import sys
 import threading
@@ -363,12 +365,72 @@ def execute(request, own_group=True, on_spawn=None):
         app.close()
 
 
+def transcript_path(path):
+    if not isinstance(path, str) or not os.path.isabs(path): raise Failure('Transcript is unavailable or invalid.')
+    projects = os.path.realpath(os.path.join(os.path.expanduser('~'), '.claude', 'projects'))
+    resolved = os.path.realpath(path)
+    try:
+        if os.path.commonpath([projects, resolved]) != projects or resolved == projects: raise Failure('Transcript is unavailable or invalid.')
+        info = os.stat(resolved)
+        if not stat.S_ISREG(info.st_mode) or info.st_size > 20 * 1024 * 1024: raise Failure('Transcript is unavailable or invalid.')
+    except (OSError, ValueError): raise Failure('Transcript is unavailable or invalid.')
+    return resolved
+
+
+def transfer(request):
+    path = transcript_path(request.get('transcript'))
+    home, _ = account_home(request['accountsDir'], request['account'])
+    if not os.path.isdir(home) or os.path.realpath(request['directory']) != home: raise Failure('Invalid Codex account directory.')
+    request['directory'] = home
+    verify_version(SimpleNamespace(codex_bin=request['codexBin'], codex_home=home))
+    app = App(request)
+    try:
+        init = app.request('initialize', {'clientInfo': {'name': 'model-mod-delegate', 'version': '0.2.0'}, 'capabilities': {'experimentalApi': True}})
+        if not isinstance(init.get('codexHome'), str) or os.path.realpath(init['codexHome']) != home: raise Failure('Codex account directory mismatch.')
+        app.send({'method': 'initialized', 'params': {}})
+        detected = app.request('externalAgentConfig/detect', {'includeHome': True, 'cwds': [], 'maxSessions': 1000})
+        matches = []
+        for item in detected.get('items', []):
+            if not isinstance(item, dict) or item.get('itemType') != 'SESSIONS': continue
+            for session in (item.get('details') or {}).get('sessions', []):
+                if isinstance(session, dict) and isinstance(session.get('path'), str) and os.path.realpath(session['path']) == path and isinstance(session.get('cwd'), str):
+                    matches.append((item.get('cwd'), session['cwd']))
+        if len(matches) != 1: raise Failure('The current transcript was not uniquely detected; transfer was not started.')
+        if transcript_path(request['transcript']) != path: raise Failure('Transcript is unavailable or invalid.')
+        item_cwd, session_cwd = matches[0]
+        details = {'sessions': [{'path': path, 'cwd': session_cwd, 'title': None}], 'commands': [], 'hooks': [],
+                   'mcpServers': [], 'memory': [], 'plugins': [], 'skills': [], 'subagents': []}
+        result = app.request('externalAgentConfig/import', {'migrationItems': [{'itemType': 'SESSIONS', 'description': 'Session', 'cwd': item_cwd, 'details': details}]})
+        import_id = result.get('importId')
+        if not isinstance(import_id, str) or not import_id: raise Failure('Transfer was not confirmed.')
+        while True:
+            obj = app.pending.pop(0) if app.pending else app.next()
+            params = obj.get('params') or {}
+            if obj.get('method') != 'externalAgentConfig/import/completed' or params.get('importId') != import_id: continue
+            results = params.get('itemTypeResults')
+            if not isinstance(results, list) or len(results) != 1: raise Failure('Transfer was not confirmed.')
+            entry = results[0]
+            if entry.get('itemType') != 'SESSIONS' or entry.get('failures') or len(entry.get('successes', [])) != 1: raise Failure('Transfer was not confirmed.')
+            success = entry['successes'][0]
+            ident = success.get('target')
+            source = success.get('source')
+            if success.get('itemType') != 'SESSIONS' or (source is not None and os.path.realpath(source) != path) or not isinstance(ident, str) or not re.fullmatch(r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}', ident):
+                raise Failure('Transfer was not confirmed.')
+            if os.name == 'nt': return "$env:CODEX_HOME='" + home.replace("'", "''") + "'; codex resume '" + ident + "'"
+            return 'CODEX_HOME=' + shlex.quote(home) + ' codex resume ' + shlex.quote(ident)
+    except Failure as exc:
+        if exc.code in ('timeout', 'idle_timeout'): raise Failure('Transfer was not confirmed.')
+        raise
+    finally:
+        app.close()
+
+
 def main():
     signal.signal(signal.SIGTERM, cancel)
     signal.signal(signal.SIGINT, cancel)
     try:
         request = json.load(sys.stdin)
-        text = execute(request)
+        text = transfer(request) if request.get('kind') == 'transfer' else execute(request)
     except Cancelled:
         text = 'Cancelled; result is incomplete.'
     except Exception as exc:

@@ -1,6 +1,6 @@
 import { test, expect } from 'claude-code/testing'
 import type { EngineInterface } from 'claude-code'
-import { delegate, formatOutput, parseDelegate, backgroundCommand, pollJob } from './delegate.ts'
+import { delegate, formatOutput, parseDelegate, backgroundCommand, pollJob, transfer } from './delegate.ts'
 
 test('delegate parser handles quotes, separator, repeats and unknown flags', () => {
   expect(parseDelegate('review', `--base 'feature/test' --adversarial -- "focus text" 'and more'`)).toEqual({ base: 'feature/test', adversarial: true, text: `"focus text" 'and more'` })
@@ -22,6 +22,7 @@ test('write is rescue-only and requires explicit confirmation', async () => {
       ui: answer === 'no-ui' ? undefined : { ask: async () => { if (answer === 'throw') throw new Error('dismissed'); return answer } },
       process: { run: async () => ({ stdout: '{"root":"/repo"}' }), spawn: (args: { input: string }) => { spawned++; input = JSON.parse(args.input); return { async *[Symbol.asyncIterator]() { yield { stream: 'stdout', text: '{"text":"ok"}' } } } } } } as unknown as EngineInterface
     const result = await delegate($, 'rescue', '--write -- task', config, new AbortController().signal)
+    expect((await delegate($, 'rescue', '--write -- task', config, new AbortController().signal, false)).text).toContain('interactive')
     if (answer === 'Allow write') { expect(spawned).toBe(1); expect(input.writeRoot).toBe('/repo'); expect(input.options.write).toBe(true) }
     else { expect(spawned).toBe(0); expect(submitted).toBe(0); expect(result.text).toContain('Omit --write') }
   }
@@ -39,6 +40,21 @@ test('background write submits only after confirmation with the confirmed root',
     const result = await delegate($, 'rescue', '--write --background -- task', config, new AbortController().signal)
     if (answer === 'Cancel') { expect(calls.length).toBe(1); expect(result.text).toContain('Omit --write') }
     else { expect(calls.length).toBe(2); expect(calls[1].request.writeRoot).toBe('/repo'); expect(calls[1].request.options.write).toBe(true) }
+  }
+})
+
+test('transfer requires confirmation and accepts only account selection', async () => {
+  const config = { codex: new Map([['test/chat', { account: 'test', model: 'chat', directory: '/accounts/test' }]]), accountsDir: '/accounts' }
+  for (const answer of ['Cancel', 'throw', 'Import session']) {
+    let count = 0, input: any
+    const $ = { plugin: { root: '/plugin' }, session: { model: async () => 'test/chat', cwd: async () => '/repo' },
+      ui: { ask: async () => { if (answer === 'throw') throw new Error('dismissed'); return answer } },
+      process: { spawn: (args: { input: string }) => { count++; input = JSON.parse(args.input); return { async *[Symbol.asyncIterator]() { yield { stream: 'stdout', text: '{"text":"codex resume test"}' } } } } } } as unknown as EngineInterface
+    const result = await transfer($, '', config, '/fake-transcript', new AbortController().signal, true)
+    if (answer === 'Import session') { expect(count).toBe(1); expect(input.transcript).toBe('/fake-transcript'); expect(input.kind).toBe('transfer') }
+    else { expect(count).toBe(0); expect(result.text).toContain('no transcript was imported') }
+    expect((await transfer($, '--model chat', config, '/fake-transcript', new AbortController().signal, true)).text).toContain('only --account')
+    expect((await transfer($, '', config, '/fake-transcript', new AbortController().signal, false)).text).toContain('interactive')
   }
 })
 

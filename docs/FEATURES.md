@@ -22,3 +22,5 @@ For Codex models, the tool list excludes the mod’s `web_search`; native search
 ## Background Codex delegation
 
 Use `--background` with `/model-mod:review` or `/model-mod:rescue` to start a job without waiting. By default it makes no file writes; read-only commands may still run. `/model-mod:rescue --write` enables workspace-write only after an interactive confirmation, in the foreground or background. `/model-mod:jobs [ID] [--all]` lists the current workspace or all workspaces, or inspects one job; `/model-mod:result ID` reads its output, `/model-mod:cancel ID` cancels it, and `/model-mod:jobs --clear` removes finished jobs and results for the current workspace. IDs may be unique hexadecimal prefixes of at least four characters. Completion notices are best effort.
+
+`/model-mod:transfer [--account NAME]` imports the current session after confirmation and shows a `codex resume` command when completion is confirmed. It does not run a model turn; repeated imports may duplicate the session.

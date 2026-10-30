@@ -56,9 +56,10 @@ export function parseDelegate(kind: 'review' | 'rescue', input: string): Options
   return result
 }
 
-export async function delegate($: EngineInterface, kind: 'review' | 'rescue', args: string, c: DelegateConfig | undefined, signal: AbortSignal): Promise<{ text: string }> {
+export async function delegate($: EngineInterface, kind: 'review' | 'rescue', args: string, c: DelegateConfig | undefined, signal: AbortSignal, interactive = true): Promise<{ text: string }> {
   try {
     const options = parseDelegate(kind, args)
+    if (options.write && !interactive) return { text: 'model-mod: Write delegation requires interactive confirmation. Omit --write for read-only rescue.' }
     const accounts = [...(c?.codex?.values() ?? [])]
     const names = [...new Set(accounts.map(a => a.account))]
     const current = await $.session.model()
@@ -84,7 +85,7 @@ export async function delegate($: EngineInterface, kind: 'review' | 'rescue', ar
         const result = JSON.parse(check.stdout) as { root?: string; error?: string }
         if (!result.root || cleanDisplay(result.root) !== result.root) return { text: 'model-mod: Working directory is not allowed for write delegation.' }
         writeRoot = result.root
-        const choice = await $.ui.ask(`Allow Codex account ${cleanDisplay(selected)} to run commands and modify files in ${cleanDisplay(writeRoot)}? Writable scope: this working directory only; networkAccess is off. Model: ${cleanDisplay(model)}; effort: ${cleanDisplay(options.effort ?? 'default')}; ${options.background ? 'background' : 'foreground'}.`, ['Cancel', 'Allow write'])
+        const choice = await $.ui.ask(`Allow Codex account ${cleanDisplay(selected)} to run commands and modify files in ${cleanDisplay(writeRoot)}? Writable scope: this working directory only; networkAccess is off. Model: ${cleanDisplay(model)}; effort: ${cleanDisplay(options.effort ?? 'default')}; ${options.background ? 'background' : 'foreground'}. Allow write?`, ['Cancel', 'Allow write'])
         if (choice !== 'Allow write' || signal.aborted) return { text: denied }
         cwd = writeRoot
       } catch { return { text: denied } }
@@ -119,6 +120,38 @@ export async function delegate($: EngineInterface, kind: 'review' | 'rescue', ar
   }
 }
 
+
+export async function transfer($: EngineInterface, args: string, c: DelegateConfig | undefined, transcript: string | undefined, signal: AbortSignal, interactive: boolean): Promise<{ text: string }> {
+  const tokens = args.trim() ? args.trim().split(/\s+/) : []
+  if (tokens.length && (tokens.length !== 2 || tokens[0] !== '--account' || tokens[1]!.startsWith('--'))) return { text: 'model-mod: Transfer accepts only --account NAME; it does not accept model, effort or background options.' }
+  const accounts = [...(c?.codex?.values() ?? [])]
+  const names = [...new Set(accounts.map(a => a.account))]
+  let current = ''
+  try { current = await $.session.model() } catch { /* use a unique configured account */ }
+  const selected = tokens[1] ?? c?.codex?.get(current)?.account ?? (names.length === 1 ? names[0] : undefined)
+  if (!selected || !names.includes(selected)) return { text: 'model-mod: Choose a configured Codex account with --account.' }
+  if (!interactive || !transcript || !c?.accountsDir || !$.plugin.root) return { text: 'model-mod: Transfer requires an interactive session with an available transcript.' }
+  const denied = 'model-mod: Transfer was not confirmed; no transcript was imported.'
+  let started = false
+  try {
+    const choice = await $.ui.ask(`Import this session into Codex account ${cleanDisplay(selected)}? Conversation content will be imported into this account and persist with OpenAI; deleting local content does not remove it. Maximum transcript size: 20 MiB. Repeated imports may create duplicates. Import this session?`, ['Cancel', 'Import session'])
+    if (choice !== 'Import session' || signal.aborted) return { text: denied }
+    const root = $.plugin.root
+    const sep = root.includes('\\') && !root.includes('/') ? '\\' : '/'
+    const script = root.replace(/[\\/]+$/, '') + sep + 'helper' + sep + 'delegate.py'
+    started = true
+    const child = $.process.spawn({ argv: [c.pythonBin ?? 'python3', '-E', '-s', script], cwd: await $.session.cwd(), input: JSON.stringify({ kind: 'transfer', transcript, account: selected, accountsDir: c.accountsDir, directory: accounts.find(a => a.account === selected)!.directory, codexBin: c.codexBin ?? 'codex', cwd: await $.session.cwd() }) })
+    let stdout = ''
+    const abort = () => { void child.return({ code: null, signal: 'SIGTERM' }).catch(() => {}) }
+    signal.addEventListener('abort', abort, { once: true })
+    if (signal.aborted) abort()
+    try { for await (const chunk of child) { if (chunk.stream === 'stdout') stdout += chunk.text; if (stdout.length > 4096) throw new Error('output too large') } }
+    finally { signal.removeEventListener('abort', abort) }
+    if (signal.aborted) return { text: 'model-mod: Transfer was not confirmed.' }
+    const reply = JSON.parse(stdout) as { text?: string }
+    return { text: `Codex (${cleanDisplay(selected)}): ${cleanDisplay(reply.text ?? 'Transfer was not confirmed.')}` }
+  } catch { return { text: started ? 'model-mod: Transfer was not confirmed; it may have been imported.' : denied } }
+}
 
 type Job = { id: string; state: string; account: string; model: string; kind: string; mode?: string; createdAt: number; errorCode?: string | null }
 type Reply = { ok: boolean; error?: string; job?: Job; jobs?: Job[]; text?: string }

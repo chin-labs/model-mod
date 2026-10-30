@@ -95,6 +95,12 @@ for line in sys.stdin:
         if mode == 'reasoning_inject_error' and any(item.get('type') == 'reasoning' for item in params['items']):
             send({'id': ident, 'error': {'code': -32602, 'message': 'synthetic'}})
         else: send({'id': ident, 'result': {}})
+    elif method == 'externalAgentConfig/detect':
+        send({'id': ident, 'result': {'items': [{'itemType': 'CONFIG', 'description': 'ignored'}, {'itemType': 'SESSIONS', 'description': 'sessions', 'cwd': None, 'details': {'sessions': [{'path': config['session_path'], 'cwd': config['session_cwd'], 'title': None}]}}]}})
+    elif method == 'externalAgentConfig/import':
+        send({'id': ident, 'result': {'importId': 'import1'}})
+        if mode != 'transfer_timeout':
+            event('externalAgentConfig/import/completed', {'importId': 'import1', 'itemTypeResults': [{'itemType': 'SESSIONS', 'failures': [], 'successes': [{'itemType': 'SESSIONS', 'source': config['session_path'], 'target': 'invalid' if mode == 'transfer_invalid_id' else '12345678-1234-4234-8234-123456789abc'}]}]})
     elif method == 'turn/start':
         items = [{'type': 'sleep'}, {'type': 'commandExecution'}] if mode == 'wait_forbidden' else [{'type': 'fileChange'}] if mode == 'forbidden_response' else ([{'type': 'sleep'}] if mode == 'wait_response' else [])
         send({'id': ident, 'result': {'turn': {'id': 'turn1', 'items': items}}})

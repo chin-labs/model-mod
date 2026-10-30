@@ -4,7 +4,7 @@ import type { EnvMemo, FallbackMemo, TrackedAgent } from '../types'
 import { MessagesStream } from './sse.ts'
 import { htmlToText } from './text.ts'
 import { openPane, registerPane } from './pane.tsx'
-import { delegate, backgroundCommand } from './delegate.ts'
+import { delegate, backgroundCommand, transfer } from './delegate.ts'
 
 // Read legacy rows only as an extra ownership source; this mod never writes them.
 const ROW_MARK = 'Local API via model-mod'
@@ -1619,6 +1619,9 @@ async function admin($: EngineInterface, e: { origin: { kind: string } }, arg: '
 
 export const register: Register = (on, options) => {
   registerPane(on)
+  let transcript: string | undefined
+  on('classic.SessionStart', async ($, e, next) => { transcript = e.transcript_path; return next(e) })
+  on('classic.Stop', async ($, e, next) => { transcript = e.transcript_path; return next(e) })
   pluginOptions = options ?? {}
   on('session.start', async ($, e, next) => {
     const c = await load($)
@@ -2030,7 +2033,8 @@ export const register: Register = (on, options) => {
   on('command.run', { command: 'model-mod:status' }, ($, e) => admin($, e, 'status').then(commandText))
   on('command.run', { command: 'model-mod:refresh' }, ($, e) => admin($, e, 'refresh').then(commandText))
   on('command.run', { command: 'model-mod:review' }, async ($, e, next) => delegate($, 'review', e.args, await load($), next.signal))
-  on('command.run', { command: 'model-mod:rescue' }, async ($, e, next) => delegate($, 'rescue', e.args, await load($), next.signal))
+  on('command.run', { command: 'model-mod:rescue' }, async ($, e, next) => delegate($, 'rescue', e.args, await load($), next.signal, e.origin.kind === 'composer' || e.origin.kind === 'bridge'))
+  on('command.run', { command: 'model-mod:transfer' }, async ($, e, next) => transfer($, e.args, await load($), transcript, next.signal, e.origin.kind === 'composer' || e.origin.kind === 'bridge'))
   on('command.run', { command: 'model-mod:jobs' }, async ($, e) => backgroundCommand($, 'jobs', e.args, await load($)))
   on('command.run', { command: 'model-mod:result' }, async ($, e) => backgroundCommand($, 'result', e.args, await load($)))
   on('command.run', { command: 'model-mod:cancel' }, async ($, e) => backgroundCommand($, 'cancel', e.args, await load($)))

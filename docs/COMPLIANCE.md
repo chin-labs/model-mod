@@ -26,6 +26,8 @@ On the API path, requests to your models send the conversation, system instructi
 
 During Codex tool exchanges, an opaque OpenAI reasoning item may be held in plugin memory and sent back to OpenAI with the conversation history. It can contain encrypted content and is not kept by this feature across a plugin reload or restart; see [limitations](LIMITATIONS.md#codex-login-limitations).
 
+Transfer imports the current conversation into the selected Codex account, where OpenAI persistently stores it; deleting local content does not delete provider-side records. Transfer requires interactive confirmation and accepts transcripts up to 20 MiB.
+
 Codex delegation sends the task text and workspace content that Codex reads to OpenAI. With confirmed `rescue --write`, Codex may modify the real workspace; there is no automatic backup. The sandbox restricts Codex commands and file writes but does not guarantee prevention of all external side effects, and network-off enforcement has not been verified across platforms.
 
 Some requests Claude Code makes on its own can still use your subscription connection: auto permission classification, `/rename` without a name, `Agent(model: 'haiku')`, the native WebFetch summarizer, `/context` token counts with `localContext: false`, and first-prompt titles with `localTitle: false`. They are listed in [Subscription side requests](LIMITATIONS.md#subscription-side-requests), which covers the paths that were checked, not every possible Claude Code request. The [README](../README.md) explains key handling and how to recover from a saved default model.
