@@ -25,6 +25,8 @@ mkdir -p ~/.config/model-mod/accounts/main
 CODEX_HOME="$HOME/.config/model-mod/accounts/main" codex login
 ```
 
+On a remote or browserless machine, use `CODEX_HOME=<codexAccountsDir>/<account> codex login --device-auth`; see [Troubleshooting](docs/TROUBLESHOOTING.md) for details.
+
 For an API server, [prepare your upstream](docs/CONFIGURATION.md#set-up-your-upstream-first) and its API key. Then run these in an interactive Claude Code session:
 
 ```text

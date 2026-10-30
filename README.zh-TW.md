@@ -25,6 +25,8 @@ mkdir -p ~/.config/model-mod/accounts/main
 CODEX_HOME="$HOME/.config/model-mod/accounts/main" codex login
 ```
 
+遠端或沒有瀏覽器的機器可使用 `CODEX_HOME=<codexAccountsDir>/<account> codex login --device-auth`；詳見[疑難排解](docs/TROUBLESHOOTING.zh-TW.md)。
+
 使用 API 伺服器時，先[準備好上游](docs/CONFIGURATION.zh-TW.md#先準備好你的上游)及其 API 金鑰。接著在 Claude Code 的互動工作階段中執行：
 
 ```text
