@@ -132,6 +132,13 @@ for line in sys.stdin:
             event('turn/completed', {'turn': {'id': 'turn1', 'status': 'completed'}})
             continue
         if mode == 'forbidden_after': event('item/started', {'item': {'type': 'webSearch'}}); continue
+        if mode == 'web_search':
+            for i, action in enumerate(('search', 'openPage', 'findInPage', 'other')):
+                item = {'type': 'webSearch', 'id': 'web' + str(i), 'query': 'hello\x00\x1bworld ' + 'x' * 200,
+                        'action': {'type': action, 'url': 'https://example.test/private'}, 'results': [{'text': 'opaque secret'}]}
+                event('item/started', {'item': item})
+                event('item/completed', {'item': item})
+            event('item/agentMessage/delta', {'delta': 'done'})
         if mode in ('forbidden_mcp', 'forbidden_unknown'):
             event('item/completed', {'item': {'type': 'mcpToolCall', 'tool': 'other'} if mode == 'forbidden_mcp' else {'type': 'futureTool'}})
             continue

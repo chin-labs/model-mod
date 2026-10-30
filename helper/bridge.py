@@ -20,6 +20,7 @@ import sys
 import tempfile
 import threading
 import uuid
+import unicodedata
 
 for stream in (sys.stdin, sys.stdout, sys.stderr):
     stream.reconfigure(encoding='utf-8')
@@ -348,6 +349,18 @@ def emit(event, data):
     sys.stdout.flush()
 
 
+def web_search_summary(item):
+    action = item.get('action')
+    kind = action.get('type') if isinstance(action, dict) else 'search'
+    if kind == 'openPage': return 'Opened page'
+    if kind == 'findInPage': return 'Searched within page'
+    if kind not in ('search', None): return 'Used web search'
+    query = item.get('query')
+    if not isinstance(query, str): query = ''
+    query = ''.join(' ' if unicodedata.category(ch).startswith('C') else ch for ch in query)
+    return 'Searched: ' + ' '.join(query.split())[:120]
+
+
 def messages(args, app, prepared, cwd):
     p = prepared
     clamp_effort(app, p, args.codex_home)
@@ -372,7 +385,7 @@ def messages(args, app, prepared, cwd):
     message = {'id': 'msg_' + uuid.uuid4().hex, 'type': 'message', 'role': 'assistant', 'model': p['client_model'], 'content': [], 'stop_reason': None, 'stop_sequence': None, 'usage': {'input_tokens': 0, 'output_tokens': 0}}
     if p['stream']: emit('message_start', {'type': 'message_start', 'message': message})
     content, opened, calls, latest = [], False, [], {}
-    batch_deadline, call_ids = None, set()
+    batch_deadline, call_ids, search_ids = None, set(), set()
     if check_turn(result.get('turn'), app.web_search == 'live'):
         app.wait_interrupted = True
         app.interrupt()
@@ -400,6 +413,22 @@ def messages(args, app, prepared, cwd):
             text = params.get('delta', '')
             content[-1]['text'] += text
             if p['stream']: emit('content_block_delta', {'type': 'content_block_delta', 'index': len(content)-1, 'delta': {'type': 'text_delta', 'text': text}})
+        elif method == 'item/completed' and isinstance(params.get('item'), dict) and params['item'].get('type') == 'webSearch':
+            item = params['item']
+            ident = item.get('id')
+            if not isinstance(ident, str) or not ident: raise incompatible('webSearch.id')
+            if ident in search_ids: continue
+            search_ids.add(ident)
+            if opened:
+                if p['stream']: emit('content_block_stop', {'type': 'content_block_stop', 'index': len(content)-1})
+                opened = False
+            text = '\n' + web_search_summary(item) + '\n'
+            content.append({'type': 'text', 'text': text})
+            if p['stream']:
+                idx = len(content)-1
+                emit('content_block_start', {'type': 'content_block_start', 'index': idx, 'content_block': {'type': 'text', 'text': ''}})
+                emit('content_block_delta', {'type': 'content_block_delta', 'index': idx, 'delta': {'type': 'text_delta', 'text': text}})
+                emit('content_block_stop', {'type': 'content_block_stop', 'index': idx})
         elif method == 'item/tool/call':
             name = p['reverse'].get(params.get('tool'))
             if name is None: raise BridgeError('Codex login: unknown dynamic tool')

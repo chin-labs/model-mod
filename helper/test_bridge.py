@@ -116,6 +116,23 @@ class Contract(unittest.TestCase):
                 self.assertEqual(mismatch.returncode, 65)
                 self.assertIn('incompatible codex app-server protocol (web_search)', mismatch.stdout)
 
+    def test_web_search_summaries(self):
+        for stream in (False, True):
+            result = self.run_bridge(dict(BASE, stream=stream), mode='web_search', extra=['--web-search'])
+            self.assertEqual(result.returncode, 0, result.stderr)
+            if stream:
+                frames = [json.loads(line[6:]) for line in result.stdout.splitlines() if line.startswith('data: ')]
+                texts = [frame['delta']['text'] for frame in frames if frame.get('delta', {}).get('type') == 'text_delta']
+            else:
+                texts = [block['text'] for block in json.loads(result.stdout)['content'] if block['type'] == 'text']
+            self.assertEqual(texts[0], 'hello')
+            self.assertEqual(texts[1], '\nSearched: ' + ('hello world ' + 'x' * 200)[:120] + '\n')
+            self.assertEqual(texts[2:], ['\nOpened page\n', '\nSearched within page\n', '\nUsed web search\n', 'done'])
+            self.assertNotIn('opaque secret', result.stdout)
+            self.assertNotIn('example.test', result.stdout)
+        disabled = self.run_bridge(mode='web_search')
+        self.assertIn('unsupported_item', disabled.stdout)
+
     def test_text_and_usage(self):
         r = self.run_bridge()
         self.assertEqual(r.returncode, 0, r.stderr)
