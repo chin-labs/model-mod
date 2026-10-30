@@ -54,6 +54,9 @@ The mod activates with either a valid `apiKey` or a valid combination of `codexA
 | `codexAccountsDir` | Absolute directory; default `~/.config/model-mod/accounts`, or `%APPDATA%\model-mod\accounts` on Windows (unverified). Each account has a separate subdirectory. |
 | `codexBin` | Executable name or absolute path; default `codex`. |
 | `pythonBin` | Executable name or absolute path; default `python3`. On Windows use `python` (unverified). |
+| `codexWebSearch` | `on` (default) or `off`; invalid values use `on` and appear in status. Search is disabled when WebSearch is absent from the session tool list. |
+
+Native search and openPage run at OpenAI and are not constrained by Claude permission domain rules (allowed or blocked domains); model-mod makes no `allowed_domains` security claim. Queries are sent to OpenAI.
 
 Paths and commands cannot contain NUL or newline; a command name may contain only letters, digits, `.`, `_` and `-`. An account and a model form ID `<account>/<model>`, displayed as `<model> @ <account>`. Every account is paired with every configured model. When an API model has the same ID, Codex takes precedence. `/model-mod:setup` merges and deduplicates accounts but **replaces the entire** `codexModels` setting with the selected models for all accounts; reselect the complete desired model set when adding an account. `fallbackModel` and `workerModel` may refer to a valid Codex ID.
 

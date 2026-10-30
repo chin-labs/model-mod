@@ -5,6 +5,7 @@ All notable changes to this project are listed here. The format follows [Keep a 
 ## 0.2.0 - 2026-10-30
 
 ### Added
+- Codex login supports native web search when permitted, with activity shown as assistant text lines.
 - Background read-only Codex delegation, job management and best-effort completion notices.
 - Guided Codex device authentication during setup, with account directories shown in setup and status.
 - Management of configured Codex accounts and API upstreams from setup, including logout and optional account-directory deletion.
@@ -15,9 +16,9 @@ All notable changes to this project are listed here. The format follows [Keep a 
 ### Changed
 - Clamp Codex reasoning effort to the model catalog, show quota windows and plan, and support an optional priority service tier.
 - Use official Codex rate limits for a configured fallback without automatic account rotation.
-- Codex turns use client-provided dynamic tools; built-in capabilities are disabled, with two MCP resource-list tools still available. Reserved `mcp__` and incompatible tool names use reversible aliases. Codex CLI versions below 0.165.0 are refused.
+- Codex turns use client-provided dynamic tools; other built-in capabilities are disabled, with two MCP resource-list tools still available. Reserved `mcp__` and incompatible tool names use reversible aliases. Codex CLI versions below 0.165.0 are refused.
 - The client's built-in ToolSearch is no longer offered to your models (API and Codex); the mod's own `tool_search` loads MCP tool schemas instead. `/model-mod:model` labels each model `(Codex login)` or `(API)`.
-- Codex requests use bounded retries and handle upstream 429 responses. Codex models do not offer `web_search`; their default context window is 128,000 tokens.
+- Codex requests use bounded retries and handle upstream 429 responses. Codex uses native search instead of the mod’s `web_search` tool; its default context window is 128,000 tokens.
 - Side-question command messages no longer repeat the client label, and the informational agent message count status is no longer shown.
 
 ### Fixed
