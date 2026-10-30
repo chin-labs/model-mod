@@ -116,3 +116,14 @@ test('Messages SSE maps text, tool input and usage to turn chunks', () => {
     stopReason: 'tool_use', usage,
   })
 })
+
+test('Messages SSE limits an unfinished frame without rejecting multi-megabyte input', () => {
+  const parser = new MessagesStream('gpt-6-sol')
+  const payload = 'x'.repeat(3 * 1024 * 1024)
+  expect(parser.push(`event: content_block_start\ndata: ${JSON.stringify({ index: 0, content_block: { type: 'text', text: payload } })}\n\n`))
+    .toEqual([{ kind: 'text', index: 0, text: payload }])
+  expect(parser.push('x'.repeat(16 * 1024 * 1024))).toEqual([])
+  expect(parser.error).toEqual({ type: 'invalid_stream' })
+  expect(parser.push('event: message_stop\ndata: {}\n\n')).toEqual([])
+  expect(parser.complete).toBe(false)
+})

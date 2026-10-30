@@ -24,6 +24,12 @@ export class MessagesStream {
     const chunks: TurnStepChunk[] = []
     for (;;) {
       const boundary = /\r?\n\r?\n/.exec(this.buffer)
+      if ((!boundary && this.buffer.length >= 16 * 1024 * 1024) ||
+        (boundary && boundary.index >= 16 * 1024 * 1024)) {
+        this.error = { type: 'invalid_stream' }
+        this.buffer = ''
+        break
+      }
       if (!boundary) break
       const frame = this.buffer.slice(0, boundary.index)
       this.buffer = this.buffer.slice(boundary.index + boundary[0].length)
