@@ -134,3 +134,20 @@ test('Messages SSE detects a CRLF boundary split across pushes', () => {
   expect(parser.push('\n\r')).toEqual([])
   expect(parser.push('\n')).toEqual([{ kind: 'text', index: 0, text: 'ok' }])
 })
+
+test('Messages SSE reports invalid event and tool JSON without processing later frames', () => {
+  const frame = (event: string, data: unknown) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
+  const eventParser = new MessagesStream('gpt-6-sol')
+  expect(eventParser.push('event: message_start\ndata: {private\n\n' + frame('message_stop', {}))).toEqual([])
+  expect(eventParser.error).toEqual({ type: 'invalid_stream' })
+  expect(eventParser.push(frame('message_stop', {}))).toEqual([])
+  expect(eventParser.complete).toBe(false)
+  for (const end of ['content_block_stop', 'message_stop']) {
+    const parser = new MessagesStream('gpt-6-sol')
+    expect(parser.push(frame('content_block_start', { index: 0, content_block: { type: 'tool_use', id: 't', name: 'Read' } }) +
+      frame('content_block_delta', { index: 0, delta: { type: 'input_json_delta', partial_json: '{private' } }) +
+      frame(end, { index: 0 }) + frame('message_stop', {}))).toEqual([])
+    expect(parser.error).toEqual({ type: 'invalid_stream' })
+    expect(parser.complete).toBe(false)
+  }
+})

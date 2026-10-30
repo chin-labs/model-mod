@@ -45,7 +45,8 @@ export class MessagesStream {
       if (!event || !['message_start', 'content_block_start', 'content_block_delta',
         'content_block_stop', 'message_delta', 'message_stop', 'error'].includes(event)) continue
       const data = lines.filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart()).join('\n')
-      const value = JSON.parse(data)
+      const value = this.parseJson(data)
+      if (this.error) break
       if (event === 'error') {
         this.error = { type: value.error?.type }
         this.buffer = ''
@@ -89,15 +90,20 @@ export class MessagesStream {
       if (event === 'content_block_stop') {
         const tool = this.tools.get(index)
         if (tool && this.pendingTools.delete(index)) {
-          if (tool.json) tool.input = JSON.parse(tool.json)
+          if (tool.json) tool.input = this.parseJson(tool.json)
+          if (this.error) break
           chunks.push({ kind: 'tool', index, id: tool.id, name: tool.name })
           chunks.push({ kind: 'input', index, json: tool.json || JSON.stringify(tool.input) })
         }
       }
       if (event === 'message_stop') {
-        this.complete = true
         // Validate all inputs before emitting the final stop.
-        for (const tool of this.tools.values()) if (tool.json) tool.input = JSON.parse(tool.json)
+        for (const tool of this.tools.values()) {
+          if (tool.json) tool.input = this.parseJson(tool.json)
+          if (this.error) break
+        }
+        if (this.error) break
+        this.complete = true
         for (const index of [...this.pendingTools].sort((a, b) => a - b)) {
           const tool = this.tools.get(index)!
           chunks.push({ kind: 'tool', index, id: tool.id, name: tool.name })
@@ -110,6 +116,14 @@ export class MessagesStream {
       }
     }
     return chunks
+  }
+
+  private parseJson(data: string): any {
+    try { return JSON.parse(data) } catch {
+      this.error = { type: 'invalid_stream' }
+      this.buffer = ''
+      return undefined
+    }
   }
 
   private addUsage(value: Record<string, unknown> | undefined) {
