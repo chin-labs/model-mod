@@ -174,7 +174,7 @@ class Contract(unittest.TestCase):
             self.assertIn('unsupported codex behavior', r.stdout)
             self.assertEqual('event: error' in r.stdout, streamed)
             self.assertNotIn('message_stop', r.stdout)
-        for mode in ('missing_init', 'bad_flag'):
+        for mode in ('missing_init', 'bad_flag', 'startup_fail'):
             r = self.run_bridge(mode=mode)
             self.assertEqual(r.returncode, 65)
             self.assertIn('incompatible codex app-server protocol', r.stdout)

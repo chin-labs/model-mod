@@ -139,6 +139,7 @@ class App:
         self.turn_id = None
         self.interrupted = False
         self.interrupt_id = None
+        self.initialized = False
         def reader():
             try:
                 for line in self.proc.stdout:
@@ -160,8 +161,7 @@ class App:
         try: item = self.queue.get(timeout=min(self.idle_seconds, remaining))
         except queue.Empty: raise BridgeError('Codex login: app-server timeout', 504, code='timeout')
         if item is None:
-            if self.proc.poll() is not None:
-                raise incompatible('app-server flags or startup')
+            if not self.initialized: raise incompatible('app-server flags or startup')
             raise BridgeError('Codex login: app-server exited unexpectedly', 502)
         if isinstance(item, Exception): raise item
         if not isinstance(item, dict): raise incompatible('response')
@@ -237,6 +237,7 @@ class App:
         if not isinstance(features, dict): raise incompatible('features')
         for feature in FEATURES:
             if features.get(feature) is not False: raise incompatible(feature)
+        self.initialized = True
 
 
 def emit(event, data):

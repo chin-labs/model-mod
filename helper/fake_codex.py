@@ -31,6 +31,9 @@ if 'status' in sys.argv:
     print('Logged in using ChatGPT')
     sys.exit(1 if config.get('mode') == 'logged_out' else 0)
 mode = config.get('mode', 'text')
+if mode == 'startup_fail':
+    print('unknown option --disable', file=sys.stderr, flush=True)
+    sys.exit(2)
 record({'pid': os.getpid(), 'env_keys': sorted(os.environ)})
 for line in sys.stdin:
     req = json.loads(line)
