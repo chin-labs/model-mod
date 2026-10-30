@@ -1134,9 +1134,9 @@ async function setupCodex($: EngineInterface, c?: Config): Promise<string> {
     const pv = /Python\s+(\d+)\.(\d+)/.exec(py.stdout + py.stderr)
     if (py.exitCode !== 0 || !pv || Number(pv[1]) < 3 || (Number(pv[1]) === 3 && Number(pv[2]) < 9)) return 'model-mod: Codex login: Python 3.9 or newer required; install Python.'
     const cv = await $.process.run([bin, '--version'], { timeoutMs: 15_000 })
-    const v = /^codex-cli (\d+)\.(\d+)\.(\d+)(?:[-+][A-Za-z0-9.+-]+)?$/.exec(cv.stdout.trim())
+    const v = /^codex-cli (\d+)\.(\d+)\.(\d+)(?:-([A-Za-z0-9.-]+))?(?:\+[A-Za-z0-9.-]+)?$/.exec(cv.stdout.trim())
     if (cv.exitCode !== 0 || !v) return 'model-mod: Codex login: codex unavailable; install Codex or configure codexBin.'
-    if (Number(v[1]) === 0 && Number(v[2]) < 165) return 'model-mod: Codex login: codex too old (minimum 0.165.0); upgrade Codex.'
+    if (Number(v[1]) === 0 && (Number(v[2]) < 165 || (Number(v[2]) === 165 && Number(v[3]) === 0 && v[4]))) return 'model-mod: Codex login: codex too old; upgrade to 0.165.0 or newer'
     const account = await ask($, 'Choose an account name or enter one under Other.', ['main', 'Cancel'])
     if (account === 'Cancel') throw new Cancelled()
     if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(account)) return 'model-mod: Codex login: invalid account name; nothing changed.'
@@ -1154,8 +1154,10 @@ async function setupCodex($: EngineInterface, c?: Config): Promise<string> {
       const login = loginCommand({ ...bridge, codexBin: bin }, { account, model: '', directory: accountHome })
       return `model-mod: Codex login (${account}): create the account directory and log in from your ${windows ? 'PowerShell' : 'terminal'}, then run /model-mod:setup again:\n${mkdir}\n${login}`
     }
+    if (check.exitCode === 67) return `model-mod: Codex login (${account}): codex too old; upgrade to 0.165.0 or newer`
     if (check.exitCode !== 0) return `model-mod: Codex login (${account}): check failed; verify Python and Codex installation.`
     const listed = await helperRun($, { ...bridge, pythonBin: python, codexBin: bin }, 'models', accountHome, 15_000)
+    if (listed.exitCode === 67) return `model-mod: Codex login (${account}): codex too old; upgrade to 0.165.0 or newer`
     if (listed.exitCode !== 0) return `model-mod: Codex login (${account}): model list unavailable; check Codex and try again.`
     const parsed = JSON.parse(listed.stdout) as { models?: { id?: unknown }[] }
     const ids = [...new Set((parsed.models ?? []).map(m => m.id).filter((id): id is string => typeof id === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(id) && !NOT_CHAT.test(id)))]
@@ -1201,7 +1203,7 @@ async function codexStatus($: EngineInterface, c: Config): Promise<string[]> {
       const check = JSON.parse(result.stdout) as { pythonVersion?: unknown; codexVersion?: unknown; versionStatus?: unknown; loggedIn?: unknown; warnings?: unknown }
       if (typeof check.pythonVersion === 'string' && /^\d+\.\d+\.\d+/.test(check.pythonVersion)) python = check.pythonVersion
       if (typeof check.codexVersion === 'string') version = /\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?/.exec(check.codexVersion)?.[0] ?? 'unavailable'
-      if (check.versionStatus === 'too_old') version += ' too old (minimum 0.165.0)'
+      if (check.versionStatus === 'too_old' || result.exitCode === 67) version += '; codex too old; upgrade to 0.165.0 or newer'
       if (result.exitCode === 0) login = check.loggedIn === true ? 'ok' : 'missing'
       else if (result.exitCode === 68 || result.exitCode === 69) login = 'missing'
       if (Array.isArray(check.warnings)) for (const warning of check.warnings) {

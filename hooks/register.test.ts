@@ -1400,6 +1400,25 @@ test('Codex login: status and setup preserve the separate upstream', { options: 
   expect(w.saved).toEqual([{ key: 'model-mod.codexModels', value: 'gpt-6.1-terra' }, { key: 'model-mod.codexAccounts', value: '' }, { key: 'model-mod.codexModels', value: '' }])
 })
 
+test('Codex login: setup and status explain unsupported versions', { options: CODEX_OPTIONS }, async ($, on) => {
+  let version = '0.164.0'
+  const w = world(on, null, CODEX_MODEL, { stdout: '', code: 0 }, argv => {
+    if (argv[1] === '--version') return { exitCode: 0, stdout: argv[0] === 'python3' ? 'Python 3.12.0' : 'codex-cli ' + version }
+    if (argv.includes('check')) return { exitCode: 67, stdout: JSON.stringify({ pythonVersion: '3.12.0', codexVersion: version, versionStatus: 'too_old' }) }
+    return { exitCode: 1, stdout: '' }
+  })
+  const hint = 'codex too old; upgrade to 0.165.0 or newer'
+  w.chooseUpstream = true
+  for (version of ['0.164.0', '0.165.0-alpha']) {
+    w.answers = ['Codex login (recommended)']
+    expect((await $.command.run(SETUP)).text).toContain(hint)
+    expect((await $.command.run({ ...SETUP, command: 'model-mod:status' })).text).toContain(hint)
+  }
+  version = '0.166.0'
+  w.answers = ['Codex login (recommended)', 'main']
+  expect((await $.command.run(SETUP)).text).toContain(hint)
+})
+
 test('/model: PostModelSwitch applies the local window and restores it for Claude', { options: { ...OPTIONS, models: LOCAL } }, async ($, on) => {
   const w = world(on, null, 'claude-sonnet-5-5', { stdout: '', code: 0 })
   await $.command.run({ ...MODEL, args: LOCAL })
