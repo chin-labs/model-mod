@@ -934,7 +934,7 @@ function codexRunError(c: Config, item: CodexAccount, run: { stdout: string; std
   try { const error = JSON.parse(run.stdout).error; code = error?.code ?? ''; message = error?.message ?? '' } catch { /* no structured error */ }
   const prefix = `model-mod: Codex login (${item.account}): `
   if (code === 'codex_rejected_request') return prefix + 'request rejected by Codex; update model-mod or report this'
-  if (code === 'unsupported_item') return prefix + `unsupported codex behavior: ${/unsupported codex behavior: ([A-Za-z0-9_-]{1,64})/.exec(message)?.[1] ?? 'unknown'}; update or check Codex`
+  if (code === 'unsupported_item') return prefix + `Codex used a built-in tool that model-mod does not support (${/unsupported codex behavior: ([A-Za-z0-9_-]{1,64})/.exec(message)?.[1] ?? 'unknown'}); try again, and report it if it keeps happening`
   if (code === 'protocol' || code === 'incompatible_protocol' || run.exitCode === 65) return prefix + 'incompatible app-server protocol; update or check Codex'
   if (code === 'codex_unavailable' || run.exitCode === 66) return prefix + 'codex unavailable; install Codex or configure codexBin'
   if (code === 'codex_too_old' || run.exitCode === 67) return prefix + 'codex too old; upgrade to 0.165.0 or newer'
@@ -1757,7 +1757,7 @@ export const register: Register = (on, options) => {
         history = read as unknown as Turn[]
       }
       if (e.agentId !== undefined && !own && history.length !== e.messageCount) {
-        $.ui.status(`model-mod: agent message count differs (${history.length}/${e.messageCount}); using available history.`)
+        $.ui.status(`agent message count differs (${history.length}/${e.messageCount}); using available history.`)
       }
       const messages = history.map(message => ({ ...message, content: message.content.filter(block => {
         const type = block.type
@@ -1870,7 +1870,7 @@ export const register: Register = (on, options) => {
               if (errorCode === 'codex_rejected_request') return yield* failure(e, prefix + 'request rejected by Codex; update model-mod or report this', parser.nextIndex)
               if (errorCode === 'unsupported_item') {
                 const kind = /unsupported codex behavior: ([A-Za-z0-9_-]{1,64})/.exec(errorMessage)?.[1] ?? 'unknown'
-                return yield* failure(e, prefix + `unsupported codex behavior: ${kind}; update or check Codex`, parser.nextIndex)
+                return yield* failure(e, prefix + `Codex used a built-in tool that model-mod does not support (${kind}); try again, and report it if it keeps happening`, parser.nextIndex)
               }
               if (errorCode === 'protocol' || errorCode === 'incompatible_protocol' || exit.code === 65) return yield* failure(e, prefix + 'incompatible app-server protocol; update or check Codex', parser.nextIndex)
               if (errorCode === 'codex_unavailable' || exit.code === 66) return yield* failure(e, prefix + 'codex unavailable; install Codex or configure codexBin', parser.nextIndex)

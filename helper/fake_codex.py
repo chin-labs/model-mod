@@ -43,7 +43,7 @@ for line in sys.stdin:
     if method == 'initialize':
         send({'id': ident, 'result': {} if mode == 'missing_init' else {'userAgent': 'fake', 'codexHome': os.environ['CODEX_HOME'], 'platformFamily': 'unix', 'platformOs': 'test'}})
     elif method == 'config/read':
-        features = dict.fromkeys(('apps', 'multi_agent', 'unified_exec', 'shell_tool', 'view_image', 'image_generation', 'browser_use', 'in_app_browser', 'goals'), False)
+        features = dict.fromkeys(('apps', 'multi_agent', 'unified_exec', 'shell_tool', 'view_image', 'image_generation', 'browser_use', 'in_app_browser', 'goals', 'sleep_tool', 'computer_use', 'tool_suggest', 'skill_search', 'plugins', 'remote_plugin', 'hooks', 'guardian_approval', 'incremental_tools', 'browser_annotation_api', 'browser_use_external', 'browser_use_full_cdp_access', 'plugin_sharing', 'skill_mcp_dependency_install'), False)
         if mode == 'bad_flag': features['shell_tool'] = True
         send({'id': ident, 'result': {'config': {'web_search': 'disabled', 'features': features}}})
     elif method == 'thread/start':

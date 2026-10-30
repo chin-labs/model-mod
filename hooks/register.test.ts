@@ -1310,7 +1310,7 @@ test('Codex login: startup and unsupported behavior failures do not retry', { op
   reply.stderr = 'model-mod-http:502\n'
   const before = w.spawned.length
   const { result } = await drain($.turn.step(STEP(CODEX_MODEL)))
-  expect(result.answer).toContain('unsupported codex behavior: commandExecution')
+  expect(result.answer).toContain('Codex used a built-in tool that model-mod does not support (commandExecution); try again, and report it if it keeps happening')
   expect(w.spawned.length - before).toBe(1)
   reply.stdout = '{"type":"error","error":{"type":"api_error","message":"Codex login: app-server turn failed","code":"bridge_error"}}'
   reply.stderr = 'model-mod-http:500\n'

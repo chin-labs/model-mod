@@ -11,7 +11,7 @@ from pathlib import Path
 BRIDGE = Path(__file__).resolve().with_name('bridge.py')
 
 
-def run(home, codex_bin, model, body, expected_tool=None):
+def run(home, codex_bin, model, body, expected_tool=None, no_sleep=False):
     result = subprocess.run([sys.executable, '-E', '-s', str(BRIDGE), 'messages', '--codex-home', home,
                              '--codex-bin', codex_bin, '--model-map', 'test=' + model],
                             input=json.dumps(body), text=True, capture_output=True, timeout=180)
@@ -23,6 +23,12 @@ def run(home, codex_bin, model, body, expected_tool=None):
         raise RuntimeError('messages did not complete')
     if expected_tool and not any(frame.get('content_block', {}).get('type') == 'tool_use' and frame['content_block'].get('name') == expected_tool for frame in frames):
         raise RuntimeError('expected tool use missing')
+    if no_sleep:
+        text = ''.join(frame.get('delta', {}).get('text', '') for frame in frames if frame.get('type') == 'content_block_delta')
+        tools = [frame['content_block']['name'] for frame in frames if frame.get('content_block', {}).get('type') == 'tool_use']
+        if not ((delta['delta']['stop_reason'] == 'end_turn' and text.strip() == 'NO_SLEEP' and not tools) or
+                (delta['delta']['stop_reason'] == 'tool_use' and tools and all(name in ('fixture_alpha', 'fixture_beta') for name in tools))):
+            raise RuntimeError('sleep probe returned an unexpected response')
     return delta['delta']['stop_reason']
 
 
@@ -31,10 +37,17 @@ def main():
     parser.add_argument('--codex-home', required=True)
     parser.add_argument('--codex-bin', default='codex')
     parser.add_argument('--model', required=True)
+    parser.add_argument('--sleep-only', action='store_true')
     args = parser.parse_args()
     if not os.path.isabs(args.codex_home) or not os.path.isdir(args.codex_home):
         parser.error('account home must be an existing absolute directory')
     base = {'model': 'test(high)', 'stream': True, 'max_tokens': 32}
+    sleep = dict(base, tools=[{'name': name, 'description': 'A fixture tool.', 'input_schema': {'type': 'object', 'properties': {}}} for name in ('fixture_alpha', 'fixture_beta')],
+                 messages=[{'role': 'user', 'content': 'Call the sleep tool for 1 second; if it is unavailable, reply exactly NO_SLEEP.'}])
+    sleep_stop = run(args.codex_home, args.codex_bin, args.model, sleep, no_sleep=True)
+    print('sleep tool disabled: passed (' + sleep_stop + ')')
+    if args.sleep_only:
+        return 0
     text = dict(base, messages=[{'role': 'user', 'content': 'Reply hello.'}])
     history = dict(base, messages=[{'role': 'user', 'content': 'Remember the color teal.'},
                                    {'role': 'assistant', 'content': 'Noted.'},
