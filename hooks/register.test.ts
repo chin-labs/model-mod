@@ -1012,6 +1012,18 @@ test('setup: Change URL fetches that endpoint and saves it after fetching models
   expect(w.saved[0]!.value).toBe('http://localhost:9999/proxy')
 })
 
+test('setup: API option failure restores the endpoint and model cache', { options: OPTIONS }, async ($, on) => {
+  const w = world(on, null, LOCAL, { stdout: '', code: 0 })
+  w.configValues = { baseUrl: OPTIONS.baseUrl, models: LOCAL }
+  w.store.models = [LOCAL]
+  w.models = ['gpt-other']
+  w.configSet = key => key.endsWith('.models') ? { deny: 'locked' } : undefined
+  w.answers = ['Change', 'http://localhost:9999/proxy', 'All (recommended)']
+  expect((await $.command.run(SETUP)).text).toContain('previous settings restored')
+  expect(w.saved).toContainEqual({ key: 'model-mod.baseUrl', value: OPTIONS.baseUrl })
+  expect(w.store.models).toEqual([LOCAL])
+})
+
 test('setup: subset uses pages of at most four IDs, ignores unknown Other text, and allows empty pages', { options: OPTIONS }, async ($, on) => {
   const w = world(on, null, LOCAL, { stdout: '', code: 0 })
   w.models = Array.from({ length: 9 }, (_, i) => `gpt-${i}`)
@@ -1419,6 +1431,17 @@ test('manage: removing a Codex account preserves the other account and refuses r
   expect(w.store.retiredModels).toContain(CODEX_MODEL)
 })
 
+test('manage: an API cannot silently take over a removed Codex model', { options: { ...CODEX_OPTIONS, ...OPTIONS, models: CODEX_MODEL } }, async ($, on) => {
+  const w = world(on, null, CODEX_MODEL, { stdout: '', code: 0 }, () => ({ exitCode: 0, stdout: '{}' }))
+  w.models = [CODEX_MODEL]
+  w.chooseUpstream = true
+  w.answers = ['Manage configured upstreams', 'Codex main; dir=/fake-home/.config/model-mod/accounts/main; login=ok; models=1', 'Remove', 'Keep directory (recommended)']
+  expect((await $.command.run(SETUP)).text).toContain('Codex account main removed')
+  await $.session.start({ cwd: '/work' } as never)
+  expect((await drain($.turn.step(STEP(CODEX_MODEL)))).result.answer).toContain('not in the allowlist; use /model')
+  expect(w.reached).not.toContain('turn.step')
+})
+
 test('manage: refusing a setting restores earlier account settings', { options: { ...CODEX_OPTIONS, fallbackModel: CODEX_MODEL } }, async ($, on) => {
   const w = world(on, null, CODEX_MODEL, { stdout: '', code: 0 }, () => ({ exitCode: 0, stdout: '{}' }))
   w.configValues = { codexAccounts: 'main', codexModels: 'gpt-6.1-terra', fallbackModel: CODEX_MODEL }
@@ -1444,6 +1467,28 @@ test('manage: deleting the last account requires confirmation and logs out first
   expect(logout >= 0 && remove > logout).toBe(true)
   expect((await drain($.turn.step(STEP(CODEX_MODEL)))).result.answer).toContain('not in the allowlist; use /model')
   expect(w.reached).not.toContain('turn.step')
+})
+
+test('manage: failed logout retains credentials or deletes an empty account', { options: CODEX_OPTIONS }, async ($, on) => {
+  let credentialsRemain = true
+  const w = world(on, null, CODEX_MODEL, { stdout: '', code: 0 }, argv => {
+    if (argv.includes('logout')) return { exitCode: 1, stdout: '' }
+    if (argv.includes('can-remove-home')) return { exitCode: credentialsRemain ? 70 : 0, stdout: '{}' }
+    return { exitCode: 0, stdout: '{}' }
+  })
+  w.chooseUpstream = true
+  const answers = () => ['Manage configured upstreams', 'Codex main; dir=/fake-home/.config/model-mod/accounts/main; login=ok; models=1', 'Remove', 'Delete directory', 'Confirm deletion']
+  w.answers = answers()
+  const first = await $.command.run(SETUP)
+  expect(first.text).toContain('logout did not complete; directory retained')
+  expect(first.text).toContain('logout')
+  expect(w.saved).toEqual([])
+  expect(w.ran.some(argv => argv.includes('remove-home'))).toBe(false)
+  credentialsRemain = false
+  w.answers = answers()
+  const second = await $.command.run(SETUP)
+  expect(second.text).toContain('Logout failed; directory deletion was attempted')
+  expect(w.ran.some(argv => argv.includes('remove-home'))).toBe(true)
 })
 
 test('manage: a failed rollback is reported', { options: CODEX_OPTIONS }, async ($, on) => {

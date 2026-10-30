@@ -40,7 +40,7 @@ After `/model-mod:setup`:
 
 If setup cannot display the device-auth link and code, follow its displayed commands or create the account directory yourself and run `CODEX_HOME=<codexAccountsDir>/<account> codex login --device-auth`. On Windows, use the account-specific `CODEX_HOME` in PowerShell. Then run setup again.
 
-In setup, **Manage configured upstreams** offers **Log out** (retains settings and the account directory) and **Remove** (removes settings and retains the directory unless you confirm deletion separately). Deletion is limited to that account's directory and attempts logout first. If a removed model remains selected, use `/model` to choose another model. A file-provided API must be removed by editing its configuration file yourself.
+In setup, **Manage configured upstreams** offers **Log out** (retains settings and the account directory) and **Remove** (removes settings and retains the directory unless you confirm deletion separately). Deletion is limited to that account's directory and attempts logout first. If credentials remain after logout, the directory and settings are retained; run the displayed logout command and retry. If a removed model remains selected, use `/model` to choose another model. A file-provided API must be removed by editing its configuration file yourself.
 
 ## Update
 

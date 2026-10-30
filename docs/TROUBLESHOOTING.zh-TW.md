@@ -40,7 +40,7 @@
 
 若 setup 無法顯示裝置驗證網址與代碼，請依顯示的命令操作，或自行建立帳號目錄並執行 `CODEX_HOME=<codexAccountsDir>/<帳號> codex login --device-auth`。Windows 請在 PowerShell 設定各帳號專用的 `CODEX_HOME`。之後重新執行 setup。
 
-在 setup 的 **Manage configured upstreams** 中，**Log out** 會保留設定及帳號目錄；**Remove** 會移除設定並預設保留目錄，除非另行確認刪除。刪除範圍僅限該帳號目錄，並會先嘗試登出。若目前仍選著已移除的模型，請用 `/model` 改選。由檔案提供的 API 須自行編輯設定檔移除。
+在 setup 的 **Manage configured upstreams** 中，**Log out** 會保留設定及帳號目錄；**Remove** 會移除設定並預設保留目錄，除非另行確認刪除。刪除範圍僅限該帳號目錄，並會先嘗試登出。若登出後憑證仍在，目錄與設定會保留；請執行顯示的登出命令再重試。若目前仍選著已移除的模型，請用 `/model` 改選。由檔案提供的 API 須自行編輯設定檔移除。
 
 ## 更新
 

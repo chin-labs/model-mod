@@ -453,11 +453,11 @@ def main():
         return 78
     parser = argparse.ArgumentParser(prog='bridge')
     subs = parser.add_subparsers(dest='command', required=True)
-    for name in ('messages', 'rate-limits', 'check', 'models', 'prepare-home', 'validate-home', 'device-login', 'logout', 'remove-home', 'cleanup-home'):
+    for name in ('messages', 'rate-limits', 'check', 'models', 'prepare-home', 'validate-home', 'can-remove-home', 'device-login', 'logout', 'remove-home', 'cleanup-home'):
         sub = subs.add_parser(name)
         sub.add_argument('--codex-home', required=True)
         sub.add_argument('--codex-bin', default='codex')
-        if name in ('prepare-home', 'validate-home', 'remove-home', 'cleanup-home', 'device-login', 'logout'):
+        if name in ('prepare-home', 'validate-home', 'can-remove-home', 'remove-home', 'cleanup-home', 'device-login', 'logout'):
             sub.add_argument('--accounts-dir', required=True)
             sub.add_argument('--account', required=True)
         if name == 'messages':
@@ -484,15 +484,17 @@ def main():
         threading.Thread(target=watch_stdout, daemon=True).start()
     try:
         prepared = None
-        if args.command in ('prepare-home', 'validate-home', 'remove-home', 'cleanup-home'):
+        if args.command in ('prepare-home', 'validate-home', 'can-remove-home', 'remove-home', 'cleanup-home'):
             if ('..' in args.codex_home.replace('\\', '/').split('/') or
                     os.path.normcase(os.path.abspath(args.codex_home)) != os.path.normcase(os.path.abspath(os.path.join(args.accounts_dir, args.account)))):
                 raise BridgeError('Codex login: invalid account directory', code='invalid_home')
             target, created = account_home(args.accounts_dir, args.account, args.command == 'prepare-home')
             if os.path.normcase(os.path.realpath(args.codex_home)) != os.path.normcase(target):
                 raise BridgeError('Codex login: invalid account directory', code='invalid_home')
-            if args.command == 'validate-home' and not os.path.isdir(target):
+            if args.command in ('validate-home', 'can-remove-home', 'remove-home') and not os.path.isdir(target):
                 raise BridgeError('Codex login: invalid account directory', code='invalid_home')
+            if args.command in ('can-remove-home', 'remove-home') and os.path.lexists(os.path.join(target, 'auth.json')):
+                raise BridgeError('Codex login: account credentials remain; directory retained', code='credentials_remain')
             if args.command == 'remove-home':
                 if os.name == 'posix':
                     fd = os.open(os.path.dirname(target), os.O_RDONLY | getattr(os, 'O_DIRECTORY', 0))
@@ -605,7 +607,7 @@ def main():
         print(json.dumps({'type': 'error', 'error': {'type': 'invalid_request_error', 'message': 'Codex login: ' + str(e)}}, ensure_ascii=False), flush=True)
     except BridgeError as e:
         status = e.status
-        exit_code = {'protocol': 65, 'codex_unavailable': 66, 'codex_too_old': 67, 'codex_not_logged_in': 68, 'invalid_home': 69}.get(e.code, 1)
+        exit_code = {'protocol': 65, 'codex_unavailable': 66, 'codex_too_old': 67, 'codex_not_logged_in': 68, 'invalid_home': 69, 'credentials_remain': 70}.get(e.code, 1)
         error = {'type': 'error', 'error': {'type': 'api_error' if started else e.kind, 'message': str(e), 'code': e.code}}
         if started: emit('error', error)
         elif args.command == 'check':

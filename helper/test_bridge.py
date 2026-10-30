@@ -32,6 +32,10 @@ class Contract(unittest.TestCase):
             for account, home in [('link', root / 'link'), ('main', outside), ('main', root), ('../outside', root / '../outside'), ('Bad', root / 'Bad')]:
                 self.assertEqual(run('remove-home', account, home).returncode, 69)
             self.assertTrue(outside.is_dir())
+            (root / 'main' / 'auth.json').touch()
+            self.assertEqual(run('remove-home', 'main', root / 'main').returncode, 70)
+            self.assertTrue((root / 'main' / 'auth.json').exists())
+            (root / 'main' / 'auth.json').unlink()
             self.assertEqual(run('remove-home', 'main', root / 'main').returncode, 0)
             self.assertFalse((root / 'main').exists())
 
