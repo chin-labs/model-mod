@@ -1246,7 +1246,10 @@ for (const apiKey of [KEY, 'bad key']) {
 }
 
 test('Codex login: streaming and auxiliary requests use the helper without an API key', { options: CODEX_OPTIONS }, async ($, on) => {
-  const w = world(on, null, CODEX_MODEL, { stdout: SSE_OK, code: 0 }, { exitCode: 0, stdout: '{"content":[{"type":"text","text":"summary"}]}' })
+  const note = 'model-mod-note:Codex login: ignored field max_tokens'
+  const w = world(on, null, CODEX_MODEL, { stdout: SSE_OK, stderr: note + '\n', code: 0 }, { exitCode: 0, stdout: '{"content":[{"type":"text","text":"summary"}]}', stderr: note + '\n' })
+  const logs: string[] = []
+  on('ui.log', (_$, e) => { logs.push(e.text); return { value: undefined } })
   const { chunks, result } = await drain($.turn.step(STEP(CODEX_MODEL)))
   expect(result.answer).toBe('local answer')
   expect(chunks.map(chunk => chunk.kind)).toEqual(['text', 'stop'])
@@ -1260,6 +1263,8 @@ test('Codex login: streaming and auxiliary requests use the helper without an AP
   const compact = await $.session.compact({ trigger: 'manual', messages: [{ role: 'user', text: 'hi', toolUses: [] }] } as never)
   expect('messages' in compact).toBe(true)
   expect(w.ran.some(argv => argv[0] === 'python3' && argv.includes('messages'))).toBe(true)
+  expect(logs.some(line => line.includes('model-mod-note:'))).toBe(false)
+  expect(result.answer).not.toContain('model-mod-note:')
   expect(w.store.models).toBeUndefined()
 })
 

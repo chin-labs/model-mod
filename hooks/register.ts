@@ -920,7 +920,6 @@ async function helperRun($: EngineInterface, c: Config, command: string, home: s
     const remaining = Math.max(1, timeoutMs - ((await $.clock.now()) - started))
     const wire = body && 'model' in body ? String(body.model) : model
     const run = await $.process.run(helperArgs($, c, command, home, model, wire), { ...(body ? { stdin: JSON.stringify(body) } : {}), timeoutMs: remaining })
-    for (const line of run.stderr.split(/\r?\n/)) if (line.startsWith('model-mod-note:')) $.ui.log(line)
     return run
   } finally { timer.cancel(); release?.() }
 }
@@ -1825,7 +1824,6 @@ export const register: Register = (on, options) => {
               const lines = (statusTail + piece.text).split('\n')
               statusTail = lines.pop()!.slice(-4096)
               for (const line of lines) {
-                if (codex && line.startsWith('model-mod-note:')) $.ui.log(line)
                 const status = /^model-mod-http:(\d{3})\r?$/.exec(line)
                 if (status) httpStatus = Number(status[1])
                 if (line.startsWith('model-mod-retry-after:')) {
