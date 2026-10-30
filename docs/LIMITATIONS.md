@@ -6,7 +6,7 @@ This page lists where your models differ from a subscription model, what has not
 
 ## Tested versions
 
-model-mod was tested on **Claude Code 2.1.299 to 2.1.310**. On 2.1.310, plugin loading, unit tests, turns and the update path were checked. Other versions have not been tested, so do not assume they work. These checks used a test configuration rather than the normal secret-option flow, so they say nothing about how your key is stored (see [Not verified](#not-verified)).
+Codex login and the API upstream were tested on **Claude Code 2.1.314**. The API upstream was also tested on 2.1.299 to 2.1.310; on 2.1.310, plugin loading, unit tests, turns and the update path were checked. Other versions have not been tested, so do not assume they work. These checks used a test configuration rather than the normal secret-option flow, so they say nothing about how your key is stored (see [Not verified](#not-verified)).
 
 Marketplace installs were tested from a local clone and from a Git server over the standard HTTP protocol. Claude Code does not support installing from a plain ("dumb") HTTP Git server, and it leaves the plugin cache behind after an uninstall.
 
