@@ -177,11 +177,10 @@ class App:
             try: self.interrupt()
             except (OSError, ValueError): pass
         finally:
-            if self.proc.poll() is None:
-                try:
-                    if os.name == 'posix': os.killpg(self.proc.pid, signal.SIGTERM)
-                    else: self.proc.terminate()
-                except ProcessLookupError: pass
+            try:
+                if os.name == 'posix': os.killpg(self.proc.pid, signal.SIGTERM)
+                elif self.proc.poll() is None: self.proc.terminate()
+            except ProcessLookupError: pass
             try: self.proc.wait(timeout=3)
             except subprocess.TimeoutExpired:
                 if os.name == 'posix':
@@ -189,6 +188,9 @@ class App:
                     except ProcessLookupError: pass
                 else: self.proc.kill()
                 self.proc.wait()
+            if os.name == 'posix':
+                try: os.killpg(self.proc.pid, signal.SIGKILL)
+                except ProcessLookupError: pass
             for stream in (self.proc.stdin, self.proc.stdout):
                 if stream: stream.close()
 
@@ -213,12 +215,14 @@ def execute(request):
     app = App(request)
     app.deadline = started + TOTAL_SECONDS
     try:
-        app.request('initialize', {'clientInfo': {'name': 'model-mod-delegate', 'version': '0.2.0'}, 'capabilities': {'experimentalApi': True}})
+        init = app.request('initialize', {'clientInfo': {'name': 'model-mod-delegate', 'version': '0.2.0'}, 'capabilities': {'experimentalApi': True}})
+        if not isinstance(init.get('codexHome'), str) or os.path.realpath(init['codexHome']) != home:
+            raise Failure('Codex account directory mismatch.')
         app.send({'method': 'initialized', 'params': {}})
         config = app.request('config/read', {'includeLayers': False, 'cwd': cwd}).get('config', {})
         if config.get('web_search') != 'disabled' or any(config.get('features', {}).get(f) is not False for f in FEATURES):
             raise Failure('Codex safety configuration could not be verified.')
-        if config.get('mcp_servers'): raise Failure('Codex MCP servers could not be disabled.')
+        if config.get('mcp_servers') != {}: raise Failure('Codex MCP servers could not be disabled.')
         cursor, seen, models = None, set(), set()
         while True:
             page = app.request('model/list', {'cursor': cursor, 'includeHidden': False})

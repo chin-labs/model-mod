@@ -73,11 +73,16 @@ export async function delegate($: EngineInterface, kind: 'review' | 'rescue', ar
     const child = $.process.spawn({ argv: [c.pythonBin ?? 'python3', '-E', '-s', script],
       input: JSON.stringify({ kind, options, account: selected, accountsDir: c.accountsDir, directory: account.directory, codexBin: c.codexBin ?? 'codex', model, cwd }), cwd })
     let stdout = ''
-    for await (const chunk of child) {
-      if (signal.aborted) break
-      if (chunk.stream === 'stdout') stdout += chunk.text
-      if (stdout.length > 150_000) throw new Error('output too large')
-    }
+    const abort = () => { void child.return({ code: null, signal: 'SIGTERM' }).catch(() => {}) }
+    signal.addEventListener('abort', abort, { once: true })
+    if (signal.aborted) abort()
+    try {
+      for await (const chunk of child) {
+        if (signal.aborted) break
+        if (chunk.stream === 'stdout') stdout += chunk.text
+        if (stdout.length > 150_000) throw new Error('output too large')
+      }
+    } finally { signal.removeEventListener('abort', abort) }
     if (signal.aborted) throw new Error('cancelled')
     const reply = JSON.parse(stdout) as { text?: string }
     return { text: formatOutput(selected, model, reply.text ?? 'Delegation failed.') }

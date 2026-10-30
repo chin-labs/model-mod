@@ -66,7 +66,7 @@ for line in sys.stdin:
         features['memories'] = False
         if mode == 'bad_flag': features['shell_tool'] = True
         if mode == 'bad_unified_exec': features['unified_exec'] = True
-        send({'id': ident, 'result': {'config': {'web_search': 'disabled', 'features': features}}})
+        send({'id': ident, 'result': {'config': {'web_search': 'disabled', 'features': features, 'mcp_servers': {}}}})
     elif method == 'thread/start':
         if mode in ('rejected_request', 'rejected_params'):
             send({'id': ident, 'error': {'code': -32600 if mode == 'rejected_request' else -32602, 'message': 'untrusted details'}})
