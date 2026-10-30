@@ -21,10 +21,10 @@ The prompts for compaction, titles, subagents and the worker live in `compact.md
 ## Limitations, privacy and compliance
 
 - [Limitations](LIMITATIONS.md) lists known differences from a subscription model, what has not been verified, and which Claude Code requests can still reach your subscription.
-- Messages, system instructions (including project instruction files), tool definitions and results, and images are sent to your upstream and any provider behind it. Search queries go to the upstream, fetch URLs to the target sites, image prompts to the image endpoint.
+- Messages, system instructions (including project instruction files), tool definitions and results, and images are sent to your upstream and any provider behind it. Codex conversations go through the official Codex CLI to OpenAI services. On the API path, search queries go to the upstream and image prompts to the image endpoint; fetch URLs go to the target sites.
 - The mod uses plugin hooks, changes no Claude Code binary, intercepts no TLS, reads no subscription credential files and never sends subscription credentials to your upstream. On the API path it uses only the upstream key you configure and never retries one of your model's turns through the subscription. A failed or stalled request is retried only against the same model; the mod never switches to another model because a request failed.
 - Auto permission mode sends the full conversation and project instructions to your subscription for classification, even while one of your models is selected. Default or acceptEdits mode with allow rules avoids that. Other requests Claude Code makes by itself can also use your subscription; see [Subscription side requests](LIMITATIONS.md#subscription-side-requests).
-- The key is passed to curl through the environment, not as a command argument. It is removed from error text, but streamed output is not rewritten, so use an upstream you trust.
+- On the API path, the key is passed to curl through the environment, not as a command argument. It is removed from error text, but streamed output is not rewritten, so use an upstream you trust.
 
 This is an independent project, not affiliated with or endorsed by Anthropic or OpenAI. The [compliance notes](COMPLIANCE.md) explain the design limits and point to the current terms for you to read. They do not grant permission under those terms; you are responsible for reading them.
 

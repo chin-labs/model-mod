@@ -31,8 +31,9 @@ After `/model-mod:setup`:
 | Not logged in or account directory missing | Run `/model-mod:setup`, select Codex login and follow its displayed directory creation and `CODEX_HOME=... codex login` commands in your terminal; then rerun setup. Windows uses PowerShell commands instead. |
 | Codex too old | Upgrade the official CLI to at least 0.165.0, then retry. |
 | Helper cannot start | Install Python 3.9+ and check `pythonBin`; check `codexBin` and `codexAccountsDir` paths. Executables must be command names or absolute paths. |
-| `Codex used a built-in tool that model-mod does not support` or incompatible protocol | The helper stopped the turn rather than accept an unsupported item or configuration. Check the Codex version and effective settings before retrying; an upgrade is not recommended as a remedy for this error. See [limitations](LIMITATIONS.md#codex-login-limitations). |
-| Tool name appears as `bridge_` followed by a hash | Reserved names such as `mcp__...` and names outside Codex’s accepted format are mapped to aliases for the Codex call and restored on return. See [limitations](LIMITATIONS.md#codex-login-limitations). |
+| `Codex used a built-in tool that model-mod does not support` | The helper stopped the turn on an unsupported item. Check the Codex version and effective settings before retrying. See [limitations](LIMITATIONS.md#codex-login-limitations). |
+| `incompatible app-server protocol; update or check Codex` | Update or check Codex and its effective settings before retrying. |
+| Tool name appears as `bridge_` followed by a hash | Reserved names such as `mcp__...` and names outside Codex's accepted format are mapped to aliases for the Codex call and restored on return. See [limitations](LIMITATIONS.md#codex-login-limitations). |
 | 429, quota or rate limit | Check your Codex subscription's quota and reset time. Before output, retries use `Retry-After` up to 15 seconds; a longer requested wait ends the turn. No automatic account rotation occurs. |
 | Account configuration refused and rollback failed | Open `/plugin configure model-mod@model-mod` and manually restore the previous `codexModels` value; check `codexAccounts` too. Then rerun setup if needed. |
 

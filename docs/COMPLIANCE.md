@@ -22,7 +22,7 @@ The optional usage-limit switch is off by default. It only changes which model l
 
 ## What leaves your machine
 
-Requests to your models send the conversation, system instructions, tool definitions and results, and images to your upstream and any provider behind it. They do not include Claude Code session or user identity metadata, or subscription authorization headers. Web fetch contacts the website you ask for; image generation and search use your upstream.
+Requests to your models send the conversation, system instructions, tool definitions and results, and images to your upstream and any provider behind it. They do not include Claude Code session or user identity metadata, or subscription authorization headers. Codex conversations are sent to OpenAI services through the official Codex CLI. Web fetch contacts the website you ask for; on the API path, image generation and search use your upstream.
 
 Some requests Claude Code makes on its own can still use your subscription connection: auto permission classification, `/rename` without a name, `Agent(model: 'haiku')`, the native WebFetch summarizer, `/context` token counts with `localContext: false`, and first-prompt titles with `localTitle: false`. They are listed in [Subscription side requests](LIMITATIONS.md#subscription-side-requests), which covers the paths that were checked, not every possible Claude Code request. The [README](../README.md) explains key handling and how to recover from a saved default model.
 

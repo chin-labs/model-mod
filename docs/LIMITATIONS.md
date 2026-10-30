@@ -13,13 +13,15 @@ Marketplace installs were tested from a local clone and from a Git server over t
 ## Codex login limitations
 
 - The last tested Codex CLI version is **0.165.0**, also the minimum: older versions are rejected. Newer versions run but have not been verified individually. Before updating the tested-version record, run the manual live contract test against the new version.
-- Isolation is **not a strict tool whitelist**. The helper uses a dedicated home, read-only sandbox, no approvals and disabled features, but the two MCP resource-list tools can still run. Runtime item checks stop a turn on disallowed or unknown items with the message `Codex used a built-in tool that model-mod does not support (<type>); try again, and report it if it keeps happening`. Before starting a thread, `config/read` checks effective settings; if a new version changes those settings or the protocol, the helper fails closed and reports the reason. Check configuration and Codex compatibility before retrying.
-- Codex built-in shell, patch and file operations, network and browser tools, sleep, subagents, apps, plugins and goals are disabled. Dynamic tools come from the client, with the MCP resource-list exceptions above; the model is not told the helper’s read-only isolation instructions.
+- Isolation is **not a strict tool whitelist**. The helper uses a dedicated home, read-only sandbox, no approvals and disabled features, but the two MCP resource-list tools can still run. Runtime item checks stop a turn on disallowed or unknown items with the message `Codex used a built-in tool that model-mod does not support (<type>); try again, and report it if it keeps happening`. Before starting a thread, `config/read` checks effective settings; if a new version changes those settings or the protocol, the helper fails closed. A protocol incompatibility reports `incompatible app-server protocol; update or check Codex`. Check configuration and Codex compatibility before retrying.
+- Codex built-in shell, network and browser tools, sleep, subagents, apps, plugins and goals are disabled. Patch and file operations are blocked by the read-only sandbox and item whitelist; a disallowed item terminates the turn. Dynamic tools come from the client, with the MCP resource-list exceptions above; the model is not told the helper's read-only isolation instructions.
 - Codex reserves names beginning with `mcp__` and restricts tool names. The bridge sends affected names as `bridge_` plus a hash and restores the original name on return.
 - `max_tokens` is accepted but ignored. `tool_choice`, `temperature`, `top_p`, `stop_sequences`, `cache_control`, thinking budgets and signatures are ignored; historical thinking blocks are discarded. The helper writes internal `model-mod-note:` diagnostic lines, which are discarded and not shown to users. Do not rely on these controls being enforced.
-- `generate_image` and `web_search` are not offered for Codex models; `web_fetch` remains available. Codex automatic compaction items are unsupported. To allow for this, the default Codex context window is conservatively 128,000 tokens when the user has not explicitly set `contextWindow`. Configure the window with `contextWindow`. This does not disable model-mod's own compaction.
+- `generate_image` and `web_search` are not offered for Codex models; `web_fetch` remains available. Codex automatic compaction items are unsupported. The default Codex context window is 128,000 tokens when the user has not explicitly set `contextWindow`. Configure the window with `contextWindow`. This does not disable model-mod's own compaction.
 - Each call starts a local helper process and `codex app-server`, adding latency. Windows is supported by design but **not verified**.
 - Codex quotas and rate limits are determined by your own subscription. model-mod does not rotate accounts when a limit is reached.
+
+- An account name containing `claude` or `anthropic` causes its model IDs to be filtered. When a valid API key is configured with a refused `baseUrl`, the entire mod, including Codex, is inactive.
 
 ## Known limitations
 
@@ -45,7 +47,7 @@ SDK and `-p` callers must check whether the result text starts with `model-mod:`
 
 These behaviors have not been verified. Do not assume they work.
 
-- **Codex environments.** Two Codex accounts coexisting, Windows, a real run on Python 3.9, and live SIGHUP cleanup have not been verified.
+- **Codex environments.** Two Codex accounts coexisting, Windows, a real run on Python 3.9, and live SIGHUP cleanup have not been verified. The `max` effort level has only been tested with a fake Codex.
 - **Automatic switch.** Switching back after a real usage reset, the rate-limit data after a real rejected request, and triggering from Remote Control.
 - **Remote Control and mobile.** Only short sessions were tried. Long sessions and choosing a model from mobile are untested.
 - **Real upstream rate limits.** Retries were tested, but not failover between exhausted upstream credentials, nor the effect of cached tokens on your quota.
