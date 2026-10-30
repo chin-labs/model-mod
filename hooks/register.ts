@@ -1762,9 +1762,6 @@ export const register: Register = (on, options) => {
         if (!Array.isArray(read)) throw new Error(`messages_unavailable ${JSON.stringify(read).slice(0, 100)}`)
         history = read as unknown as Turn[]
       }
-      if (e.agentId !== undefined && !own && history.length !== e.messageCount) {
-        $.ui.status(`agent message count differs (${history.length}/${e.messageCount}); using available history.`)
-      }
       const messages = history.map(message => ({ ...message, content: message.content.filter(block => {
         const type = block.type
         return !['thinking', 'redacted_thinking', 'server_tool_use'].includes(type) && !type.endsWith('_tool_result')
