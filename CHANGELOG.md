@@ -7,6 +7,7 @@ All notable changes to this project are listed here. The format follows [Keep a 
 ### Added
 - Keep opaque Codex reasoning in memory during tool exchanges using experimental app-server APIs; replay with a real Codex turn is unverified.
 - Codex login supports native web search when permitted, with activity shown as assistant text lines.
+- Interactive confirmation for workspace-write Codex rescue.
 - Background read-only Codex delegation, job management and best-effort completion notices.
 - Guided Codex device authentication during setup, with account directories shown in setup and status.
 - Management of configured Codex accounts and API upstreams from setup, including logout and optional account-directory deletion.

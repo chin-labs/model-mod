@@ -21,4 +21,4 @@ Codex 模型的工具清單不包含 mod 的 `web_search`；原生搜尋無法�
 
 ## 背景 Codex 委派
 
-在 `/model-mod:review` 或 `/model-mod:rescue` 加上 `--background`，即可提交後不等待結果。工作不寫檔（仍可能執行讀取類命令）。`/model-mod:jobs [ID] [--all]` 列出目前工作區或所有工作區的工作，或查看單一工作；`/model-mod:result ID` 讀取結果，`/model-mod:cancel ID` 取消工作，`/model-mod:jobs --clear` 刪除目前工作區已終態的紀錄與結果。ID 可使用至少四位的唯一十六進位前綴。完成通知僅盡力提供。
+在 `/model-mod:review` 或 `/model-mod:rescue` 加上 `--background`，即可提交後不等待結果。預設不寫檔（仍可能執行讀取類命令）。前景或背景的 `/model-mod:rescue --write` 會先要求互動確認，通過後才能寫入工作區。`/model-mod:jobs [ID] [--all]` 列出目前工作區或所有工作區的工作，或查看單一工作；`/model-mod:result ID` 讀取結果，`/model-mod:cancel ID` 取消工作，`/model-mod:jobs --clear` 刪除目前工作區已終態的紀錄與結果。ID 可使用至少四位的唯一十六進位前綴。完成通知僅盡力提供。
