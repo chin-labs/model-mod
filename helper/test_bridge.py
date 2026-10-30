@@ -121,6 +121,9 @@ class Contract(unittest.TestCase):
         request['messages'][1]['content'][0]['content'] = [{'type': 'text', 'text': 'before'}, {'type': 'tool_reference', 'tool_name': 'a'}, {'type': 'text', 'text': 'after'}]
         history = prepare(request, {'test': 'gpt-6.1-terra'})
         self.assertEqual(history['history'][1]['output'], 'ERROR: before\nLoaded tool: a\nafter')
+        request['messages'][1]['content'][0]['content'] = [{'type': 'text', 'text': 'before\n'}, {'type': 'tool_reference', 'tool_name': 'a'}, {'type': 'text', 'text': '\nafter'}]
+        history = prepare(request, {'test': 'gpt-6.1-terra'})
+        self.assertEqual(history['history'][1]['output'], 'ERROR: before\nLoaded tool: a\nafter')
         request['messages'][1]['content'][0]['content'] = [{'type': 'unknown\n' + 'x' * 70}]
         r = self.run_bridge(request)
         self.assertIn('model-mod-http:400', r.stderr)

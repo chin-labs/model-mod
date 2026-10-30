@@ -104,10 +104,10 @@ def prepare(body, model_map):
                 result = []
                 previous_reference = False
                 for part in content:
-                    if part.get('type') == 'text' and isinstance(part.get('text'), str): result.append({'type': 'input_text', 'text': ('\n' if previous_reference and part['text'] else '') + part['text']})
+                    if part.get('type') == 'text' and isinstance(part.get('text'), str): result.append({'type': 'input_text', 'text': ('\n' if previous_reference and part['text'] and not part['text'].startswith('\n') else '') + part['text']})
                     elif part.get('type') == 'image': result.append(image(part))
                     elif part.get('type') == 'tool_reference' and isinstance(part.get('tool_name'), str) and part['tool_name']:
-                        result.append({'type': 'input_text', 'text': ('\n' if result and result[-1]['type'] == 'input_text' and result[-1]['text'] else '') + 'Loaded tool: ' + part['tool_name']})
+                        result.append({'type': 'input_text', 'text': ('\n' if result and result[-1]['type'] == 'input_text' and result[-1]['text'] and not result[-1]['text'].endswith('\n') else '') + 'Loaded tool: ' + part['tool_name']})
                     else:
                         part_type = ''.join(c for c in str(part.get('type')) if c.isprintable())[:64]
                         raise InvalidRequest('invalid tool result content (' + part_type + ')')
