@@ -175,7 +175,6 @@ export async function backgroundCommand($: EngineInterface, command: 'jobs' | 'r
     if (id && !/^[0-9a-f]{4,32}$/.test(id)) throw new Error('Invalid job ID; use at least 4 lowercase hexadecimal characters.')
     if (command !== 'jobs' && !id) throw new Error('Provide a job ID from /model-mod:jobs.')
     if (id && (all || clear)) throw new Error('Use a job ID without --all or --clear.')
-    if (all && clear) throw new Error('Use --clear without --all; it clears the current workspace only.')
     const method = command === 'jobs' ? id ? 'status' : 'list' : command
     const payload = method === 'list' ? { cwd: await $.session.cwd(), all, clear } : { id }
     const reply = await client($, c, method, payload)

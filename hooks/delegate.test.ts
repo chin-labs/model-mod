@@ -112,3 +112,11 @@ test('successful background submission starts a job without spawning foreground 
   expect(result.text).toContain('Started Codex job abcdef012345')
   expect(timer).toBe(1)
 })
+
+
+test('jobs can list all while clearing only the current workspace', async () => {
+  let payload: any
+  const $ = { plugin: { root: '/plugin' }, session: { cwd: async () => '/repo' }, process: { run: async (_argv: unknown, opts: { stdin: string }) => { payload = JSON.parse(opts.stdin); return { stdout: '{"ok":true,"jobs":[]}' } } } } as unknown as EngineInterface
+  await backgroundCommand($, 'jobs', '--all --clear', config)
+  expect(payload).toEqual({ cwd: '/repo', all: true, clear: true })
+})
