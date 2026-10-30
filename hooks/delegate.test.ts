@@ -37,7 +37,10 @@ test('stop gate settings are opt-in and invalid values use defaults', () => {
 test('stop gate skips ineligible events and preserves downstream blocks', async () => {
   let runs = 0, nexts = 0
   const gate = runStopGate
-  const $ = { ui: { status: () => {}, toast: async () => {} } } as unknown as EngineInterface
+  const $ = { plugin: { root: '/plugin' }, session: { model: async () => 'test/chat' }, clock: { after: () => ({ cancel: () => {} }) },
+    process: { run: async () => { runs++; return { exitCode: 0, stdout: JSON.stringify({ changed: true, fingerprint: 'e'.repeat(64) }) } } },
+    ui: { status: () => {}, toast: async () => {} } } as unknown as EngineInterface
+  const c = { codex: new Map([['test/chat', { account: 'test', model: 'chat', directory: '/accounts/test' }]]), accountsDir: '/accounts' }
   const e = { session_id: 'skip-test', cwd: '/repo', stop_hook_active: false }
   const next = async () => { nexts++; return {} }
   const signal = new AbortController().signal
@@ -45,15 +48,16 @@ test('stop gate skips ineligible events and preserves downstream blocks', async 
     [e, {}, false], [{ ...e, agent_id: 'agent' }, { codexStopGate: 'on' }, false],
     [{ ...e, stop_hook_active: true }, { codexStopGate: 'on' }, false],
     [{ ...e, isAborted: true }, { codexStopGate: 'on' }, false], [e, { codexStopGate: 'on' }, true],
-  ] as const) await gate($, event, next, options, async () => undefined, signal, failed)
+  ] as const) await gate($, event, next, options, async () => c, signal, failed)
   expect(nexts).toBe(5); expect(runs).toBe(0)
-  const result = await gate($, e, async () => ({ block: 'official block' }), { codexStopGate: 'on' }, async () => undefined, signal)
+  const result = await gate($, e, async () => ({ block: 'official block' }), { codexStopGate: 'on' }, async () => c, signal)
   expect(result.block).toBe('official block'); expect(runs).toBe(0)
 })
 
 test('stop gate enforces its limit, warns on unknown and protects reentry', async () => {
   let runs = 0, warnings: string[] = []
-  let release: () => void = () => {}, started: () => void = () => {}
+  const releases: (() => void)[] = []
+  let started: () => void = () => {}
   const ready = new Promise<void>(resolve => { started = resolve })
   let wait = false
   const fingerprint = 'c'.repeat(64)
@@ -66,7 +70,7 @@ test('stop gate enforces its limit, warns on unknown and protects reentry', asyn
       const req = JSON.parse(opts.stdin)
       if (req.kind === 'snapshot') return { exitCode: 0, stdout: JSON.stringify({ changed: true, fingerprint }) }
       runs++
-      if (wait) await new Promise<void>(resolve => { release = resolve; started() })
+      if (wait) await new Promise<void>(resolve => { releases.push(resolve); started() })
       return { exitCode: 0, stdout: JSON.stringify({ text: JSON.stringify({ fingerprint, verdict: 'block', needsHuman: false, findings: [{ severity: 'blocking', file: '\x1b[31mfile', summary: '\x01issue' }] }) }) }
     } } } as unknown as EngineInterface
   const e = { session_id: 'block-test', cwd: '/repo', stop_hook_active: false }
@@ -82,11 +86,28 @@ test('stop gate enforces its limit, warns on unknown and protects reentry', asyn
   const pending = gate($, { ...e, session_id: 'parallel' }, next, opts, async () => c, signal)
   await ready
   const before = runs
-  await gate($, { ...e, session_id: 'parallel' }, next, opts, async () => c, signal)
-  expect(runs).toBe(before)
-  release(); await pending
+  const parallel = gate($, { ...e, session_id: 'parallel' }, next, opts, async () => c, signal)
+  for (let i = 0; i < 20; i++) await Promise.resolve()
+  const observed = runs
+  for (const release of releases) release()
+  await Promise.all([pending, parallel])
+  expect(observed).toBe(before)
   await gate($, { ...e, session_id: 'unknown' }, next, opts, async () => { throw new Error('timeout') }, signal)
   expect(warnings.length).toBe(2)
+})
+
+test('unavailable gate and ambiguous account warn without claiming a pass', async () => {
+  let warnings = 0, runs = 0
+  const $ = { plugin: { root: '/plugin' }, session: { model: async () => 'other' }, clock: { after: () => ({ cancel: () => {} }) },
+    ui: { status: (s: string) => { expect(s).toContain('not verified'); warnings++ }, toast: async () => {} },
+    process: { run: async () => { runs++; throw new Error('unavailable') } } } as unknown as EngineInterface
+  const c = { codex: new Map([['a/chat', { account: 'a', model: 'chat', directory: '/accounts/a' }], ['b/chat', { account: 'b', model: 'chat', directory: '/accounts/b' }]]), accountsDir: '/accounts' }
+  const opts = { codexStopGate: 'on' }, signal = new AbortController().signal, next = async () => ({})
+  await runStopGate($, { session_id: 'ambiguous', cwd: '/repo', stop_hook_active: false }, next, opts, async () => c, signal)
+  expect(runs).toBe(0); expect(warnings).toBe(1)
+  c.codex.delete('b/chat')
+  await runStopGate($, { session_id: 'unavailable', cwd: '/repo', stop_hook_active: false }, next, opts, async () => c, signal)
+  expect(runs).toBe(1); expect(warnings).toBe(2)
 })
 
 test('stop gate timeout warns and retains the reentry lock until work settles', async () => {

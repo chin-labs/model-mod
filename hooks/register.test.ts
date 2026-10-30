@@ -156,6 +156,16 @@ const SSE_OK = [
   ['message_stop', {}],
 ].map(([event, data]) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`).join('')
 
+test('Stop gate preserves the downstream block and forwards active Stop', { options: { codexStopGate: 'on' } }, async ($, on) => {
+  const w = world(on, baseConfig, LOCAL, { stdout: '', code: 0 })
+  let reached = 0
+  on('classic.Stop', async () => { reached++; return { block: 'downstream block' } })
+  const stop = { session_id: 'stop-test', cwd: '/work', transcript_path: '/transcript', stop_hook_active: false } as never
+  expect((await $.classic.Stop(stop)).block).toBe('downstream block')
+  expect((await $.classic.Stop({ ...stop as object, stop_hook_active: true } as never)).block).toBe('downstream block')
+  expect(reached).toBe(2); expect(w.ran.length).toBe(0)
+})
+
 test('a model the bridge does not own goes down the chain and nothing is spawned', async ($, on) => {
   const w = world(on, { ...baseConfig, imageModel: 'gpt-image-2' }, 'claude-sonnet-5-5', { stdout: SSE_OK, code: 0 })
   await $.session.start({ cwd: '/work' } as never)
