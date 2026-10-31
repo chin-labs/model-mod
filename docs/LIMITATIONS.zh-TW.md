@@ -8,7 +8,7 @@ CLIProxyAPI 是曾測試過的一例 API 上游；Codex 登入是另一種上游
 
 ## 父 thread 隱私與清理
 
-`codexThreadReuse` 開啟時，帳號目錄中的父 rollout 含固定合成回合與工具定義（可能含 MCP 工具名稱），不含對話與系統提示；另含依網頁搜尋設定選定的固定 developer instructions。2026 年 11 月 1 日在一台 Mac 檢查帳號目錄內的 rollout、SQLite 與 log 檔，未發現對話、歷史或覆寫的 instructions；這不保證本機一定不留痕跡。內容仍會送到 OpenAI，與關閉此功能時相同。帳號目錄為私密目錄（0700）。每個工作階段的每個父 thread 都多一個短合成回合；切換設定可能建立另一個。登錄只含雜湊、thread ID 與時間，不含對話內容。閒置六小時的 TTL 由後續請求順手檢查；換父及工作階段結束時也會嘗試 `thread/delete`。這不是精確定時，也不保證刪除：失敗會在該帳號後續請求重試，已移除的帳號無法自動清理。不支援的平台或重用失敗時，bridge 會改用新的 ephemeral thread。將 `codexThreadReuse` 設為 `off` 可只使用 ephemeral thread 並避免存取登錄。
+`codexThreadReuse` 開啟時，帳號目錄中的父 rollout 含固定合成回合與工具定義（可能含 MCP 工具名稱），不含對話與系統提示；另含依網頁搜尋設定選定的固定 developer instructions。2026 年 11 月 1 日在一台 Mac 檢查帳號目錄內的 rollout、SQLite 與 log 檔，未發現對話、歷史或覆寫的 instructions；這不保證本機一定不留痕跡。內容仍會送到 OpenAI，與關閉此功能時相同。帳號目錄為私密目錄（0700）。每個工作階段的每個父 thread 都多一個短合成回合；切換設定可能建立另一個。登錄只含雜湊、thread ID、時間與數字形式的父 thread 用量，不含對話內容。不同工具清單可各有父 thread；每個工作階段與帳號最多保留四個 active 父 thread，超過時先刪除最久未使用者。閒置六小時的 TTL 由後續請求順手檢查；換父及工作階段結束時也會嘗試 `thread/delete`。這不是精確定時，也不保證刪除：失敗會在該帳號後續請求重試，已移除的帳號無法自動清理。不支援的平台或重用失敗時，bridge 會改用新的 ephemeral thread。將 `codexThreadReuse` 設為 `off` 可只使用 ephemeral thread 並避免存取登錄。
 
 ## 已測試版本
 
@@ -27,7 +27,7 @@ Marketplace 安裝已用本機 clone 與使用標準 HTTP 協定的 Git 伺服�
 - Codex 內建 shell、網路與瀏覽器工具、sleep、子代理、apps、plugins 和 goals 均已停用。patch 與檔案操作會被唯讀 sandbox 與項目白名單阻擋；項目處理方式如上述檢查所示。動態工具來自客戶端，另有上述 MCP 資源清單例外。模型會收到簡短的 developer instructions，要求只使用提供的函式工具、不使用內建 sleep、等待、協作及子代理工具，等待背景工作時結束回合；唯讀隔離的細節不會告知模型。
 - Codex 保留 `mcp__` 開頭的名稱並限制工具名稱。bridge 以 `bridge_` 加雜湊作為受影響名稱的別名，回傳時還原原名。
 - `max_tokens` 會接受但忽略；`tool_choice`、`temperature`、`top_p`、`stop_sequences`、`cache_control` 與 thinking 預算會被忽略。helper 寫出的 `model-mod-note:` 診斷行是內部標記，會被丟棄，不會顯示給使用者。不要依賴這些控制項生效。
-- `codexKeepReasoning` 預設為 `on`。bridge 使用 Codex 0.165.0 的實驗性 `experimentalRawEvents` 與 `thread/inject_items` 介面；上游可能修改這些 API，且重放尚未對真實 Codex 回合驗證。OpenAI 回傳的不透明 reasoning item 可能包含加密資料；簽章每個 item 上限 256 KiB、每次回應上限 1 MiB，超出的項目會丟棄。只保留第一段助手文字或工具呼叫之前的 reasoning；其後交錯的 reasoning 會丟棄，以維持重放順序。推理只在同一工作階段的工具往返期間保存在記憶體，重新載入或重啟後遺失。換帳號或模型可能使其失效；若輸出前被拒，會去掉推理重建請求一次。不保證與 API 路徑完全等價。
+- `codexKeepReasoning` 預設為 `on`。thread 重用的 fork 請求不保留 reasoning；若要保留，請將 `codexThreadReuse` 設為 `off`。bridge 使用 Codex 0.165.0 的實驗性 `experimentalRawEvents` 與 `thread/inject_items` 介面；上游可能修改這些 API，且重放尚未對真實 Codex 回合驗證。OpenAI 回傳的不透明 reasoning item 可能包含加密資料；簽章每個 item 上限 256 KiB、每次回應上限 1 MiB，超出的項目會丟棄。只保留第一段助手文字或工具呼叫之前的 reasoning；其後交錯的 reasoning 會丟棄，以維持重放順序。推理只在同一工作階段的工具往返期間保存在記憶體，重新載入或重啟後遺失。換帳號或模型可能使其失效；若輸出前被拒，會去掉推理重建請求一次。不保證與 API 路徑完全等價。
 - Codex 原生搜尋僅在 `codexWebSearch` 開啟且工作階段工具清單包含 WebSearch 時啟用。原生搜尋與 openPage 在 OpenAI 端執行，不受 Claude 權限的網域規則（allowed／blocked domains）限制；model-mod 不做 `allowed_domains` 的安全宣稱。查詢文字會送往 OpenAI。原生搜尋不經 Claude 逐次詢問權限，顯示的搜尋文字也會進入助手歷史。搜尋活動每次顯示為一行助手文字，不是可展開的工具結果或內建「已搜尋」區塊；該行助手文字僅在一台 Mac 的真實客戶端看過一次，且不顯示不透明的搜尋結果。Codex 不提供 mod 的 `web_search`，但保留 `generate_image` 與 `web_fetch`。Codex 使用內建圖片模型，提示詞與生成圖片內容送往 OpenAI；尺寸與品質僅作為提示詞中的請求，不保證生效；是否計入額度尚未驗證。超過 20 MiB 的圖片會被拒絕。即使 sandbox 唯讀，app-server 仍會自行把圖片寫入 `CODEX_HOME/generated_images`；取得位元組後，model-mod 嘗試不跟隨符號連結刪除該字面路徑，失敗僅記內部 note，不使呼叫失敗。輸出以 0600 權限排他建立。Codex context 預設為帳號模型目錄視窗乘以有效比例，讀不到時退回 128,000 token；明設 `contextWindow` 可覆寫。helper 將 Codex 自動壓縮門檻設在客戶端視窗之上並於內部記錄壓縮事件；這不保證完全停用 Codex 壓縮，也不會停用 model-mod 自己的壓縮。
 - 每次呼叫會啟動一個本機 helper 程序與 `codex app-server`，會增加延遲；啟動延遲尚未量測。Windows **尚未驗證**；見 [Windows 驗證清單](WINDOWS.zh-TW.md)。Codex 圖片生成僅支援 POSIX。
 - Codex 的額度與速率限制取決於你自己的訂閱；達到限制時 model-mod 不會輪替帳號。

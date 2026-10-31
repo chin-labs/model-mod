@@ -4,6 +4,9 @@ All notable changes to this project are listed here. The format follows [Keep a 
 
 ## 0.2.1 - 2026-11-01
 
+### Changed
+- Forked requests do not retain raw reasoning; disable thread reuse to allow retention.
+
 ### Added
 - Reuse a short parent thread for Codex login requests with ephemeral forks and full history replay; the option can be disabled.
 

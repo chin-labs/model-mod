@@ -12,7 +12,7 @@ mod 只替它管理的模型 ID 回答。API 路徑設定了 `models` 時，管�
 客戶端 hook -> 本機 Python helper -> codex app-server -> 你以官方 CLI 登入的 Codex 帳號
 ```
 
-hook 透過 stdin 把 Messages 請求 body 傳給 helper。helper 轉換後交給 app-server，並從 stdout 回傳 Messages SSE（非串流呼叫則回傳 JSON）。每個步驟都啟動新的程序。app-server 要求客戶端工具時，helper 中斷回合並回傳 `tool_use`；客戶端執行工具後，後續步驟會建立新 thread，重建對話與工具結果歷史，再繼續執行。你自行登入的官方 CLI 將對話內容送往 OpenAI 服務並管理登入；model-mod 不讀取、複製或轉送其憑證。Codex 的 `generate_image` 啟動獨立的一次性 app-server，啟用圖片生成、停用其他功能並使用唯讀 sandbox；它把提示詞送往 OpenAI，回傳有大小上限的圖片位元組，經驗證後排他寫檔。使用目前所選模型的帳號。Codex 不提供 `web_search`。軟隔離界線見 [Codex 登入的限制](LIMITATIONS.zh-TW.md#codex-登入的限制)。
+hook 透過 stdin 把 Messages 請求 body 傳給 helper。helper 轉換後交給 app-server，並從 stdout 回傳 Messages SSE（非串流呼叫則回傳 JSON）。每個步驟都啟動新的程序。app-server 要求客戶端工具時，helper 中斷回合並回傳 `tool_use`；客戶端執行工具後，後續步驟在可重用 thread 時從短期父 thread 建立新的 ephemeral fork，否則建立新的 ephemeral thread；接著重建對話與工具結果歷史，再繼續執行。父 thread 包含固定合成回合與工具定義，不含對話訊息或系統提示；見[父 thread 隱私與清理](LIMITATIONS.zh-TW.md#父-thread-隱私與清理)。你自行登入的官方 CLI 將對話內容送往 OpenAI 服務並管理登入；model-mod 不讀取、複製或轉送其憑證。Codex 的 `generate_image` 啟動獨立的一次性 app-server，啟用圖片生成、停用其他功能並使用唯讀 sandbox；它把提示詞送往 OpenAI，回傳有大小上限的圖片位元組，經驗證後排他寫檔。使用目前所選模型的帳號。Codex 不提供 `web_search`。軟隔離界線見 [Codex 登入的限制](LIMITATIONS.zh-TW.md#codex-登入的限制)。
 
 ## 自訂提示
 
