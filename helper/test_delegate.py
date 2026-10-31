@@ -285,9 +285,10 @@ class DelegateTest(unittest.TestCase):
         self.assertEqual(delegate.execute(dict(request)), 'hello')
         alias = self.root / 'outside-link'
         alias.symlink_to(self.root, target_is_directory=True)
-        for mode in ('delegate_root_extra', 'delegate_root_nonstring', 'delegate_root_symlink'):
+        for mode in ('delegate_root_extra', 'delegate_root_nonstring', 'delegate_root_symlink',
+                     'delegate_root_missing', 'delegate_root_string', 'delegate_root_relative'):
             self.log.unlink(missing_ok=True)
-            (self.account_dir / 'fake_config.json').write_text(json.dumps({'mode': mode, 'log': str(self.log), 'root_alias': str(alias)}))
+            (self.account_dir / 'fake_config.json').write_text(json.dumps({'mode': mode, 'log': str(self.log), 'root_alias': str(alias), 'relative_root': os.path.relpath(root)}))
             with self.assertRaisesRegex(delegate.Failure, 'sandbox'): delegate.execute(dict(request))
             self.assertFalse(any(r.get('method') == 'turn/start' for r in self.records()))
         self.mode('delegate_approval')
@@ -345,12 +346,25 @@ class DelegateTest(unittest.TestCase):
             with self.assertRaisesRegex(delegate.Failure, 'trusts project configuration'):
                 delegate.execute(dict(self.request, kind=kind, options=options, sessionId='test'))
             self.assertFalse(any(r.get('method') == 'thread/start' for r in self.records()))
+        for mode in ('delegate_layers_missing', 'delegate_layers_empty', 'delegate_layers_unknown', 'delegate_layers_boolean', 'delegate_layers_no_reason'):
+            self.mode(mode)
+            self.log.unlink(missing_ok=True)
+            message = 'trusts project configuration' if mode == 'delegate_layers_no_reason' else 'project configuration could not be verified'
+            with self.subTest(mode=mode), self.assertRaisesRegex(delegate.Failure, message):
+                delegate.execute(dict(self.request))
+            self.assertFalse(any(r.get('method') == 'thread/start' for r in self.records()))
+        (self.repo / '.codex').mkdir()
+        self.mode('delegate_approval')
+        for req in (self.request, request):
+            self.assertEqual(delegate.execute(dict(req)), 'hello')
         self.mode('delegate_project_after')
-        self.log.unlink(missing_ok=True)
-        with self.assertRaisesRegex(delegate.Failure, 'trusts project configuration'):
-            delegate.execute(dict(request))
-        self.assertTrue(any(r.get('method') == 'thread/start' for r in self.records()))
-        self.assertFalse(any(r.get('method') == 'turn/start' for r in self.records()))
+        for req in (self.request, request):
+            (self.account_dir / 'started').unlink(missing_ok=True)
+            self.log.unlink(missing_ok=True)
+            with self.assertRaisesRegex(delegate.Failure, 'trusts project configuration'):
+                delegate.execute(dict(req))
+            self.assertTrue(any(r.get('method') == 'thread/start' for r in self.records()))
+            self.assertFalse(any(r.get('method') in ('turn/start', 'review/start') for r in self.records()))
 
     def test_transfer(self):
         projects = self.root / '.claude' / 'projects'

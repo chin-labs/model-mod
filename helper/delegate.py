@@ -409,12 +409,18 @@ def validate_write_root(cwd, accounts_dir, account):
 def checked_config(app, cwd):
     result = app.request('config/read', {'includeLayers': True, 'cwd': cwd})
     layers = result.get('layers')
-    if not isinstance(layers, list): raise Failure('Codex project configuration could not be verified.')
+    if not isinstance(layers, list) or not layers: raise Failure('Codex project configuration could not be verified.')
+    layer_types = ('packagedDefaults', 'mdm', 'system', 'enterpriseManaged', 'user', 'project', 'sessionFlags',
+                   'legacyManagedConfigTomlFromFile', 'legacyManagedConfigTomlFromMdm')
     for layer in layers:
-        if not isinstance(layer, dict) or not isinstance(layer.get('name'), dict):
+        if not isinstance(layer, dict) or not isinstance(layer.get('name'), dict) or layer['name'].get('type') not in layer_types:
             raise Failure('Codex project configuration could not be verified.')
-        if layer['name'].get('type') == 'project' and not layer.get('disabledReason'):
-            raise Failure('This account trusts project configuration for this repository; remove its trust or use an untrusted account.')
+        if layer['name']['type'] == 'project':
+            reason = layer.get('disabledReason')
+            if reason is not None and not isinstance(reason, str):
+                raise Failure('Codex project configuration could not be verified.')
+            if not reason:
+                raise Failure('This account trusts project configuration for this repository; remove its trust or use an untrusted account.')
     config = result.get('config', {})
     if config.get('web_search') != 'disabled' or any(config.get('features', {}).get(f) is not False for f in FEATURES):
         raise Failure('Codex safety configuration could not be verified.')
@@ -487,9 +493,9 @@ def execute(request, own_group=True, on_spawn=None):
             raise Failure('Codex sandbox or approval policy mismatch.')
         if write:
             roots = sandbox.get('writableRoots')
-            if not isinstance(roots, list) or any(not isinstance(root, str) or os.path.realpath(root) != cwd for root in roots):
+            if not isinstance(roots, list) or any(not isinstance(root, str) or not os.path.isabs(root) or os.path.realpath(root) != cwd for root in roots):
                 raise Failure('Codex sandbox or approval policy mismatch.')
-            checked_config(app, cwd)
+        checked_config(app, cwd)
         app.thread = start.get('thread', {}).get('id')
         if not isinstance(app.thread, str) or not app.thread: raise Failure('Invalid Codex thread.')
         if request['kind'] == 'review' and not options.get('adversarial') and not options.get('gate'):
