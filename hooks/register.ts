@@ -3,8 +3,8 @@ import { update } from 'claude-code'
 import type { EnvMemo, FallbackMemo, TrackedAgent } from '../types'
 import { MessagesStream } from './sse.ts'
 import { htmlToText } from './text.ts'
-import { dismissSetupPane, menuInPane, openPane, registerPane } from './pane.tsx'
-import { delegate, backgroundCommand, transfer, runStopGate, stopGateSettings } from './delegate.ts'
+import { beginSetupPane, dismissSetupPane, menuInPane, openPane, registerPane, setupPaneClosed } from './pane.tsx'
+import { delegate, backgroundCommand, transfer, runStopGate, stopGateSettings, stopGateWarning, noteStopGateWarning } from './delegate.ts'
 import { renderStatus } from './status.ts'
 import type { Group, QuotaBlock, QuotaWindow, Row, StatusView } from './status.ts'
 
@@ -49,10 +49,20 @@ async function modelList($: EngineInterface, baseUrl: string, key: string): Prom
 }
 
 class Cancelled extends Error {}
-// A dialog needs the keyboard: the setup pane, if it is open, is closed first.
-async function ask($: EngineInterface, question: string, options: Parameters<EngineInterface['ui']['ask']>[1]): Promise<string> {
+// A dialog needs the keyboard: the setup pane, if it is open, is closed first (a menu it still shows ends as closed, the
+// same as Esc, so the setup that waits for it is cancelled instead of waiting for good).
+async function dialog($: EngineInterface, question: string, options: Parameters<EngineInterface['ui']['ask']>[1]): Promise<string> {
   await dismissSetupPane($)
   try { return await $.ui.ask(question, options) } catch { throw new Cancelled() }
+}
+// Esc or the close mark on the setup pane while it showed "Working…" had no menu to answer. The setup still ends there: it
+// asks nothing more and changes nothing after this point. A step already running (a model list request, a logout) finishes
+// first, and its result is not written.
+async function ensureOpen($: EngineInterface): Promise<void> { if (setupFlow && await setupPaneClosed($)) throw new Cancelled() }
+// A question of the setup flow.
+async function ask($: EngineInterface, question: string, options: Parameters<EngineInterface['ui']['ask']>[1]): Promise<string> {
+  await ensureOpen($)
+  return dialog($, question, options)
 }
 
 // The fixed menus of /model-mod:setup (an upstream, keep or change, a yes or no) are shown in a pane where the terminal can
@@ -66,22 +76,22 @@ let setupFlow: SetupFlow | undefined
 const PANE_MAX_OPTIONS = 12
 const NOT_LISTED = '請選擇列出的選項 (choose one of the listed options). '
 
-// ui.ask takes 2 to 4 options: three per page and a "More…" row that wraps to the first page.
+// ui.ask takes 2 to 4 options: three per page and a "More…" row; the last page's "More…" wraps to the first page.
 async function askPaged($: EngineInterface, question: string, options: readonly string[], header: string | undefined): Promise<string> {
   if (options.length <= 4) return ask($, question, header ? { options: [...options], header } : [...options])
   const pages = Math.ceil(options.length / 3)
   for (let page = 0;; page = (page + 1) % pages) {
     const listed = options.slice(page * 3, page * 3 + 3)
-    const more = (page + 1) * 3 < options.length || listed.length < 2
     // The header is at most 12 characters.
     const tag = ` ${page + 1}/${pages}`
-    const answer = await ask($, question, { options: more ? [...listed, 'More…'] : listed, header: (header ?? 'Choose').slice(0, 12 - tag.length) + tag })
+    const answer = await ask($, question, { options: [...listed, 'More…'], header: (header ?? 'Choose').slice(0, 12 - tag.length) + tag })
     if (answer !== 'More…') return answer
   }
 }
 
 // One of `options`, nothing else: text typed under Other is asked again instead of ending the setup.
 async function pick($: EngineInterface, question: string, options: readonly string[], opts: { header?: string; current?: string; initial?: string } = {}): Promise<string> {
+  await ensureOpen($)
   const flow = setupFlow
   if (flow?.pane && options.length <= PANE_MAX_OPTIONS) {
     // After a dialog the pane was closed; opening it again from the flow is usually not seated, and then dialogs stay.
@@ -105,7 +115,7 @@ async function pickModel($: EngineInterface, ids: readonly string[], current: st
     const options = [...labels]
     if ((page + 1) * 3 < ids.length) options.push('More…')
     if (options.length < 2) options.push('[Cancel]')
-    const choice = await ask($, `Choose a model. Current model: ${current}.`, { options, header: 'Model' })
+    const choice = await dialog($, `Choose a model. Current model: ${current}.`, { options, header: 'Model' })
     if (choice === 'More…' && (page + 1) * 3 < ids.length) continue
     const index = labels.indexOf(choice)
     if (index < 0) throw new Cancelled()
@@ -207,6 +217,7 @@ async function configurePicker($: EngineInterface, c: { baseUrl: string; key?: s
     if (Array.isArray(known)) addModels(cached, known.filter(id => typeof id === 'string' && !NOT_CHAT.test(id) && !selected.includes(id)))
     addModels(cached, selected)
     const retired = await retiredModels($)
+    if (setup) await ensureOpen($)
     const updates = [...(setup ? [{ row: urlRow!, value: baseUrl }] : []),
       { row: modelsRow, value: setup ? (all ? '' : selected.join(',')) : (c.explicitModels ? selected.join(',') : '') }]
     const written: typeof updates = []
@@ -1406,6 +1417,7 @@ async function setupCodex($: EngineInterface, c?: Config): Promise<string> {
     const ids = [...new Set((parsed.models ?? []).map(m => m.id).filter((id): id is string => typeof id === 'string' && /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(id) && !NOT_CHAT.test(id)))]
     if (!ids.length) return 'model-mod: Codex login: no chat models available; nothing changed.'
     const { selected } = await chooseModels($, ids, [], 'Codex login')
+    await ensureOpen($)
     const rows = await $.config.list()
     const row = (field: string) => rows.find(r => r.key.endsWith('.' + field) && r.provider.plugin.split('@')[0] === $.plugin.name.split('@')[0])
     const accountsRow = row('codexAccounts'), modelsRow = row('codexModels')
@@ -1608,6 +1620,7 @@ async function manageUpstreams($: EngineInterface, c: Config): Promise<string> {
     const changes: Record<string, string> = { baseUrl: '', models: '' }
     const cleared = ['fallbackModel', 'workerModel'].filter(field => removed.includes(String(pluginOptions[field] ?? '')))
     for (const field of cleared) changes[field] = ''
+    await ensureOpen($)
     const error = await removeSettings($, changes, removed)
     if (error) return 'model-mod: ' + error
     const file = await $.env.get('MODEL_MOD_CONFIG')
@@ -1622,12 +1635,14 @@ async function manageUpstreams($: EngineInterface, c: Config): Promise<string> {
   const logout = async () => {
     try { return await valid() && (await $.process.run(pathArgs('logout'), { timeoutMs: 15_000 })).exitCode === 0 } catch { return false }
   }
+  await ensureOpen($)
   if (action === 'Log out') return await logout() ? `model-mod: Codex login (${item.account}): login=missing; settings and directory retained.` : 'model-mod: logout failed; settings and directory retained.'
   if (action !== 'Remove') return 'model-mod: no changes.'
   const removeDir = await pick($, `Also delete the account directory ${item.directory}?`, ['Keep directory (recommended)', 'Delete directory'], { header: 'Upstreams' })
   let deleteDir = false
   if (removeDir === 'Delete directory') deleteDir = await pick($, `Permanently delete only ${item.directory}?`, ['Keep directory (recommended)', 'Confirm deletion'], { header: 'Upstreams' }) === 'Confirm deletion'
   let logoutFailed = false
+  await ensureOpen($)
   if (deleteDir) {
     logoutFailed = !await logout()
     try {
@@ -1635,6 +1650,8 @@ async function manageUpstreams($: EngineInterface, c: Config): Promise<string> {
       if (check.exitCode === 70) return `model-mod: logout did not complete; directory retained. Run ${loginCommand(c, item).replace(/ login$/, ' logout')} for this account, then retry removal.`
       if (check.exitCode !== 0) return 'model-mod: account directory could not be validated; settings unchanged.'
     } catch { return 'model-mod: account directory could not be validated; settings unchanged.' }
+    // The logout above could not be stopped; the pane was closed meanwhile, so nothing else is removed.
+    if (await setupPaneClosed($)) return 'model-mod: setup cancelled; the account was logged out, settings and directory unchanged.'
   }
   const removed = [...(c.codex?.entries() ?? [])].filter(([, value]) => value.account === item.account).map(([id]) => id)
   const remaining = (typeof pluginOptions.codexAccounts === 'string' ? pluginOptions.codexAccounts.split(',') : []).map(x => x.trim()).filter(x => x && x !== item.account)
@@ -1642,6 +1659,7 @@ async function manageUpstreams($: EngineInterface, c: Config): Promise<string> {
   if (!remaining.length) changes.codexModels = ''
   const cleared = ['fallbackModel', 'workerModel'].filter(field => removed.includes(String(pluginOptions[field] ?? '')))
   for (const field of cleared) changes[field] = ''
+  await ensureOpen($)
   const error = await removeSettings($, changes, removed)
   if (error) return 'model-mod: ' + error
   let note = logoutFailed ? ' Logout failed; directory deletion was attempted.' : ''
@@ -1651,13 +1669,13 @@ async function manageUpstreams($: EngineInterface, c: Config): Promise<string> {
   return `model-mod: Codex account ${item.account} removed.${cleared.length ? ' Cleared: ' + cleared.join(', ') + '.' : ''}${note}`
 }
 
-const VERSION = '0.2.2'
 // The effort and model of the newest main-loop turn (turn.step carries the effort; nothing else exposes it). A reload
 // forgets it, and status then leaves the line out.
 let lastStep: { model: string; effort?: string } | undefined
 
 // Everything /model-mod:status prints, read side by side where it can be: the Codex accounts answer in parallel (a slow
-// or failing account fills only its own block), and a status-line entry says that the reading is under way.
+// or failing account fills only its own block), and a toast says that the reading is under way. The status line is not
+// touched: a plugin has one line, and a warning another module put there (the Stop gate's) must stay on it.
 async function statusReport($: EngineInterface, e: { presentation?: { columns?: number } }, c: Config): Promise<string> {
   const captured = await capturedTools($, c)
   let open = 0
@@ -1669,11 +1687,9 @@ async function statusReport($: EngineInterface, e: { presentation?: { columns?: 
   let search: Awaited<ReturnType<typeof codexWebSearchState>> = 'on'
   let readings: CodexReading[] = []
   if (accounts.length) {
-    try { $.ui.status('model-mod: reading Codex quota…') } catch { /* no status line here */ }
-    try {
-      search = await codexWebSearchState($, c)
-      readings = await Promise.all(accounts.map(item => readCodexAccount($, c, item)))
-    } finally { try { $.ui.status(undefined) } catch { /* nothing to clear */ } }
+    try { $.ui.toast('Reading Codex quota…', { timeoutMs: 3000 }) } catch { /* no toast here */ }
+    search = await codexWebSearchState($, c)
+    readings = await Promise.all(accounts.map(item => readCodexAccount($, c, item)))
   }
   const hasApi = Boolean(c.key || c.headerFile)
   const url = hasApi ? new URL(c.baseUrl) : undefined
@@ -1686,6 +1702,9 @@ async function statusReport($: EngineInterface, e: { presentation?: { columns?: 
   if (invalidCodex.length) warnings.push(`Codex login: invalid ${invalidCodex.join(', ')}; configure these fields.`)
   const gate = stopGateSettings(pluginOptions)
   if (gate.invalid) warnings.push('Codex Stop gate: invalid gate setting; using off or the default.')
+  // The gate's own warning sits on the status line, one line shared by every message; the report keeps the newest one too.
+  const gateWarning = stopGateWarning()
+  if (gate.enabled && gateWarning) warnings.push(gateWarning)
   for (const r of readings) {
     for (const w of r.warnings) warnings.push(`Codex ${r.item.account}: ${w}`)
     if (r.tooOld) warnings.push(`Codex ${r.item.account}: codex too old; upgrade to 0.165.0 or newer`)
@@ -1745,7 +1764,7 @@ async function statusReport($: EngineInterface, e: { presentation?: { columns?: 
 
   const noColor = Boolean(await $.env.get('NO_COLOR')) || await $.env.get('TERM') === 'dumb'
   const view: StatusView = {
-    title: `model-mod ${VERSION}: picker=active${warnings.length ? `; ${warnings.length} warning${warnings.length > 1 ? 's' : ''}` : ''}`,
+    title: `model-mod 0.2.2: picker=active${warnings.length ? `; ${warnings.length} warning${warnings.length > 1 ? 's' : ''}` : ''}`,
     warnings, quota, path, groups }
   const columns = e.presentation?.columns
   return scrub(c, renderStatus(view, { columns: typeof columns === 'number' ? columns : 80, ascii: noColor, now: Math.floor(await $.clock.now() / 1000) }), false)
@@ -1810,7 +1829,11 @@ export const register: Register = (on, options) => {
     let downstream: ReturnType<typeof next> | undefined
     const forward = () => downstream ??= next(e)
     return runStopGate($, e, forward, pluginOptions, () => load($), next.signal, turnFailed).catch(() => {
-      if (stopGateSettings(pluginOptions).enabled) $.ui.status('Codex gate not verified; human review required. Run /model-mod:review --gate.')
+      if (stopGateSettings(pluginOptions).enabled) {
+        const notice = 'Codex gate not verified; human review required. Run /model-mod:review --gate.'
+        noteStopGateWarning(notice)
+        $.ui.status(notice)
+      }
       return forward()
     })
   })
@@ -2252,6 +2275,7 @@ export const register: Register = (on, options) => {
     return new Promise<{ text?: string }>(resolve => {
       const flow: SetupFlow = { pane: e.origin.kind === 'composer', detached: false, detach: () => { flow.detached = true; resolve({}) } }
       setupFlow = flow
+      beginSetupPane()
       admin($, e, 'setup').catch(() => ({ text: 'model-mod: setup cancelled, nothing changed' })).then(async reply => {
         await dismissSetupPane($)
         if (setupFlow === flow) setupFlow = undefined

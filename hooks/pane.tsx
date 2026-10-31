@@ -73,13 +73,50 @@ export type Choice = { question: string; options: readonly string[]; current?: s
 export type ChoiceResult = { picked: string } | 'closed' | 'fallback'
 let awaiting: ((result: ChoiceResult) => void) | undefined
 let seated = false
+// Set when something other than this plugin's own flow closes the setup pane (Esc, the close mark, an unload): the setup
+// that was running ends at its next question or write, even if the pane showed "Working…" and no menu was waiting.
+let closedFromOutside = false
+// True while the flow itself closes the pane (before a dialog, or when it is over): that close is no cancel.
+let closing = false
 
-// Closes the pane before a dialog, or when the setup is over. A menu still waiting is dropped, not answered.
+// A new setup starts with a pane nobody has closed yet.
+export function beginSetupPane(): void { closedFromOutside = false }
+// True once the running setup's pane was closed from outside; the setup then asks nothing more and writes nothing. The
+// close hook says so at once; the engine's list of open panes covers a close that raised no hook (an unload, a drawing that
+// threw), and answers for it when the list can be read.
+export async function setupPaneClosed($: EngineInterface): Promise<boolean> {
+  if (closedFromOutside) return true
+  if (!seated) return false
+  try { if ((await $.ui.panes()).some(pane => pane.id === CHOICE)) return false } catch { return false }
+  closedFromOutside = true
+  seated = false
+  return true
+}
+
+async function closeSetupPane($: EngineInterface): Promise<void> {
+  closing = true
+  try { await close($, CHOICE) } finally { closing = false }
+}
+
+// The setup pane is gone: Esc, the close mark, an unload, another plugin's close, or this flow's own close. A menu it showed
+// is answered 'closed'; a close the flow did not make itself also marks the running setup as cancelled.
+function setupPaneGone(): void {
+  seated = false
+  if (!closing) closedFromOutside = true
+  const waiting = awaiting
+  awaiting = undefined
+  waiting?.('closed')
+}
+
+// Closes the pane before a dialog, or when the setup is over. A menu still waiting is answered 'closed', the same as Esc:
+// its setup ends as cancelled instead of waiting for an answer that can no longer come.
 export async function dismissSetupPane($: EngineInterface): Promise<void> {
+  const waiting = awaiting
+  awaiting = undefined
+  waiting?.('closed')
   if (!seated) return
   seated = false
-  awaiting = undefined
-  await close($, CHOICE)
+  await closeSetupPane($)
 }
 
 // Shows one menu, opening the pane for it when it is not open yet (`onSeated` is called then, once the surface seats it).
@@ -96,9 +133,12 @@ export function menuInPane($: EngineInterface, choice: Choice, onSeated: () => v
           const opened = await $.ui.open({ id: CHOICE, title: 'model-mod setup', focus: true, closeOnEscape: true, holdToasts: true, rows: 16 })
           if (!opened.isPlaced) {
             if (awaiting === resolve) awaiting = undefined
-            await close($, CHOICE)
+            await closeSetupPane($)
             return resolve('fallback')
           }
+          // The menu was dropped while the pane was opening (a dialog took the keyboard, or the person closed it): the
+          // answer is already given, so the pane that just opened is closed again instead of being left empty.
+          if (awaiting !== resolve) return void await closeSetupPane($)
           seated = true
           onSeated()
         } else {
@@ -121,10 +161,7 @@ export function registerPane(on: Parameters<Register>[0]): void {
   })
 
   on('ui.close', { id: CHOICE }, async ($, e, next) => {
-    seated = false
-    const waiting = awaiting
-    awaiting = undefined
-    waiting?.('closed')
+    setupPaneGone()
     return next(e)
   })
 

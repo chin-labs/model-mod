@@ -18,7 +18,7 @@ type RunReply = { exitCode: number; stdout: string; stderr?: string; isStdoutTru
 // `wait`: mock-clock milliseconds between the last stdout piece and the first stderr piece (curl's write-out comes when the transfer ends);
 // `hang`: the child writes its pieces and then neither ends nor writes again until it is closed.
 type SpawnReply = { stdout: string | readonly string[]; stderr?: string | readonly string[]; code: number; wait?: number; hang?: boolean }
-type World = { paneSeat?: boolean; opened: string[]; closed: string[]; messages?: unknown[]; runDelay?: number; rateStarted?: boolean; system: string; killed: number; toolsList?: string[]; toolListFailsAfter?: number; toolListCalls: number /* tool.list throws from the call after this many have succeeded */; spawned: { argv: readonly string[]; input?: string; env?: Record<string, string> }[]; ran: (readonly string[])[]
+type World = { paneSeat?: boolean; openPanes: Set<string> /* what $.ui.panes() lists */; fetchDelay?: number /* mock-clock ms the model list request takes */; listDelay?: number /* the same for config.list */; opened: string[]; closed: string[]; messages?: unknown[]; runDelay?: number; rateStarted?: boolean; system: string; killed: number; toolsList?: string[]; toolListFailsAfter?: number; toolListCalls: number /* tool.list throws from the call after this many have succeeded */; spawned: { argv: readonly string[]; input?: string; env?: Record<string, string> }[]; ran: (readonly string[])[]
   ranEnv: (Record<string, string> | undefined)[]; reached: string[]; envSet: [string, string | undefined][]; messagesRead: number; failEnvSets: number; failEnvName?: string
   // The upstream's model list (null: unreachable), what the store holds, the picker rows of the settings, the requests
   // `$.http.fetch` made (the authorization header is reduced to its first 6 characters).
@@ -32,12 +32,14 @@ type World = { paneSeat?: boolean; opened: string[]; closed: string[]; messages?
 
 // Answers everything the mod reads. `reached` lists the events that fell through to the test's own bottom hooks,
 // which stand for the engine (the subscription path).
-// /model-mod:status shows a status line entry while it reads the Codex quota (the test engine needs a handler for every
-// $.ui call): it records the entries so a test can check the loading state is shown and cleared.
-function quotaLine(on: On): (string | undefined)[] {
-  const lines: (string | undefined)[] = []
-  on('ui.status', async (_$, e) => { lines.push(e.text); return { value: undefined } })
-  return lines
+// /model-mod:status shows a toast while it reads the Codex quota and never touches the status line (the test engine
+// needs a handler for every $.ui call): it records both so a test can check the loading toast and that the status line,
+// which holds other messages such as the Stop gate's warning, is left as it was.
+function quotaLine(on: On): { statuses: (string | undefined)[]; toasts: string[] } {
+  const notes = { statuses: [] as (string | undefined)[], toasts: [] as string[] }
+  on('ui.status', async (_$, e) => { notes.statuses.push(e.text); return { value: undefined } })
+  on('ui.toast', async (_$, e) => { notes.toasts.push(e.text); return { value: undefined } })
+  return notes
 }
 
 // The value of one row of the status layout ("  [!] webSearch      on").
@@ -45,7 +47,7 @@ const statusRow = (text: string, label: string) => new RegExp(`^\\s*(?:\\[!\\]\\
 
 function world(on: On, config: Record<string, unknown> | null, model: string, spawn: SpawnReply | SpawnReply[],
   run?: RunReply | ((argv: readonly string[], stdin?: string) => RunReply), env: Record<string, string> = {}): World {
-  const w: World = { opened: [], closed: [], system: 'Linux', killed: 0, spawned: [], ran: [], ranEnv: [], reached: [], envSet: [], messagesRead: 0, toolListCalls: 0, failEnvSets: 0,
+  const w: World = { openPanes: new Set(), opened: [], closed: [], system: 'Linux', killed: 0, spawned: [], ran: [], ranEnv: [], reached: [], envSet: [], messagesRead: 0, toolListCalls: 0, failEnvSets: 0,
     switchEnv: [], toolDescriptions: {}, answers: ['Keep (recommended)', 'All (recommended)'], questions: [], scopes: {}, files: {}, writes: [], saved: [], registered: [], configValues: {}, models: null, store: {}, picker: [], fetched: [], current: model, agents: [], modelRuns: [], limits: [], clock: undefined as never }
   // The test engine has no plugin.root; supply prompt files explicitly instead of built-in text.
   for (const name of ['compact', 'title', 'subagent-note', 'worker']) w.files[PROMPTS_DIR + '/' + name + '.md'] = 'TEST ' + name + ' prompt\n'
@@ -53,14 +55,20 @@ function world(on: On, config: Record<string, unknown> | null, model: string, sp
   mock.env(on, { HOME: '/fake-home', CLAUDE_CONFIG_DIR: '/fake-config', ...(config ? { MODEL_MOD_CONFIG: CONFIG_PATH } : {}), ...env })
   on('http.fetch', async (_$, e) => {
     w.fetched.push({ url: e.url, auth: e.init?.headers?.authorization?.slice(0, 6), matchesKey: e.init?.headers?.authorization?.slice(7) === KEY })
+    if (w.fetchDelay) await w.clock.sleep(w.fetchDelay)
     const status = w.httpStatuses?.shift() ?? w.httpStatus
     if (status !== undefined) return { value: { status, ok: status === 200, headers: {}, text: w.httpBody ?? '{}' } }
     if (w.models === null) throw new Error('unreachable')
     return { value: { status: 200, ok: true, headers: {}, text: JSON.stringify({ data: w.models.map(id => ({ id })) }) } }
   })
   // A pane is seated only when a test says so (w.paneSeat): otherwise setup asks its menus as dialogs, as in -p or a small terminal.
-  on('ui.open', async (_$, e) => { w.opened.push(e.id); return { value: { isPlaced: w.paneSeat === true } } })
-  on('ui.close', async (_$, e) => { w.closed.push(e.id); return { value: undefined } })
+  on('ui.open', async (_$, e) => {
+    w.opened.push(e.id)
+    if (w.paneSeat === true) w.openPanes.add(e.id)
+    return { value: { isPlaced: w.paneSeat === true } }
+  })
+  on('ui.close', async (_$, e) => { w.closed.push(e.id); w.openPanes.delete(e.id); return { value: undefined } })
+  on('ui.panes', async () => ({ value: [...w.openPanes].map(id => ({ id, title: id, isShown: true, isFocused: true, isPlaced: true })) }))
   on('store.get', async (_$, e) => ({ value: w.store[e.key] }))
   on('store.set', async (_$, e) => { w.store[e.key] = e.value; return { value: undefined } })
   on('settings.read', async (_$, e) => {
@@ -70,8 +78,11 @@ function world(on: On, config: Record<string, unknown> | null, model: string, sp
   on('session.cwd', async () => ({ value: '/work' }))
   on('fs.exists', async (_$, e) => ({ value: e.path in w.files }))
   on('fs.write', async (_$, e) => { w.files[e.path] = e.text; w.writes.push(e.path); return { value: undefined } })
-  on('config.list', async () => ({ value: [{ key: 'model', label: 'Model', kind: 'choice' as const, value: 'Default', options: ['default', 'sonnet', 'opus', 'haiku', 'best'], provider: { plugin: 'engine', tier: 'core' as const }, isLocked: false }, ...['baseUrl', 'models', 'codexAccounts', 'codexModels', 'fallbackModel', 'workerModel'].map(field => ({ key: 'model-mod.' + field, label: field,
-    kind: 'text' as const, value: w.configValues[field] ?? '', provider: { plugin: 'model-mod', tier: 'user' as const }, isLocked: false }))] }))
+  on('config.list', async () => {
+    if (w.listDelay) await w.clock.sleep(w.listDelay)
+    return { value: [{ key: 'model', label: 'Model', kind: 'choice' as const, value: 'Default', options: ['default', 'sonnet', 'opus', 'haiku', 'best'], provider: { plugin: 'engine', tier: 'core' as const }, isLocked: false }, ...['baseUrl', 'models', 'codexAccounts', 'codexModels', 'fallbackModel', 'workerModel'].map(field => ({ key: 'model-mod.' + field, label: field,
+      kind: 'text' as const, value: w.configValues[field] ?? '', provider: { plugin: 'model-mod', tier: 'user' as const }, isLocked: false }))] }
+  })
   on('config.set', async (_$, e) => {
     const refused = w.configSet?.(e.key)
     if (refused) return refused
@@ -1206,6 +1217,63 @@ test('setup: a pane that is too small hands the menu to a dialog, and the setup 
   expect(w.opened).toEqual(['model-mod-setup'])
 })
 
+// A menu waits for the pane's answer when something else needs the keyboard (here /model-mod:model finds no seat for its
+// picker and asks as a dialog). The waiting menu ends as closed, like Esc: the setup is cancelled and can be started again.
+test('setup: a dialog from another path closes the pane and cancels the menu it was waiting on', { options: { ...OPTIONS, models: LOCAL } }, async ($, on) => {
+  const w = world(on, null, LOCAL, { stdout: '', code: 0 })
+  const logged = transcript(on)
+  w.paneSeat = true; w.models = [LOCAL]; w.scopes.user = { enabledPlugins: { 'model-mod@test': true } }
+  expect(await $.command.run(SETUP)).toEqual({})
+  expect((await $.command.run(SETUP)).text).toContain('already open')
+  w.paneSeat = false; w.answers = [null]
+  await $.command.run({ command: 'model-mod:model', args: '', origin: { kind: 'composer' } } as never)
+  await flush(w)
+  expect(w.questions.map(q => q.question)).toEqual([expect.stringContaining('Choose a model')])
+  expect(w.closed).toContain('model-mod-setup')
+  expect(logged.join('\n')).toContain('setup cancelled, nothing changed')
+  expect(w.saved).toEqual([])
+  // The setup is over, so the next one is not refused.
+  w.paneSeat = true
+  expect(await $.command.run(SETUP)).toEqual({})
+  expect(w.opened.filter(id => id === 'model-mod-setup')).toHaveLength(2)
+})
+
+// Esc while the pane shows "Working…": no menu waits for it, but the setup ends at its next question or write. A step
+// already running (the model list request) finishes, and its result is neither written nor followed by a question.
+test('setup: closing the pane during "Working…" asks nothing more and writes nothing', { options: OPTIONS }, async ($, on) => {
+  const w = world(on, null, LOCAL, { stdout: '', code: 0 })
+  const logged = transcript(on)
+  w.paneSeat = true; w.models = [LOCAL, 'gpt-other']; w.scopes.user = { enabledPlugins: { 'model-mod@test': true } }
+  // The model list request is in flight when the pane closes.
+  w.fetchDelay = 5000
+  expect(await $.command.run(SETUP)).toEqual({})
+  await choose($, w, 'Compatible API server')
+  await choose($, w, 'Keep (recommended)')
+  expect(w.fetched).toHaveLength(1)
+  w.openPanes.delete('model-mod-setup') // Esc: the engine closes the pane
+  await w.clock.advance(5000); await flush(w)
+  expect(logged.join('\n')).toContain('setup cancelled, nothing changed')
+  expect(w.questions).toEqual([]); expect(w.saved).toEqual([]); expect(w.store).toEqual({}); expect(w.opened).toEqual(['model-mod-setup'])
+  // The last menu is answered and the settings are being read when the pane closes: nothing is written.
+  w.fetchDelay = 0; w.listDelay = 5000; logged.length = 0
+  expect(await $.command.run(SETUP)).toEqual({})
+  await choose($, w, 'Compatible API server')
+  await choose($, w, 'Keep (recommended)')
+  await choose($, w, 'All (recommended)')
+  w.openPanes.delete('model-mod-setup') // Esc: the engine closes the pane
+  await w.clock.advance(5000); await flush(w)
+  expect(logged.join('\n')).toContain('setup cancelled, nothing changed')
+  expect(w.questions).toEqual([]); expect(w.saved).toEqual([]); expect(w.store).toEqual({})
+  // A setup started afterwards runs in full: the closed pane is forgotten.
+  w.listDelay = 0; logged.length = 0
+  expect(await $.command.run(SETUP)).toEqual({})
+  await choose($, w, 'Compatible API server')
+  await choose($, w, 'Keep (recommended)')
+  await choose($, w, 'All (recommended)')
+  expect(logged.join('\n')).toContain('2 local models selected')
+  expect(w.saved).toEqual([{ key: 'model-mod.baseUrl', value: OPTIONS.baseUrl }, { key: 'model-mod.models', value: '' }])
+})
+
 test('setup: the bridge never gets a pane', { options: OPTIONS }, async ($, on) => {
   const w = world(on, null, LOCAL, { stdout: '', code: 0 })
   w.paneSeat = true; w.models = [LOCAL]; w.scopes.user = { enabledPlugins: { 'model-mod@test': true } }
@@ -1463,7 +1531,7 @@ test('Codex status: windows, credits and plan show remaining quota', { options: 
 })
 
 // Two Codex accounts: `main` is out of 5h quota and says why, `other` cannot be read. The command asks for the quota
-// of both side by side, shows a status line entry while it waits, and one account failing does not hide the other.
+// of both side by side, shows a toast while it waits, and one account failing does not hide the other.
 const TWO_ACCOUNTS = { ...CODEX_OPTIONS, codexAccounts: 'main,other' }
 const twoAccountRuns = (argv: readonly string[]) => {
   const other = argv.join(' ').includes('/accounts/other')
@@ -1473,7 +1541,7 @@ const twoAccountRuns = (argv: readonly string[]) => {
 }
 
 test('Codex status: an account that cannot be read does not hide the others; a limited one says why', { options: TWO_ACCOUNTS }, async ($, on) => {
-  const entries = quotaLine(on)
+  const notes = quotaLine(on)
   world(on, null, CODEX_MODEL, { stdout: SSE_OK, code: 0 }, twoAccountRuns)
   const text = (await $.command.run({ command: 'model-mod:status', args: '', origin: { kind: 'composer' }, presentation: { columns: 80, isFullscreen: false } } as never)).text
   const lines = text.split('\n')
@@ -1486,7 +1554,23 @@ test('Codex status: an account that cannot be read does not hide the others; a l
   expect(lines[other]).toMatch(/^\[!\] /)
   expect(lines[other + 1]).toContain('無法取得: rate-limit request failed (exit 1)')
   expect(Math.max(...lines.map(l => [...l].length))).toBeLessThanOrEqual(80)
-  expect(entries[0]).toContain('reading Codex quota'); expect(entries.at(-1)).toBeUndefined()
+  expect(notes.toasts).toEqual(['Reading Codex quota…']); expect(notes.statuses).toEqual([])
+})
+
+// The status line has one entry per plugin: reading the quota must neither clear it nor replace it, so the Stop gate's
+// warning stays on it. The report lists that warning too, since the line is all the gate has.
+test('status: the Stop gate warning stays on the status line and is listed in WARNINGS', { options: { ...TWO_ACCOUNTS, codexStopGate: 'on' } }, async ($, on) => {
+  const notes = quotaLine(on)
+  world(on, null, CODEX_MODEL, { stdout: SSE_OK, code: 0 }, twoAccountRuns)
+  on('classic.Stop', async () => ({}))
+  const run = () => $.command.run({ command: 'model-mod:status', args: '', origin: { kind: 'composer' }, presentation: { columns: 80, isFullscreen: false } } as never)
+  expect((await run()).text).not.toContain('Codex gate')
+  // The test engine has no plugin root, so the gate cannot run its helper and warns that it did not verify.
+  await $.classic.Stop({ session_id: 'gate-warning', cwd: '/work', transcript_path: '/transcript', stop_hook_active: false } as never)
+  expect(notes.statuses).toHaveLength(1); expect(notes.statuses[0]).toContain('Codex gate not passed or not verified')
+  const text = (await run()).text
+  expect(notes.statuses).toHaveLength(1)
+  expect(text).toMatch(/WARNINGS[\s\S]*Codex gate not passed or not verified/)
 })
 
 test('Codex status: the three helper reads of an account start together', { options: CODEX_OPTIONS }, async ($, on) => {
@@ -2185,10 +2269,12 @@ test('web_fetch classifies embedded IPv4 addresses in DNS answers', () => {
 test('setup: a menu with more than four rows is asked page by page and Back stays reachable', { options: { ...CODEX_OPTIONS, codexAccounts: 'main,b,c,d' } }, async ($, on) => {
   const w = world(on, null, CODEX_MODEL, { stdout: '', code: 0 }, () => ({ exitCode: 0, stdout: '{}' }))
   w.chooseUpstream = true
-  w.answers = ['Manage configured upstreams', 'More…', 'Back']
+  // The last page's "More…" wraps to the first page, so the list can be walked round more than once.
+  w.answers = ['Manage configured upstreams', 'More…', 'More…', 'More…', 'Back']
   expect((await $.command.run({ ...SETUP, origin: { kind: 'bridge' } } as never)).text).toContain('no changes')
   expect(w.opened).toEqual([])
-  expect(w.questions.map(q => q.header)).toEqual(['Upstream', 'Upstream 1/2', 'Upstream 2/2'])
+  expect(w.questions.map(q => q.header)).toEqual(['Upstream', 'Upstream 1/2', 'Upstream 2/2', 'Upstream 1/2', 'Upstream 2/2'])
   expect(w.questions[1]!.labels).toHaveLength(4); expect(w.questions[1]!.labels.at(-1)).toBe('More…')
-  expect(w.questions[2]!.labels.at(-1)).toBe('Back')
+  expect(w.questions[2]!.labels).toContain('Back'); expect(w.questions[2]!.labels.at(-1)).toBe('More…')
+  expect(w.questions[3]!.labels).toEqual(w.questions[1]!.labels)
 })

@@ -214,16 +214,23 @@ type StopResult = { block?: string; preventContinuation?: boolean; stopReason?: 
 const gateRunning = new Set<string>()
 const gateBlocks = new Map<string, number>()
 const gateNotified = new Set<string>()
+// The newest warning the Stop gate put on the status line since this module loaded. The status line has one entry per
+// plugin, so /model-mod:status lists this one too instead of leaving the warning to a line that anything can replace.
+let gateWarning: string | undefined
+export function stopGateWarning(): string | undefined { return gateWarning }
+export function noteStopGateWarning(text: string | undefined): void { gateWarning = text }
 export async function runStopGate($: EngineInterface, e: StopEvent, next: () => Promise<StopResult>, options: Record<string, unknown>, config: () => Promise<DelegateConfig | undefined>, signal: AbortSignal, turnFailed = false): Promise<StopResult> {
   const warning = 'Codex gate not passed or not verified; human review required. Run /model-mod:review --gate.'
   const settings = stopGateSettings(options)
   if (settings.enabled && e.agent_id === undefined && e.stop_hook_active && e.session_id && (gateBlocks.get(e.session_id) ?? 0) > 0 && !gateNotified.has(e.session_id)) {
     gateNotified.add(e.session_id)
-    try { $.ui.status('Codex gate: changes were not re-reviewed after the block.') } catch { /* status is best effort */ }
+    gateWarning = 'Codex gate: changes were not re-reviewed after the block.'
+    try { $.ui.status(gateWarning) } catch { /* status is best effort */ }
   }
   if (!settings.enabled || e.agent_id !== undefined || e.stop_hook_active || e.isAborted || e.error || turnFailed || signal.aborted || !e.session_id) return next()
   if (gateRunning.has(e.session_id)) {
-    try { $.ui.status('Codex gate not verified (previous gate still running).') } catch { /* status is best effort */ }
+    gateWarning = 'Codex gate not verified (previous gate still running).'
+    try { $.ui.status(gateWarning) } catch { /* status is best effort */ }
     return next()
   }
   gateRunning.add(e.session_id)
@@ -249,6 +256,7 @@ export async function runStopGate($: EngineInterface, e: StopEvent, next: () => 
       retainLock = true
       void operation.finally(() => gateRunning.delete(e.session_id)).catch(() => undefined)
     }
+    if (result !== 'skip' && result.verdict === 'pass') gateWarning = undefined
     if (result === 'skip' || result.verdict === 'pass') return downstream
     if (result.verdict === 'block' && (gateBlocks.get(e.session_id) ?? 0) < settings.blocks) {
       gateBlocks.set(e.session_id, (gateBlocks.get(e.session_id) ?? 0) + 1)
@@ -256,9 +264,11 @@ export async function runStopGate($: EngineInterface, e: StopEvent, next: () => 
       return { ...downstream, block: gateBlockReason(result) }
     }
     const notice = result.reason ? warning + ' ' + result.reason : warning
+    gateWarning = notice
     try { $.ui.status(notice); await $.ui.toast(notice) } catch { /* status is best effort */ }
     return downstream
   } catch {
+    gateWarning = warning
     try { $.ui.status(warning); await $.ui.toast(warning) } catch { /* status is best effort */ }
     return downstream ?? {}
   } finally { if (!retainLock) gateRunning.delete(e.session_id) }
