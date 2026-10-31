@@ -62,7 +62,7 @@ SDK 與 `-p` 的呼叫端必須檢查結果文字是否以 `model-mod:` 開頭�
 
 - 真實客戶端的 setup 與 Remote Control 尚未端到端驗證。在一台 Mac（Claude Code 2.1.316、Codex 0.166.0、單一帳號）上以手動方式檢查過前景 review 與 rescue、Ctrl+C 與 Esc 中斷，以及發起工作的 session 內的完成 toast。
 - Windows 整體尚未驗證；請使用 [Windows 驗證清單](WINDOWS.zh-TW.md)。
-- setup pane 與 status 版面只在一台 Mac 的終端機客戶端（Claude Code 2.1.316）檢查過。Remote Control、桌面 app 與 VS Code 尚未驗證，pane 內以方向鍵選取也未用自動化終端機操作過（驗證的是 Tab、Enter 與 Esc）。
+- setup pane 與 status 版面只在一台 Mac 的終端機客戶端（Claude Code 2.1.316）檢查過。Remote Control、桌面 app 與 VS Code 尚未驗證，pane 內以方向鍵選取也未用自動化終端機操作過（驗證的是 Tab、Enter 與 Esc）。Esc 無法中止已在進行的步驟（模型清單請求、帳號登出）：該步驟會跑完，之後 setup 不再提問，也不寫入任何設定。
 - hook 時間預算、重載行為及 `$.store` 權限尚未驗證。
 - 實驗性 reasoning 重放尚未驗證：兩個含工具往返的真實回合沒有報錯，但逐字稿中沒有出現 thinking 區塊。真實的圖片生成與原生搜尋在單一帳號上各檢查過一次。
 - 真實 review 是否嚴格遵守 Stop gate 所依賴的 `outputSchema` 尚未驗證；真實 Codex 的 pass、block、unknown 結果各觀察到一次。

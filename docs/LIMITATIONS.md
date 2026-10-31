@@ -60,7 +60,7 @@ These behaviors have not been verified. Do not assume they work.
 
 - Real-client setup and Remote Control have not been verified end to end. Manual checks on one Mac (Claude Code 2.1.316, Codex 0.166.0, one account) covered foreground review and rescue, Ctrl+C and Esc interruption, and completion toasts in the originating session.
 - Windows as a whole is unverified; use the [Windows checklist](WINDOWS.md).
-- The setup pane and the status layout were checked on one Mac in the terminal client (Claude Code 2.1.316) only. Remote Control, the desktop app and VS Code are unverified, and arrow-key selection in the pane was not driven in an automated terminal (Tab, Enter and Esc were).
+- The setup pane and the status layout were checked on one Mac in the terminal client (Claude Code 2.1.316) only. Remote Control, the desktop app and VS Code are unverified, and arrow-key selection in the pane was not driven in an automated terminal (Tab, Enter and Esc were). Esc cannot stop a step that is already running (a model list request, an account logout): it finishes, and setup then asks nothing more and writes nothing.
 - Hook time budgets, reload behavior and `$.store` permissions are unverified.
 - Experimental reasoning replay is unverified: two real turns with tool exchanges ran without errors, but no thinking blocks appeared in the transcript. Real image generation and native search were checked once on one account.
 - Strict adherence to review `outputSchema`, which the Stop gate depends on, is unverified; pass, block and unknown results were each observed once with a real Codex.
