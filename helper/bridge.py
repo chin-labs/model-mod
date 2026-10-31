@@ -209,6 +209,7 @@ class App:
         if window is not None:
             argv.extend(['-c', 'model_auto_compact_token_limit=' + str((window * 11 + 9) // 10)])
         for feature in FEATURES: argv.extend(['--disable', feature])
+        self.launch_args = argv
         self.cwd = cwd
         self.deadline = time.monotonic() + getattr(args, 'max_seconds', 900)
         self.idle_seconds = getattr(args, 'idle_seconds', 300)
@@ -385,13 +386,21 @@ def messages(args, app, prepared, cwd):
     if app.web_search == 'live': instructions = instructions.replace('Use only the provided function tools.', 'Use the provided function tools and native web search.')
     params = {'model': p['model'], 'cwd': cwd, 'sandbox': 'read-only', 'approvalPolicy': 'never', 'ephemeral': True, 'baseInstructions': p['system'], 'developerInstructions': instructions, 'dynamicTools': p['tools']}
     if not args.no_keep_reasoning: params['experimentalRawEvents'] = True
-    try:
-        result = app.request('thread/start', params)
-    except BridgeError:
-        if args.no_keep_reasoning: raise
-        note('Codex login: raw reasoning unavailable')
-        params.pop('experimentalRawEvents', None)
-        result = app.request('thread/start', params)
+    result = None
+    if args.reuse_session and os.name == 'posix':
+        try:
+            import thread_reuse
+            result = thread_reuse.fork(app, args, args.reuse_session, params)
+        except (OSError, ValueError, TypeError, KeyError, BridgeError):
+            note('Codex login: thread reuse unavailable; using a new thread')
+    if result is None:
+        try:
+            result = app.request('thread/start', params)
+        except BridgeError:
+            if args.no_keep_reasoning: raise
+            note('Codex login: raw reasoning unavailable')
+            params.pop('experimentalRawEvents', None)
+            result = app.request('thread/start', params)
     try:
         thread_id = result['thread']['id']
         if not isinstance(thread_id, str) or str(uuid.UUID(thread_id)) != thread_id.lower(): raise ValueError()
@@ -660,16 +669,20 @@ def main():
         return 78
     parser = argparse.ArgumentParser(prog='bridge')
     subs = parser.add_subparsers(dest='command', required=True)
-    for name in ('messages', 'rate-limits', 'account-info', 'check', 'models', 'windows', 'prepare-home', 'validate-home', 'can-remove-home', 'device-login', 'logout', 'remove-home', 'cleanup-home'):
+    for name in ('messages', 'rate-limits', 'account-info', 'check', 'models', 'windows', 'prepare-home', 'validate-home', 'can-remove-home', 'device-login', 'logout', 'remove-home', 'cleanup-home', 'cleanup-threads'):
         sub = subs.add_parser(name)
         sub.add_argument('--codex-home', required=True)
         sub.add_argument('--codex-bin', default='codex')
         if name in ('prepare-home', 'validate-home', 'can-remove-home', 'remove-home', 'cleanup-home', 'device-login', 'logout'):
             sub.add_argument('--accounts-dir', required=True)
             sub.add_argument('--account', required=True)
+        if name == 'cleanup-threads':
+            sub.add_argument('--reuse-session', required=True)
+            sub.add_argument('--cleanup-model', required=True)
         if name == 'messages':
             sub.add_argument('--web-search', action='store_true')
             sub.add_argument('--no-keep-reasoning', action='store_true')
+            sub.add_argument('--reuse-session')
             sub.add_argument('--service-tier', choices=('default', 'priority'), default='default')
             sub.add_argument('--model-map', action='append', default=[])
             sub.add_argument('--idle-seconds', type=float, default=300)
@@ -782,7 +795,12 @@ def main():
                 app = App(args, cwd)
                 try:
                     app.initialize()
-                    if args.command == 'models':
+                    if args.command == 'cleanup-threads':
+                        if os.name == 'posix':
+                            import thread_reuse
+                            thread_reuse.end_session(app, args, args.reuse_session)
+                        print('{}', flush=True)
+                    elif args.command == 'models':
                         models, cursor, seen = [], None, set()
                         while True:
                             page = app.request('model/list', {'cursor': cursor, 'includeHidden': False})

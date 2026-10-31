@@ -4,6 +4,10 @@
 
 This page lists where your models differ from a subscription model, what has not been verified, and which Claude Code requests can still reach your subscription. It applies to models routed by model-mod; subscription models keep Claude Code's normal route. CLIProxyAPI is one tested API upstream example; Codex login is a separate upstream. See the [README](../README.md) for setup.
 
+## Parent thread privacy and cleanup
+
+With `codexThreadReuse` on, the parent rollout in the account directory contains a fixed synthetic turn and tool definitions (which may include MCP tool names), but not conversation messages or system prompts. It also contains fixed developer instructions selected by the web-search setting. The account directory is private (0700). Each session incurs one extra short synthetic turn per parent; switching settings can create another. The registry holds hashes, thread IDs and timestamps, not conversation content. A six-hour idle TTL is checked opportunistically on later requests; replacement and session end also attempt `thread/delete`. This is not a precise timer or a deletion guarantee: failures are retried on later requests to that account, and removed accounts cannot be cleaned automatically. On unsupported platforms or when reuse fails, the bridge uses a new ephemeral thread. Set `codexThreadReuse` to `off` to use only ephemeral threads and avoid the registry.
+
 ## Tested versions
 
 Codex login and the API upstream were tested on **Claude Code 2.1.314**. The API upstream was also tested on 2.1.299 to 2.1.310; on 2.1.310, plugin loading, unit tests, turns and the update path were checked. A manual end-to-end check on one Mac used Claude Code 2.1.316 with Codex 0.166.0 (see [Not verified](#not-verified)). Other versions have not been tested, so do not assume they work. These checks used a test configuration rather than the normal secret-option flow, so they say nothing about how your key is stored (see [Not verified](#not-verified)).

@@ -54,6 +54,7 @@ The mod activates with either a valid `apiKey` or a valid combination of `codexA
 | `codexAccountsDir` | Absolute directory; default `~/.config/model-mod/accounts`, or `%APPDATA%\model-mod\accounts` on Windows (unverified). Each account has a separate subdirectory. |
 | `codexBin` | Executable name or absolute path; default `codex`. |
 | `pythonBin` | Executable name or absolute path; default `python3`. On Windows use `python` (unverified). |
+| `codexThreadReuse` | `on` (default) or `off`, case-insensitive; invalid values use `on` and appear in status. Off uses ephemeral threads and does not access the parent registry. Idle parents have an opportunistic six-hour TTL; see [privacy and cleanup](LIMITATIONS.md#parent-thread-privacy-and-cleanup). |
 | `codexKeepReasoning` | `on` (default) or `off`; invalid values use `on` and appear in status. Uses experimental APIs; real Codex replay is unverified. |
 | `codexServiceTier` | `default` (default) or `priority`; actual service tier and billing are unverified. |
 | `codexWebSearch` | `on` (default) or `off`; invalid values use `on` and appear in status. Search is disabled when WebSearch is absent from the session tool list. |

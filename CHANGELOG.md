@@ -2,6 +2,11 @@
 
 All notable changes to this project are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Every release that changes plugin code or manifest files raises the `version` in `.claude-plugin/plugin.json`; installed clients only pick up a release whose version differs from the one they have.
 
+## 0.2.1 - 2026-11-01
+
+### Added
+- Reuse a short parent thread for Codex login requests with ephemeral forks and full history replay; the option can be disabled.
+
 ## 0.2.0 - 2026-10-31
 
 ### Added

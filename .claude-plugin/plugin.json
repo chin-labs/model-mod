@@ -1,6 +1,6 @@
 {
   "name": "model-mod",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Use models from your Codex login or Messages-compatible API next to Claude Code's built-in models.",
   "author": {
     "name": "Chin"
@@ -88,6 +88,12 @@
       "type": "string",
       "title": "Prompts directory (optional)",
       "description": "Absolute path of a directory with your own compact.md, title.md, subagent-note.md and worker.md. Empty: use the plugin's prompts. A missing or unusable file is not replaced by a built-in prompt."
+    },
+    "codexThreadReuse": {
+      "type": "string",
+      "title": "Codex parent thread reuse",
+      "description": "on or off. On creates a persistent parent rollout containing fixed instructions, tool definitions and one synthetic turn; off uses ephemeral threads.",
+      "default": "on"
     },
     "codexKeepReasoning": {
       "type": "string",

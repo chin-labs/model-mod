@@ -7,6 +7,7 @@ import subprocess
 import sys
 import time
 import threading
+import uuid
 
 
 def send(value):
@@ -115,9 +116,34 @@ for line in sys.stdin:
                     sandbox = {'type': 'workspaceWrite', 'writableRoots': roots, 'networkAccess': False, 'excludeTmpdirEnvVar': True, 'excludeSlashTmp': True}
                     if mode == 'delegate_root_missing': del sandbox['writableRoots']
             if mode == 'delegate_network': sandbox['networkAccess'] = True
-            send({'id': ident, 'result': {'thread': {'id': 'invalid' if mode == 'invalid_uuid' else '12345678-1234-4234-8234-123456789abc'}, 'approvalPolicy': 'on-request' if mode == 'delegate_approval_mismatch' else 'never', 'sandbox': sandbox}})
+            thread_id = 'invalid' if mode == 'invalid_uuid' else '12345678-1234-4234-8234-123456789abc'
+            if params.get('ephemeral') is False:
+                thread_id = str(uuid.uuid4())
+                with open(os.path.join(os.environ['CODEX_HOME'], 'fake-parent-' + thread_id), 'w', encoding='utf-8') as f:
+                    json.dump({'params': params, 'turns': []}, f)
+            send({'id': ident, 'result': {'thread': {'id': thread_id}, 'approvalPolicy': 'on-request' if mode == 'delegate_approval_mismatch' else 'never', 'sandbox': sandbox}})
     if method == 'thread/start' and mode == 'delegate_no_read':
         while True: time.sleep(1)
+    elif method == 'thread/fork':
+        path = os.path.join(os.environ['CODEX_HOME'], 'fake-parent-' + params.get('threadId', ''))
+        try:
+            with open(path, encoding='utf-8') as f: parent = json.load(f)
+        except (OSError, ValueError): parent = None
+        if mode == 'fork_fail' or not parent or not parent['turns'] or not params.get('ephemeral') or not params.get('excludeTurns'):
+            send({'id': ident, 'error': {'code': -32600, 'message': 'no rollout found'}})
+        else:
+            inherited = dict(parent['params'])
+            for field in ('baseInstructions', 'developerInstructions'):
+                if field in params: inherited[field] = params[field]
+            record({'forkSettings': inherited})
+            send({'id': ident, 'result': {'thread': {'id': str(uuid.uuid4()), 'forkedFromId': params['threadId']}, 'approvalPolicy': 'never', 'sandbox': {'type': 'readOnly'}}})
+    elif method == 'thread/delete':
+        path = os.path.join(os.environ['CODEX_HOME'], 'fake-parent-' + params.get('threadId', ''))
+        if mode == 'delete_fail': send({'id': ident, 'error': {'code': -32000, 'message': 'synthetic'}})
+        else:
+            try: os.unlink(path)
+            except FileNotFoundError: pass
+            send({'id': ident, 'result': {}})
     elif method == 'thread/inject_items':
         if mode == 'reasoning_inject_error' and any(item.get('type') == 'reasoning' for item in params['items']):
             send({'id': ident, 'error': {'code': -32602, 'message': 'synthetic'}})
@@ -132,8 +158,17 @@ for line in sys.stdin:
         if mode != 'transfer_timeout':
             event('externalAgentConfig/import/completed', {'importId': 'import1', 'itemTypeResults': [{'itemType': 'SESSIONS', 'failures': [], 'successes': [{'itemType': 'SESSIONS', 'source': '/different/session' if mode == 'transfer_wrong_source' else config['session_path'], 'target': 'invalid' if mode == 'transfer_invalid_id' else '12345678-1234-4234-8234-123456789abc'}]}]})
     elif method == 'turn/start':
+        parent_path = os.path.join(os.environ['CODEX_HOME'], 'fake-parent-' + params.get('threadId', ''))
+        if os.path.isfile(parent_path):
+            with open(parent_path, encoding='utf-8') as f: parent = json.load(f)
+            parent['turns'].append(params['input'])
+            with open(parent_path, 'w', encoding='utf-8') as f: json.dump(parent, f)
         items = [{'type': 'sleep'}, {'type': 'commandExecution'}] if mode == 'wait_forbidden' else [{'type': 'fileChange'}] if mode == 'forbidden_response' else ([{'type': 'sleep'}] if mode == 'wait_response' else [])
         send({'id': ident, 'result': {'turn': {'id': 'turn1', 'items': items}}})
+        if os.path.isfile(parent_path):
+            event('item/agentMessage/delta', {'delta': 'ok'})
+            event('turn/completed', {'turn': {'id': 'turn1', 'status': 'completed'}})
+            continue
         if mode in ('delegate_approval', 'gate_approval'):
             send({'id': 'approval1', 'method': 'item/commandExecution/requestApproval', 'params': {}})
             send({'id': 'approval2', 'method': 'item/fileChange/requestApproval', 'params': {}})

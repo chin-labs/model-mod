@@ -54,6 +54,7 @@ API 伺服器路徑會把工作階段送往接受 Messages 風格串流請求（
 | `codexAccountsDir` | 絕對目錄；預設 `~/.config/model-mod/accounts`，Windows 為 `%APPDATA%\model-mod\accounts`（未驗證）。每個帳號使用獨立子目錄。 |
 | `codexBin` | 執行檔名稱或絕對路徑；預設 `codex`。 |
 | `pythonBin` | 執行檔名稱或絕對路徑；預設 `python3`。Windows 請設為 `python`（未驗證）。 |
+| `codexThreadReuse` | `on`（預設）或 `off`，不分大小寫；無效值視為 `on` 並顯示於 status。關閉時使用 ephemeral thread，不存取父 thread 登錄。閒置父 thread 的 TTL 為六小時、由請求順手檢查；見[隱私與清理](LIMITATIONS.zh-TW.md#父-thread-隱私與清理)。 |
 | `codexKeepReasoning` | `on`（預設）或 `off`；無效值視為 `on` 並顯示於 status。使用實驗性 API；真實 Codex 重放尚未驗證。 |
 | `codexServiceTier` | `default`（預設）或 `priority`；實際服務層級與計費尚未驗證。 |
 | `codexWebSearch` | `on`（預設）或 `off`；無效值視為 `on` 並顯示於 status。工作階段工具清單沒有 WebSearch 時會停用搜尋。 |

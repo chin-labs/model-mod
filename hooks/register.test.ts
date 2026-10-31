@@ -1521,6 +1521,18 @@ for (const [setting, hasWebSearch, enabled, status] of [
   })
 }
 
+for (const setting of ['on', 'OFF', 'invalid', 'false'] as const) {
+  test(`Codex thread reuse: ${setting}`, { options: { ...CODEX_OPTIONS, codexThreadReuse: setting } }, async ($, on) => {
+    const w = world(on, null, CODEX_MODEL, { stdout: SSE_OK, code: 0 })
+    on('session.id', async () => ({ value: 'test-session' }))
+    await drain($.turn.step(STEP(CODEX_MODEL)))
+    expect(w.spawned[0]!.argv.includes('--reuse-session')).toBe(setting !== 'OFF')
+    const status = await $.command.run({ command: 'model-mod:status', args: '', origin: { kind: 'composer' } } as never)
+    expect(status.text).toContain('threadReuse=' + (setting === 'OFF' ? 'off' : 'on'))
+    if (setting === 'invalid' || setting === 'false') expect(status.text).toContain('invalid setting; using on')
+  })
+}
+
 for (const setting of ['on', 'off', 'invalid'] as const) {
   test(`Codex reasoning: ${setting} and provider isolation`, { options: { ...OPTIONS, ...CODEX_OPTIONS, models: LOCAL, codexKeepReasoning: setting } }, async ($, on) => {
     const makeSse = (signature: string) => [

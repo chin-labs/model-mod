@@ -196,7 +196,7 @@ async function configurePicker($: EngineInterface, c: { baseUrl: string; key?: s
 }
 
 type CodexAccount = { account: string; model: string; directory: string; window?: number }
-type Config = { codex?: Map<string, CodexAccount>; pythonBin?: string; codexBin?: string; accountsDir?: string; apiInvalid?: boolean; prompts: Prompts; promptsDir?: string; baseUrl: string; headerFile?: string; key?: string; models: string[]; toolsFile?: string; defaultWindow?: number; contextWindowExplicit?: boolean; explicitModels?: boolean; excluded?: Set<string>; codexDirectoryUnavailable?: Set<string>; imageAuto?: boolean; source?: 'options' | 'file'; maxTokens: number; effortMode: 'suffix' | 'none'; imageModel?: string; contextWindows?: Record<string, number>; sideModel?: string; keepThinking?: boolean; localTitle?: boolean; localContext?: boolean; toolSearch?: 'auto' | 'on' | 'off'; toolSearchPercent?: number; refresh?: string[]; fallbackModel?: string; fallbackPercent?: number; workerModel?: string; codexServiceTier?: 'default' | 'priority'; codexServiceTierInvalid?: boolean; codexWebSearch?: 'on' | 'off'; codexWebSearchInvalid?: boolean; codexKeepReasoning?: 'on' | 'off'; codexKeepReasoningInvalid?: boolean }
+type Config = { codex?: Map<string, CodexAccount>; pythonBin?: string; codexBin?: string; accountsDir?: string; apiInvalid?: boolean; prompts: Prompts; promptsDir?: string; baseUrl: string; headerFile?: string; key?: string; models: string[]; toolsFile?: string; defaultWindow?: number; contextWindowExplicit?: boolean; explicitModels?: boolean; excluded?: Set<string>; codexDirectoryUnavailable?: Set<string>; imageAuto?: boolean; source?: 'options' | 'file'; maxTokens: number; effortMode: 'suffix' | 'none'; imageModel?: string; contextWindows?: Record<string, number>; sideModel?: string; keepThinking?: boolean; localTitle?: boolean; localContext?: boolean; toolSearch?: 'auto' | 'on' | 'off'; toolSearchPercent?: number; refresh?: string[]; fallbackModel?: string; fallbackPercent?: number; workerModel?: string; codexServiceTier?: 'default' | 'priority'; codexServiceTierInvalid?: boolean; codexWebSearch?: 'on' | 'off'; codexWebSearchInvalid?: boolean; codexKeepReasoning?: 'on' | 'off'; codexKeepReasoningInvalid?: boolean; codexThreadReuse?: 'on' | 'off'; codexThreadReuseInvalid?: boolean }
 type Tool = { name: string; description: string; input_schema: Record<string, unknown> }
 
 let config: Config | undefined
@@ -385,6 +385,7 @@ function optionsCandidate(o: PluginOptions): Record<string, unknown> | undefined
     toolSearch: text('toolSearch') || 'auto', toolSearchPercent: number('toolSearchPercent', 10),
     codexWebSearch: ['off', 'false', '0'].includes(toggle('codexWebSearch')) ? 'off' : 'on', codexWebSearchInvalid: toggleInvalid('codexWebSearch'),
     codexKeepReasoning: ['off', 'false', '0'].includes(toggle('codexKeepReasoning')) ? 'off' : 'on', codexKeepReasoningInvalid: toggleInvalid('codexKeepReasoning'),
+    codexThreadReuse: toggle('codexThreadReuse') === 'off' ? 'off' : 'on', codexThreadReuseInvalid: o.codexThreadReuse !== undefined && !['', 'on', 'off'].includes(toggle('codexThreadReuse')),
     codexServiceTier: text('codexServiceTier') === 'priority' ? 'priority' : 'default', codexServiceTierInvalid: !['default', 'priority', ''].includes(text('codexServiceTier')), fallbackModel: text('fallbackModel'), fallbackPercent: number('fallbackPercent', 100), workerModel: text('workerModel'), promptsDir: text('promptsDir') }
 }
 
@@ -502,6 +503,7 @@ async function loadNow($: EngineInterface) {
     for (const id of retired) if (!built.codex?.has(id)) built.excluded.add(id)
     if (fromOptions && built.codexWebSearchInvalid) $.ui.status('model-mod: invalid codexWebSearch; using on.')
     if (fromOptions && built.codexKeepReasoningInvalid) $.ui.status('model-mod: invalid codexKeepReasoning; using on.')
+    if (fromOptions && built.codexThreadReuseInvalid) $.ui.status('model-mod: invalid codexThreadReuse; using on.')
     if (fromOptions && pluginOptions.codexServiceTier !== undefined && !['default', 'priority', ''].includes(String(pluginOptions.codexServiceTier))) $.ui.status('model-mod: invalid codexServiceTier; using default.')
     if (built.apiInvalid) $.ui.status('model-mod: API server apiKey contains invalid characters; configure a valid key.')
     // The models the mod switches the session to when the subscription's limit is reached (`fallbackModel`) and runs the
@@ -1382,7 +1384,7 @@ async function setupCodex($: EngineInterface, c?: Config): Promise<string> {
       try { rollbackFailed = 'deny' in await $.config.set({ key: modelsRow.key, value: oldModels }) || rollbackFailed } catch { rollbackFailed = true }
       return rollbackFailed ? 'model-mod: Codex login: account configuration failed and rollback failed; restore the previous settings in /plugin.' : 'model-mod: Codex login: account configuration refused; previous settings restored.'
     }
-    return `model-mod: Codex login (${account}): ${selected.length} models configured; dir=${accountHome}.`
+    return `model-mod: Codex login (${account}): ${selected.length} models configured; dir=${accountHome}. Parent thread reuse defaults to on; set codexThreadReuse to off for ephemeral threads only.`
   } catch (err) {
     if (err instanceof Cancelled) return 'model-mod: setup cancelled, nothing changed'
     return 'model-mod: Codex login: setup failed; check Python and Codex installation.'
@@ -1442,7 +1444,7 @@ async function codexStatus($: EngineInterface, c: Config): Promise<string[]> {
         if (typeof info.planType === 'string' && /^[a-zA-Z0-9_-]{1,40}$/.test(info.planType)) plan = info.planType
       }
     } catch { /* plan remains unavailable */ }
-    return scrub(c, `upstream=Codex login; account=${item.account}; dir=${item.directory}; python=${python}; codex=${version}; login=${login}; limits=${limits}; credits=${credits}; plan=${plan}; ordinaryUsageAllowed=${ordinary}; webSearch=${search}${c.codexWebSearchInvalid ? ' (invalid setting; using on)' : ''}; keepReasoning=${c.codexKeepReasoning ?? 'on'}${c.codexKeepReasoningInvalid ? ' (invalid setting; using on)' : ''}; serviceTier=${c.codexServiceTier ?? 'default'}${c.codexServiceTierInvalid ? ' (invalid setting; using default)' : ''}${warnings.map(w => '; warning: ' + w).join('')}`, false)
+    return scrub(c, `upstream=Codex login; account=${item.account}; dir=${item.directory}; python=${python}; codex=${version}; login=${login}; limits=${limits}; credits=${credits}; plan=${plan}; ordinaryUsageAllowed=${ordinary}; webSearch=${search}${c.codexWebSearchInvalid ? ' (invalid setting; using on)' : ''}; keepReasoning=${c.codexKeepReasoning ?? 'on'}${c.codexKeepReasoningInvalid ? ' (invalid setting; using on)' : ''}; threadReuse=${c.codexThreadReuse ?? 'on'}${c.codexThreadReuseInvalid ? ' (invalid setting; using on)' : ''}; serviceTier=${c.codexServiceTier ?? 'default'}${c.codexServiceTierInvalid ? ' (invalid setting; using default)' : ''}${warnings.map(w => '; warning: ' + w).join('')}`, false)
   }))
 }
 
@@ -1613,13 +1615,13 @@ async function admin($: EngineInterface, e: { origin: { kind: string } }, arg: '
     open = (await $.tool.list()).filter(tool => tool.mcp && !tool.name.startsWith('mcp__model-mod__') && !known.has(tool.name)).length
   }
   const codex = c.codex?.size ? await codexStatus($, c) : []
-  if (!c.key && !c.headerFile) return { text: ['model-mod 0.2.0: picker=active', ...(c.apiInvalid ? ['API server: invalid apiKey; configure a valid key'] : [])].join('; ') + (codex.length ? '\n' + codex.join('\n') : '') + codexWarning }
+  if (!c.key && !c.headerFile) return { text: ['model-mod 0.2.1: picker=active', ...(c.apiInvalid ? ['API server: invalid apiKey; configure a valid key'] : [])].join('; ') + (codex.length ? '\n' + codex.join('\n') : '') + codexWarning }
   const url = new URL(c.baseUrl)
   const loopback = loopbackHost(url.hostname)
   const warnings: string[] = []
   if (c.headerFile !== undefined && !await $.fs.exists(c.headerFile)) warnings.push('headerFile not found')
   if (!loopback && url.protocol === 'http:') warnings.push('plain http to a non-loopback host sends the API key unencrypted')
-  return { text: `model-mod 0.2.0: picker=active${warnings.map(w => `; warning: ${w}`).join('')}; host=${loopback ? url.hostname : 'remote'}; config=${c.source}; models=${c.models.length}; tools=${captured ? (c.toolsFile ? 'captured' : 'listed') : 'missing'}` +
+  return { text: `model-mod 0.2.1: picker=active${warnings.map(w => `; warning: ${w}`).join('')}; host=${loopback ? url.hostname : 'remote'}; config=${c.source}; models=${c.models.length}; tools=${captured ? (c.toolsFile ? 'captured' : 'listed') : 'missing'}` +
     `; ${promptStatus(c.prompts)}; tool search=${c.toolSearch ?? 'auto'}; MCP tools without a captured schema=${open}${open && c.refresh ? ' (/model-mod:refresh captures them)' : ''}${codex.length ? '\n' + codex.join('\n') : ''}${codexWarning}` }
 }
 
@@ -1642,6 +1644,18 @@ export const register: Register = (on, options) => {
     return next(e)
   })
   pluginOptions = options ?? {}
+  on('session.end', async ($, e, next) => {
+    const c = await load($)
+    if (c?.codexThreadReuse !== 'off' && c?.codex) {
+      await Promise.all([...c.codex.values()].map(async item => {
+        try {
+          await $.process.run([...helperArgs($, c, 'cleanup-threads', item.directory), '--reuse-session', e.sessionId, '--cleanup-model', item.model], { timeoutMs: 1000 })
+        } catch { /* best effort; later requests retry expired entries */ }
+      }))
+    }
+    return next(e)
+  })
+
   on('session.start', async ($, e, next) => {
     const c = await load($)
     if (c) {
@@ -2213,7 +2227,11 @@ export const register: Register = (on, options) => {
         // Retry-After comes back through --write-out, which curl writes to fd 2 itself: a header file opened on the stderr device
         // fails when the client hands the child a socket there. %header{} needs curl 7.84; an older curl prints nothing and the plain backoff applies.
         const searchEnabled = codex && await codexWebSearchState($, c) === 'on'
-        const call = codex ? { argv: [...helperArgs($, c, 'messages', codex.directory, codex.model, body.model), ...(searchEnabled ? ['--web-search'] : [])], env: undefined } : curlCall(c, ['-sN', '--fail-with-body', '--max-time', '900', '--speed-limit', '1', '--speed-time', String(STREAM_IDLE_SECONDS),
+        let reuseSession: string | undefined
+        if (codex && c.codexThreadReuse !== 'off') {
+          try { reuseSession = await $.session.id() } catch { /* a missing session identity disables reuse */ }
+        }
+        const call = codex ? { argv: [...helperArgs($, c, 'messages', codex.directory, codex.model, body.model), ...(searchEnabled ? ['--web-search'] : []), ...(reuseSession ? ['--reuse-session', reuseSession] : [])], env: undefined } : curlCall(c, ['-sN', '--fail-with-body', '--max-time', '900', '--speed-limit', '1', '--speed-time', String(STREAM_IDLE_SECONDS),
           '--write-out', '%{stderr}\nmodel-mod-http:%{http_code}\nmodel-mod-retry-after:%header{retry-after}\n',
           '-H', 'content-type: application/json',
           '-H', 'anthropic-version: 2023-06-01', '--data-binary', '@-', c.baseUrl + '/v1/messages'])
