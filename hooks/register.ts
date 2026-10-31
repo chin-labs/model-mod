@@ -5,6 +5,8 @@ import { MessagesStream } from './sse.ts'
 import { htmlToText } from './text.ts'
 import { openPane, registerPane } from './pane.tsx'
 import { delegate, backgroundCommand, transfer, runStopGate, stopGateSettings } from './delegate.ts'
+import { renderStatus } from './status.ts'
+import type { Group, QuotaBlock, QuotaWindow, Row, StatusView } from './status.ts'
 
 // Read legacy rows only as an extra ownership source; this mod never writes them.
 const ROW_MARK = 'Local API via model-mod'
@@ -1401,52 +1403,105 @@ async function codexWebSearchState($: EngineInterface, c: Config): Promise<'on' 
   catch { return 'blocked-by-permissions' }
 }
 
-async function codexStatus($: EngineInterface, c: Config): Promise<string[]> {
-  const search = await codexWebSearchState($, c)
+// What one Codex account answered to `check`, `rate-limits` and `account-info` (run side by side). A field the helper did not
+// answer stays undefined; `problems` are fixed phrases (never helper output) for the account that could not be read.
+type CodexReading = {
+  item: CodexAccount
+  python?: string; codex?: string; tooOld: boolean
+  login: 'ok' | 'missing' | 'unavailable'
+  primary?: CodexWindow | null; secondary?: CodexWindow | null; limitsRead: boolean
+  ordinaryUsageAllowed?: boolean; reached?: string
+  credits?: string; plan?: string
+  warnings: string[]; problems: string[]
+}
+
+async function readCodexAccount($: EngineInterface, c: Config, item: CodexAccount): Promise<CodexReading> {
+  const reading: CodexReading = { item, tooOld: false, login: 'unavailable', limitsRead: false, warnings: [], problems: [] }
+  await Promise.all([
+    (async () => {
+      try {
+        const result = await helperRun($, c, 'check', item.directory, 15_000)
+        const check = JSON.parse(result.stdout) as { pythonVersion?: unknown; codexVersion?: unknown; versionStatus?: unknown; loggedIn?: unknown; warnings?: unknown }
+        if (typeof check.pythonVersion === 'string' && /^\d+\.\d+\.\d+/.test(check.pythonVersion)) reading.python = check.pythonVersion
+        if (typeof check.codexVersion === 'string') reading.codex = /\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?/.exec(check.codexVersion)?.[0]
+        if (check.versionStatus === 'too_old' || result.exitCode === 67) reading.tooOld = true
+        if (result.exitCode === 0) reading.login = check.loggedIn === true ? 'ok' : 'missing'
+        else if (result.exitCode === 68 || result.exitCode === 69) reading.login = 'missing'
+        if (Array.isArray(check.warnings)) for (const warning of check.warnings) {
+          if (typeof warning === 'string' && /^Codex login: inspect account home file (AGENTS\.md|AGENTS\.override\.md|config\.toml|\.mcp\.json|mcp\.json) for instructions or MCP settings$/.test(warning)) reading.warnings.push(warning)
+        }
+        if (reading.login === 'unavailable' && !reading.tooOld) reading.problems.push(`login check failed (exit ${result.exitCode})`)
+      } catch { reading.problems.push('login check did not complete') }
+    })(),
+    (async () => {
+      try {
+        const result = await helperRun($, c, 'rate-limits', item.directory, 15_000)
+        if (result.exitCode !== 0) { reading.problems.push(`rate-limit request failed (exit ${result.exitCode})`); return }
+        const data = JSON.parse(result.stdout) as CodexLimits
+        reading.primary = data.primary; reading.secondary = data.secondary; reading.limitsRead = true
+        if (typeof data.ordinaryUsageAllowed === 'boolean') reading.ordinaryUsageAllowed = data.ordinaryUsageAllowed
+        if (typeof data.rateLimitReachedType === 'string' && /^[a-z_]{1,60}$/.test(data.rateLimitReachedType)) reading.reached = data.rateLimitReachedType
+        if (data.credits && typeof data.credits.hasCredits === 'boolean' && typeof data.credits.unlimited === 'boolean') {
+          reading.credits = data.credits.unlimited ? 'unlimited' : data.credits.hasCredits ? `available${typeof data.credits.balance === 'string' && /^[0-9.]+$/.test(data.credits.balance) ? ` (${data.credits.balance})` : ''}` : 'none'
+        }
+      } catch { reading.problems.push('rate-limit request did not complete') }
+    })(),
+    (async () => {
+      try {
+        const result = await helperRun($, c, 'account-info', item.directory, 15_000)
+        if (result.exitCode === 0) {
+          const info = JSON.parse(result.stdout) as { planType?: unknown }
+          if (typeof info.planType === 'string' && /^[a-zA-Z0-9_-]{1,40}$/.test(info.planType)) reading.plan = info.planType
+        }
+      } catch { /* the plan stays unknown */ }
+    })(),
+  ])
+  return reading
+}
+
+function codexAccountList(c: Config): CodexAccount[] {
   const accounts = new Map<string, CodexAccount>()
   for (const item of c.codex?.values() ?? []) accounts.set(item.account, item)
-  return Promise.all([...accounts.values()].map(async item => {
-    let python = 'unavailable', version = 'unavailable', login = 'unavailable', limits = 'unavailable', ordinary = 'unavailable', plan = 'unavailable', credits = 'unavailable'
-    const warnings: string[] = []
-    try {
-      const result = await helperRun($, c, 'check', item.directory, 15_000)
-      const check = JSON.parse(result.stdout) as { pythonVersion?: unknown; codexVersion?: unknown; versionStatus?: unknown; loggedIn?: unknown; warnings?: unknown }
-      if (typeof check.pythonVersion === 'string' && /^\d+\.\d+\.\d+/.test(check.pythonVersion)) python = check.pythonVersion
-      if (typeof check.codexVersion === 'string') version = /\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?/.exec(check.codexVersion)?.[0] ?? 'unavailable'
-      if (check.versionStatus === 'too_old' || result.exitCode === 67) version += '; codex too old; upgrade to 0.165.0 or newer'
-      if (result.exitCode === 0) login = check.loggedIn === true ? 'ok' : 'missing'
-      else if (result.exitCode === 68 || result.exitCode === 69) login = 'missing'
-      if (Array.isArray(check.warnings)) for (const warning of check.warnings) {
-        if (typeof warning === 'string' && /^Codex login: inspect account home file (AGENTS\.md|AGENTS\.override\.md|config\.toml|\.mcp\.json|mcp\.json) for instructions or MCP settings$/.test(warning)) warnings.push(warning)
-      }
-    } catch { /* one unavailable field does not stop status */ }
-    try {
-      const result = await helperRun($, c, 'rate-limits', item.directory, 15_000)
-      if (result.exitCode === 0) {
-        const data = JSON.parse(result.stdout) as CodexLimits
-        const show = (name: string, window?: CodexWindow | null) => {
-          const minutes = window?.windowDurationMins
-          const label = minutes === 300 ? '5h' : minutes === 10080 ? 'weekly' : typeof minutes === 'number' && minutes > 0 ? `${minutes}m` : name
-          const pct = typeof window?.remainingPercent === 'number' && Number.isFinite(window.remainingPercent) ? `${window.remainingPercent}% left` : 'unavailable'
-          const reset = typeof window?.resetsAt === 'number' && Number.isFinite(window.resetsAt) ? new Date(window.resetsAt * 1000).toISOString() : 'unavailable'
-          return `${label} ${pct} (resets ${reset})`
-        }
-        limits = `${show('primary', data.primary)}, ${show('secondary', data.secondary)}`
-        if (typeof data.ordinaryUsageAllowed === 'boolean') ordinary = String(data.ordinaryUsageAllowed)
-        if (data.credits && typeof data.credits.hasCredits === 'boolean' && typeof data.credits.unlimited === 'boolean') {
-          credits = data.credits.unlimited ? 'unlimited' : data.credits.hasCredits ? `available${typeof data.credits.balance === 'string' && /^[0-9.]+$/.test(data.credits.balance) ? ` (${data.credits.balance})` : ''}` : 'none'
-        }
-      }
-    } catch { /* limits remain unavailable */ }
-    try {
-      const result = await helperRun($, c, 'account-info', item.directory, 15_000)
-      if (result.exitCode === 0) {
-        const info = JSON.parse(result.stdout) as { planType?: unknown; loginMethod?: unknown }
-        if (typeof info.planType === 'string' && /^[a-zA-Z0-9_-]{1,40}$/.test(info.planType)) plan = info.planType
-      }
-    } catch { /* plan remains unavailable */ }
-    return scrub(c, `upstream=Codex login; account=${item.account}; dir=${item.directory}; python=${python}; codex=${version}; login=${login}; limits=${limits}; credits=${credits}; plan=${plan}; ordinaryUsageAllowed=${ordinary}; webSearch=${search}${c.codexWebSearchInvalid ? ' (invalid setting; using on)' : ''}; keepReasoning=${c.codexKeepReasoning ?? 'on'}${(c.codexKeepReasoning ?? 'on') === 'on' && (c.codexThreadReuse ?? 'on') === 'on' ? ' (not kept on reused threads)' : ''}${c.codexKeepReasoningInvalid ? ' (invalid setting; using on)' : ''}; threadReuse=${c.codexThreadReuse ?? 'on'}${c.codexThreadReuseInvalid ? ' (invalid setting; using on)' : ''}; serviceTier=${c.codexServiceTier ?? 'default'}${c.codexServiceTierInvalid ? ' (invalid setting; using default)' : ''}${warnings.map(w => '; warning: ' + w).join('')}`, false)
+  return [...accounts.values()]
+}
+
+// `/model-mod:refresh` still prints one line per account.
+async function codexStatus($: EngineInterface, c: Config): Promise<string[]> {
+  const search = await codexWebSearchState($, c)
+  return Promise.all(codexAccountList(c).map(async item => {
+    const r = await readCodexAccount($, c, item)
+    const show = (name: string, window?: CodexWindow | null) => {
+      const minutes = window?.windowDurationMins
+      const label = minutes === 300 ? '5h' : minutes === 10080 ? 'weekly' : typeof minutes === 'number' && minutes > 0 ? `${minutes}m` : name
+      const pct = typeof window?.remainingPercent === 'number' && Number.isFinite(window.remainingPercent) ? `${window.remainingPercent}% left` : 'unavailable'
+      const reset = typeof window?.resetsAt === 'number' && Number.isFinite(window.resetsAt) ? new Date(window.resetsAt * 1000).toISOString() : 'unavailable'
+      return `${label} ${pct} (resets ${reset})`
+    }
+    const limits = r.limitsRead ? `${show('primary', r.primary)}, ${show('secondary', r.secondary)}` : 'unavailable'
+    const version = (r.codex ?? 'unavailable') + (r.tooOld ? '; codex too old; upgrade to 0.165.0 or newer' : '')
+    return scrub(c, `upstream=Codex login; account=${item.account}; dir=${item.directory}; python=${r.python ?? 'unavailable'}; codex=${version}; login=${r.login}; limits=${limits}; credits=${r.credits ?? 'unavailable'}; plan=${r.plan ?? 'unavailable'}; ordinaryUsageAllowed=${r.ordinaryUsageAllowed === undefined ? 'unavailable' : String(r.ordinaryUsageAllowed)}; webSearch=${search}${c.codexWebSearchInvalid ? ' (invalid setting; using on)' : ''}; keepReasoning=${c.codexKeepReasoning ?? 'on'}${(c.codexKeepReasoning ?? 'on') === 'on' && (c.codexThreadReuse ?? 'on') === 'on' ? ' (not kept on reused threads)' : ''}${c.codexKeepReasoningInvalid ? ' (invalid setting; using on)' : ''}; threadReuse=${c.codexThreadReuse ?? 'on'}${c.codexThreadReuseInvalid ? ' (invalid setting; using on)' : ''}; serviceTier=${c.codexServiceTier ?? 'default'}${c.codexServiceTierInvalid ? ' (invalid setting; using default)' : ''}${r.warnings.map(w => '; warning: ' + w).join('')}`, false)
   }))
+}
+
+// The quota block of one Codex account. A value the account did not report is left out, never guessed.
+function codexQuota(r: CodexReading): QuotaBlock {
+  const window = (name: string, w?: CodexWindow | null): QuotaWindow | undefined => {
+    if (!w) return undefined
+    const minutes = w.windowDurationMins
+    const label = minutes === 300 ? '5h' : minutes === 10080 ? 'weekly' : typeof minutes === 'number' && minutes > 0 ? `${minutes}m` : name
+    const left = typeof w.remainingPercent === 'number' && Number.isFinite(w.remainingPercent) ? w.remainingPercent : undefined
+    return { label, used: left === undefined ? null : Math.round(100 - left), resetsAt: typeof w.resetsAt === 'number' && Number.isFinite(w.resetsAt) ? w.resetsAt : null }
+  }
+  const windows = [window('primary', r.primary), window('secondary', r.secondary)].filter((w): w is QuotaWindow => w !== undefined)
+  const details = [r.plan ? `${r.plan} plan` : '', r.login === 'ok' ? 'logged in' : r.login === 'missing' ? 'not logged in' : 'login unknown'].filter(Boolean)
+  const block: QuotaBlock = { title: `Codex ${r.item.account}`, details, windows }
+  if (r.credits) block.credits = r.credits
+  if (r.login === 'missing') block.failed = 'not logged in; run /model-mod:setup'
+  else if (r.tooOld) block.failed = 'codex too old; upgrade to 0.165.0 or newer'
+  else if (r.problems.length) block.failed = r.problems.join('; ')
+  else if (!windows.length) block.failed = 'the account reported no rate-limit windows'
+  if (r.reached || r.ordinaryUsageAllowed === false) block.limit = r.reached ? r.reached.replace(/_/g, ' ') : ''
+  return block
 }
 
 async function removeSettings($: EngineInterface, changes: Record<string, string>, removed: string[]): Promise<string | undefined> {
@@ -1563,7 +1618,107 @@ async function manageUpstreams($: EngineInterface, c: Config): Promise<string> {
   return `model-mod: Codex account ${item.account} removed.${cleared.length ? ' Cleared: ' + cleared.join(', ') + '.' : ''}${note}`
 }
 
-async function admin($: EngineInterface, e: { origin: { kind: string } }, arg: 'setup' | 'status' | 'refresh') {
+const VERSION = '0.2.2'
+// The effort and model of the newest main-loop turn (turn.step carries the effort; nothing else exposes it). A reload
+// forgets it, and status then leaves the line out.
+let lastStep: { model: string; effort?: string } | undefined
+
+// Everything /model-mod:status prints, read side by side where it can be: the Codex accounts answer in parallel (a slow
+// or failing account fills only its own block), and a status-line entry says that the reading is under way.
+async function statusReport($: EngineInterface, e: { presentation?: { columns?: number } }, c: Config): Promise<string> {
+  const captured = await capturedTools($, c)
+  let open = 0
+  if (captured && c.toolsFile !== undefined) {
+    const known = new Set(captured.map(tool => tool.name))
+    open = (await $.tool.list()).filter(tool => tool.mcp && !tool.name.startsWith('mcp__model-mod__') && !known.has(tool.name)).length
+  }
+  const accounts = codexAccountList(c)
+  let search: Awaited<ReturnType<typeof codexWebSearchState>> = 'on'
+  let readings: CodexReading[] = []
+  if (accounts.length) {
+    try { $.ui.status('model-mod: reading Codex quota…') } catch { /* no status line here */ }
+    try {
+      search = await codexWebSearchState($, c)
+      readings = await Promise.all(accounts.map(item => readCodexAccount($, c, item)))
+    } finally { try { $.ui.status(undefined) } catch { /* nothing to clear */ } }
+  }
+  const hasApi = Boolean(c.key || c.headerFile)
+  const url = hasApi ? new URL(c.baseUrl) : undefined
+  const loopback = url !== undefined && loopbackHost(url.hostname)
+  const warnings: string[] = []
+  if (c.apiInvalid) warnings.push('API server: invalid apiKey; configure a valid key')
+  if (hasApi && c.headerFile !== undefined && !await $.fs.exists(c.headerFile)) warnings.push('headerFile not found')
+  if (url && !loopback && url.protocol === 'http:') warnings.push('plain http to a non-loopback host sends the API key unencrypted')
+  const invalidCodex = invalidCodexFields(pluginOptions)
+  if (invalidCodex.length) warnings.push(`Codex login: invalid ${invalidCodex.join(', ')}; configure these fields.`)
+  const gate = stopGateSettings(pluginOptions)
+  if (gate.invalid) warnings.push('Codex Stop gate: invalid gate setting; using off or the default.')
+  for (const r of readings) {
+    for (const w of r.warnings) warnings.push(`Codex ${r.item.account}: ${w}`)
+    if (r.tooOld) warnings.push(`Codex ${r.item.account}: codex too old; upgrade to 0.165.0 or newer`)
+  }
+
+  const quota: QuotaBlock[] = readings.map(codexQuota)
+  if (url) quota.push({ title: `API ${loopback ? url.hostname : 'remote host'}`, details: [c.key ? 'key configured' : 'header file configured'], windows: [], noData: true })
+
+  const path: Row[] = []
+  try {
+    const model = await $.session.model()
+    const item = c.codex?.get(model)
+    if (item || c.models.includes(model)) {
+      path.push({ label: 'Session model', value: model })
+      path.push({ label: 'Route', value: item ? 'Codex login' : 'API upstream' })
+      if (item) path.push({ label: 'Account', value: item.account })
+      if (lastStep?.effort && lastStep.model === model) path.push({ label: 'Effort', value: lastStep.effort })
+    } else path.push({ label: 'Session model', value: `${model} (not routed through model-mod)` })
+  } catch { /* the session model is unknown: no lines */ }
+  if (accounts.length) {
+    const reuse = c.codexThreadReuse ?? 'on'
+    let kept = false
+    if (reuse === 'on') { try { kept = threadSessions.has(await $.session.id()) } catch { /* unknown */ } }
+    path.push({ label: 'Thread reuse', value: reuse === 'on' ? (kept ? 'on; this session keeps a Codex thread' : 'on; no Codex turn in this session yet') : 'off' })
+  }
+  // No cache-hit line: neither the Codex helper nor the engine reports cache reads to the plugin.
+
+  const groups: Group[] = []
+  groups.push({ title: 'Picker', rows: [
+    { label: 'picker', value: 'active' }, { label: 'models', value: String(c.models.length) },
+    ...(url ? [{ label: 'host', value: loopback ? url.hostname : 'remote' }, { label: 'config', value: String(c.source) }] : [])] })
+  if (hasApi) {
+    groups.push({ title: 'Tools', rows: [
+      { label: 'tools', value: captured ? (c.toolsFile ? 'captured' : 'listed') : 'missing', warn: !captured },
+      { label: 'tool search', value: c.toolSearch ?? 'auto' },
+      { label: 'MCP without schema', value: `${open}${open && c.refresh ? ' (/model-mod:refresh captures them)' : ''}`, warn: open > 0 }] })
+    const files = PROMPT_NAMES.filter(name => c.prompts.files.includes(name)), missing = PROMPT_NAMES.filter(name => !c.prompts.files.includes(name))
+    groups.push({ title: 'Prompts', rows: [{ label: 'files', value: files.join(', ') || 'none' }, { label: 'missing', value: missing.join(', ') || 'none', warn: missing.length > 0 }] })
+  }
+  for (const r of readings) {
+    groups.push({ title: `Codex ${r.item.account}`, rows: [
+      { label: 'login', value: r.login, warn: r.login !== 'ok' },
+      { label: 'codex', value: r.codex ?? 'unavailable', warn: r.tooOld },
+      { label: 'python', value: r.python ?? 'unavailable' },
+      { label: 'dir', value: r.item.directory },
+      ...(r.ordinaryUsageAllowed === undefined ? [] : [{ label: 'ordinary usage', value: r.ordinaryUsageAllowed ? 'allowed' : 'not allowed', warn: !r.ordinaryUsageAllowed }])] })
+  }
+  const note = (invalid: boolean | undefined, fallback: string) => invalid ? ` (invalid setting; using ${fallback})` : ''
+  const keep = c.codexKeepReasoning ?? 'on', reuse = c.codexThreadReuse ?? 'on'
+  groups.push({ title: 'Codex settings', rows: [
+    ...(accounts.length ? [
+      { label: 'webSearch', value: search + note(c.codexWebSearchInvalid, 'on'), warn: search === 'blocked-by-permissions' },
+      { label: 'keepReasoning', value: keep + (keep === 'on' && reuse === 'on' ? ' (not kept on reused threads)' : '') + note(c.codexKeepReasoningInvalid, 'on') },
+      { label: 'threadReuse', value: reuse + note(c.codexThreadReuseInvalid, 'on') },
+      { label: 'serviceTier', value: (c.codexServiceTier ?? 'default') + note(c.codexServiceTierInvalid, 'default') }] : []),
+    { label: 'Stop gate', value: `${gate.enabled ? 'on' : 'off'}; maximum blocks ${gate.blocks}` }] })
+
+  const noColor = Boolean(await $.env.get('NO_COLOR')) || await $.env.get('TERM') === 'dumb'
+  const view: StatusView = {
+    title: `model-mod ${VERSION}: picker=active${warnings.length ? `; ${warnings.length} warning${warnings.length > 1 ? 's' : ''}` : ''}`,
+    warnings, quota, path, groups }
+  const columns = e.presentation?.columns
+  return scrub(c, renderStatus(view, { columns: typeof columns === 'number' ? columns : 80, ascii: noColor, now: Math.floor(await $.clock.now() / 1000) }), false)
+}
+
+async function admin($: EngineInterface, e: { origin: { kind: string }; presentation?: { columns?: number } }, arg: 'setup' | 'status' | 'refresh') {
   const c = await load($)
   const invalidCodex = invalidCodexFields(pluginOptions)
   const gateSettings = stopGateSettings(pluginOptions)
@@ -1609,21 +1764,7 @@ async function admin($: EngineInterface, e: { origin: { kind: string } }, arg: '
       ? `tool schemas refreshed (${after?.length ?? 0} tools${added.length ? `; new: ${added.join(', ')}` : ''}); ${prompts}.`
       : `refresh failed (exit ${run.exitCode}); ${prompts}.` }
   }
-  const captured = await capturedTools($, c)
-  let open = 0
-  if (captured && c.toolsFile !== undefined) {
-    const known = new Set(captured.map(tool => tool.name))
-    open = (await $.tool.list()).filter(tool => tool.mcp && !tool.name.startsWith('mcp__model-mod__') && !known.has(tool.name)).length
-  }
-  const codex = c.codex?.size ? await codexStatus($, c) : []
-  if (!c.key && !c.headerFile) return { text: ['model-mod 0.2.1: picker=active', ...(c.apiInvalid ? ['API server: invalid apiKey; configure a valid key'] : [])].join('; ') + (codex.length ? '\n' + codex.join('\n') : '') + codexWarning }
-  const url = new URL(c.baseUrl)
-  const loopback = loopbackHost(url.hostname)
-  const warnings: string[] = []
-  if (c.headerFile !== undefined && !await $.fs.exists(c.headerFile)) warnings.push('headerFile not found')
-  if (!loopback && url.protocol === 'http:') warnings.push('plain http to a non-loopback host sends the API key unencrypted')
-  return { text: `model-mod 0.2.1: picker=active${warnings.map(w => `; warning: ${w}`).join('')}; host=${loopback ? url.hostname : 'remote'}; config=${c.source}; models=${c.models.length}; tools=${captured ? (c.toolsFile ? 'captured' : 'listed') : 'missing'}` +
-    `; ${promptStatus(c.prompts)}; tool search=${c.toolSearch ?? 'auto'}; MCP tools without a captured schema=${open}${open && c.refresh ? ' (/model-mod:refresh captures them)' : ''}${codex.length ? '\n' + codex.join('\n') : ''}${codexWarning}` }
+  return { text: await statusReport($, e, c) }
 }
 
 export const register: Register = (on, options) => {
@@ -2179,6 +2320,7 @@ export const register: Register = (on, options) => {
       await rememberAgentModel($, e.agentId, e.model)
     }
     if (e.agentId === undefined) {
+      lastStep = { model: e.model, ...(typeof e.effort === 'string' ? { effort: e.effort } : {}) }
       try { await applyWindow($, c, e.model) } catch { /* window stays as it was */ }
     }
     if (c.excluded?.has(e.model)) return yield* failure(e, c.codexDirectoryUnavailable?.has(e.model) ? 'model is not in the allowlist; configure codexAccountsDir' : 'model is not in the allowlist')

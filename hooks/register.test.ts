@@ -32,6 +32,17 @@ type World = { messages?: unknown[]; runDelay?: number; rateStarted?: boolean; s
 
 // Answers everything the mod reads. `reached` lists the events that fell through to the test's own bottom hooks,
 // which stand for the engine (the subscription path).
+// /model-mod:status shows a status line entry while it reads the Codex quota (the test engine needs a handler for every
+// $.ui call): it records the entries so a test can check the loading state is shown and cleared.
+function quotaLine(on: On): (string | undefined)[] {
+  const lines: (string | undefined)[] = []
+  on('ui.status', async (_$, e) => { lines.push(e.text); return { value: undefined } })
+  return lines
+}
+
+// The value of one row of the status layout ("  [!] webSearch      on").
+const statusRow = (text: string, label: string) => new RegExp(`^\\s*(?:\\[!\\]\\s+)?${label} {2,}(.*)$`, 'm').exec(text)?.[1]
+
 function world(on: On, config: Record<string, unknown> | null, model: string, spawn: SpawnReply | SpawnReply[],
   run?: RunReply | ((argv: readonly string[], stdin?: string) => RunReply), env: Record<string, string> = {}): World {
   const w: World = { system: 'Linux', killed: 0, spawned: [], ran: [], ranEnv: [], reached: [], envSet: [], messagesRead: 0, toolListCalls: 0, failEnvSets: 0,
@@ -386,10 +397,11 @@ test('status hides remote hosts, warns about plain HTTP and reports a missing he
   const w = world(on, { ...baseConfig, baseUrl: 'http://upstream.example:9999' }, LOCAL, { stdout: '', code: 0 })
   const status = () => $.command.run({ command: 'model-mod:status', args: '', origin: { kind: 'composer' } } as never)
   const missing = await status()
-  expect(missing.text).toContain('picker=active; warning: headerFile not found;')
-  expect(missing.text).toContain('host=remote;')
+  expect(missing.text).toContain('model-mod 0.2.2: picker=active; 2 warnings')
+  expect(missing.text).toContain('[!] headerFile not found')
+  expect(statusRow(missing.text, 'host')).toBe('remote')
   expect(missing.text).not.toContain('upstream.example')
-  expect(missing.text).toContain('warning: plain http to a non-loopback host sends the API key unencrypted')
+  expect(missing.text).toContain('[!] plain http to a non-loopback host sends the API key unencrypted')
   w.files[baseConfig.headerFile] = ''
   expect((await status()).text).not.toContain('headerFile not found')
   // `status` decides loopback by the URL-normalised host; the config is read once per test, so the forms are checked directly.
@@ -1347,17 +1359,70 @@ test('Codex fallback: a 429 bypasses the five-minute throttle', { options: { ...
 })
 
 test('Codex status: windows, credits and plan show remaining quota', { options: { ...CODEX_OPTIONS, codexServiceTier: 'priority' } }, async ($, on) => {
+  quotaLine(on)
   const w = world(on, null, CODEX_MODEL, { stdout: SSE_OK, code: 0 }, argv => {
     if (argv.includes('account-info')) return { exitCode: 0, stdout: JSON.stringify({ loginMethod: 'chatgpt', planType: 'plus' }) }
     if (argv.includes('rate-limits')) return { exitCode: 0, stdout: JSON.stringify({ primary: { remainingPercent: 62, windowDurationMins: 300, resetsAt: 1800000000 }, secondary: { remainingPercent: 81, windowDurationMins: 10080, resetsAt: 1800003600 }, credits: { hasCredits: true, balance: '5', unlimited: false }, ordinaryUsageAllowed: true }) }
     return { exitCode: 0, stdout: '{}' }
   })
   const status = await $.command.run({ command: 'model-mod:status', args: '', origin: { kind: 'composer' } } as never)
-  expect(status.text).toContain('5h 62% left'); expect(status.text).toContain('weekly 81% left')
-  expect(status.text).toContain('credits=available (5)'); expect(status.text).toContain('plan=plus'); expect(status.text).toContain('serviceTier=priority')
+  expect(status.text).toMatch(/5h +\S+ +38% used/); expect(status.text).toMatch(/weekly +\S+ +19% used/)
+  expect(status.text).toMatch(/credits +available \(5\)/); expect(status.text).toContain('Codex main · plus plan'); expect(statusRow(status.text, 'serviceTier')).toBe('priority')
   await drain($.turn.step(STEP(CODEX_MODEL)))
   expect(w.spawned[0]!.argv).toContain('--service-tier')
   expect(w.spawned[0]!.argv).toContain('priority')
+})
+
+// Two Codex accounts: `main` is out of 5h quota and says why, `other` cannot be read. The command asks for the quota
+// of both side by side, shows a status line entry while it waits, and one account failing does not hide the other.
+const TWO_ACCOUNTS = { ...CODEX_OPTIONS, codexAccounts: 'main,other' }
+const twoAccountRuns = (argv: readonly string[]) => {
+  const other = argv.join(' ').includes('/accounts/other')
+  if (argv.includes('rate-limits')) return other ? { exitCode: 1, stdout: '' } : { exitCode: 0, stdout: JSON.stringify({ primary: { remainingPercent: 0, windowDurationMins: 300, resetsAt: 1800000000 }, secondary: { remainingPercent: 55, windowDurationMins: 10080, resetsAt: 1800003600 }, rateLimitReachedType: 'workspace_member_usage_limit_reached', ordinaryUsageAllowed: false }) }
+  if (argv.includes('account-info')) return { exitCode: 0, stdout: JSON.stringify({ loginMethod: 'chatgpt', planType: 'plus' }) }
+  return { exitCode: 0, stdout: JSON.stringify({ pythonVersion: '3.12.0', codexVersion: '0.166.0', versionStatus: 'ok', loggedIn: true }) }
+}
+
+test('Codex status: an account that cannot be read does not hide the others; a limited one says why', { options: TWO_ACCOUNTS }, async ($, on) => {
+  const entries = quotaLine(on)
+  world(on, null, CODEX_MODEL, { stdout: SSE_OK, code: 0 }, twoAccountRuns)
+  const text = (await $.command.run({ command: 'model-mod:status', args: '', origin: { kind: 'composer' }, presentation: { columns: 80, isFullscreen: false } } as never)).text
+  const lines = text.split('\n')
+  const main = lines.findIndex(l => l.includes('Codex main · plus plan'))
+  expect(lines[main]).toMatch(/^\[LIMIT\] /)
+  expect(lines[main + 1]).toMatch(/^\[LIMIT\] +5h .*100% used/)
+  expect(text).toContain('limit reached: workspace member usage limit reached')
+  expect(text).toMatch(/weekly +\S+ +45% used/)
+  const other = lines.findIndex(l => l.includes('Codex other'))
+  expect(lines[other]).toMatch(/^\[!\] /)
+  expect(lines[other + 1]).toContain('無法取得: rate-limit request failed (exit 1)')
+  expect(Math.max(...lines.map(l => [...l].length))).toBeLessThanOrEqual(80)
+  expect(entries[0]).toContain('reading Codex quota'); expect(entries.at(-1)).toBeUndefined()
+})
+
+test('Codex status: the three helper reads of an account start together', { options: CODEX_OPTIONS }, async ($, on) => {
+  quotaLine(on)
+  const w = world(on, null, CODEX_MODEL, { stdout: SSE_OK, code: 0 }, twoAccountRuns)
+  w.runDelay = 5000
+  const pending = $.command.run({ command: 'model-mod:status', args: '', origin: { kind: 'composer' } } as never)
+  for (let i = 0; i < 20; i++) await w.clock.advance(1)
+  expect(w.rateStarted).toBe(true)
+  expect(w.ran.some(argv => argv.includes('check'))).toBe(true); expect(w.ran.some(argv => argv.includes('account-info'))).toBe(true)
+  await w.clock.advance(5000)
+  expect((await pending).text).toContain('Codex main')
+})
+
+test('status: an API upstream shows no quota bar; NO_COLOR gives plain ASCII bars without escape codes', { options: { ...OPTIONS, ...CODEX_OPTIONS } }, async ($, on) => {
+  quotaLine(on)
+  world(on, null, CODEX_MODEL, { stdout: SSE_OK, code: 0 }, twoAccountRuns, { NO_COLOR: '1' })
+  const text = (await $.command.run({ command: 'model-mod:status', args: '', origin: { kind: 'composer' } } as never)).text
+  const lines = text.split('\n')
+  const api = lines.findIndex(l => l.includes('API 127.0.0.1'))
+  expect(lines[api]).toMatch(/^\[--\] /)
+  expect(lines[api + 1]).toContain('沒有額度資料')
+  expect(lines[api + 1]).not.toMatch(/% used|\[[#-]+\]/)
+  expect(text).not.toContain('\x1b')
+  expect(text).toMatch(/5h +\[#+\]/); expect(text).not.toMatch(/[█░─]/)
 })
 
 test('Codex fallback: unknown reset warns only once and does not switch', { options: { ...OPTIONS, ...CODEX_OPTIONS, fallbackModel: 'gpt-fb' } }, async ($, on) => {
@@ -1509,6 +1574,7 @@ for (const [setting, hasWebSearch, enabled, status] of [
   ['off', true, false, 'off'], ['invalid', true, true, 'on'],
 ] as const) {
   test(`Codex native search: ${setting}, permission=${hasWebSearch}`, { options: { ...CODEX_OPTIONS, codexWebSearch: setting } }, async ($, on) => {
+    quotaLine(on)
     const w = world(on, null, CODEX_MODEL, { stdout: SSE_OK, code: 0 })
     w.toolsList = [...(hasWebSearch ? ['WebSearch'] : []), 'mcp__model-mod__web_search']
     await drain($.turn.step(STEP(CODEX_MODEL)))
@@ -1516,20 +1582,21 @@ for (const [setting, hasWebSearch, enabled, status] of [
     const body = JSON.parse(w.spawned[0]!.input!) as { tools?: { name: string }[] }
     expect((body.tools ?? []).some(tool => tool.name === 'mcp__model-mod__web_search')).toBe(false)
     const result = await $.command.run({ command: 'model-mod:status', args: '', origin: { kind: 'composer' } } as never)
-    expect(result.text).toContain('webSearch=' + status)
+    expect(statusRow(result.text, 'webSearch')).toMatch(new RegExp('^' + status))
     if (setting === 'invalid') expect(result.text).toContain('invalid setting; using on')
   })
 }
 
 for (const setting of ['on', 'OFF', 'invalid', 'false'] as const) {
   test(`Codex thread reuse: ${setting}`, { options: { ...CODEX_OPTIONS, codexThreadReuse: setting } }, async ($, on) => {
+    quotaLine(on)
     const w = world(on, null, CODEX_MODEL, { stdout: SSE_OK, code: 0 })
     on('session.id', async () => ({ value: 'test-session' }))
     on('session.end', async (_$, e) => ({ sessionId: e.sessionId }))
     await drain($.turn.step(STEP(CODEX_MODEL)))
     expect(w.spawned[0]!.argv.includes('--reuse-session')).toBe(setting !== 'OFF')
     const status = await $.command.run({ command: 'model-mod:status', args: '', origin: { kind: 'composer' } } as never)
-    expect(status.text).toContain('threadReuse=' + (setting === 'OFF' ? 'off' : 'on'))
+    expect(statusRow(status.text, 'threadReuse')).toMatch(new RegExp('^' + (setting === 'OFF' ? 'off' : 'on')))
     expect(status.text.includes('not kept on reused threads')).toBe(setting !== 'OFF')
     if (setting === 'invalid' || setting === 'false') expect(status.text).toContain('invalid setting; using on')
     await $.session.end({ sessionId: 'test-session', reason: 'other' } as never)
@@ -1539,6 +1606,7 @@ for (const setting of ['on', 'OFF', 'invalid', 'false'] as const) {
 
 for (const setting of ['on', 'off', 'invalid'] as const) {
   test(`Codex reasoning: ${setting} and provider isolation`, { options: { ...OPTIONS, ...CODEX_OPTIONS, models: LOCAL, codexKeepReasoning: setting } }, async ($, on) => {
+    quotaLine(on)
     const makeSse = (signature: string) => [
       ['message_start', { message: { usage: {} } }],
       ['content_block_start', { index: 0, content_block: { type: 'thinking', thinking: '' } }],
@@ -1562,8 +1630,8 @@ for (const setting of ['on', 'off', 'invalid'] as const) {
     const apiBody = JSON.parse(w.spawned[2]!.input!)
     expect(apiBody.messages[1].content[0].type).toBe('tool_use')
     const status = await $.command.run({ command: 'model-mod:status', args: '', origin: { kind: 'composer' } } as never)
-    expect(status.text).toContain('keepReasoning=' + (setting === 'off' ? 'off' : 'on'))
-    if (setting === 'invalid') expect(status.text).toContain('invalid setting; using on')
+    expect(statusRow(status.text, 'keepReasoning')).toMatch(new RegExp('^' + (setting === 'off' ? 'off' : 'on')))
+    if (setting === 'invalid') expect(status.text.replace(/\s+/g, ' ')).toContain('invalid setting; using on')
   })
 }
 
@@ -1603,6 +1671,7 @@ test('API reasoning is never replayed to Codex', { options: { ...OPTIONS, ...COD
 })
 
 test('Codex native search stays off when the tool list cannot be read', { options: CODEX_OPTIONS }, async ($, on) => {
+  quotaLine(on)
   const w = world(on, null, CODEX_MODEL, { stdout: SSE_OK, code: 0 })
   w.toolsList = ['WebSearch']
   // The step reads the list twice for the tools it offers; the permission check is the third read.
@@ -1613,7 +1682,7 @@ test('Codex native search stays off when the tool list cannot be read', { option
   w.toolListFailsAfter = 1
   w.toolListCalls = 0
   const result = await $.command.run({ command: 'model-mod:status', args: '', origin: { kind: 'composer' } } as never)
-  expect(result.text).toContain('webSearch=blocked-by-permissions')
+  expect(statusRow(result.text, 'webSearch')).toBe('blocked-by-permissions')
 })
 
 test('transfer retains the main transcript and requires an interactive origin', { options: CODEX_OPTIONS }, async ($, on) => {
@@ -1676,6 +1745,7 @@ test('Codex login: at most four helpers run concurrently', { options: CODEX_OPTI
 })
 
 test('Codex login: status and setup preserve the separate upstream', { options: { ...CODEX_OPTIONS, apiKey: 'bad key' } }, async ($, on) => {
+  quotaLine(on)
   const w = world(on, null, CODEX_MODEL, { stdout: '', code: 0 }, argv => {
     if (argv[1] === '--version') return { exitCode: 0, stdout: argv[0] === 'python3' ? 'Python 3.12.0' : 'codex-cli 0.166.0' }
     if (argv.includes('check')) return { exitCode: 0, stdout: JSON.stringify({ pythonVersion: '3.12.0', codexVersion: '0.166.0', versionStatus: 'untested', loggedIn: true, warnings: ['untested codex version'] }) }
@@ -1683,8 +1753,9 @@ test('Codex login: status and setup preserve the separate upstream', { options: 
     return { exitCode: 0, stdout: JSON.stringify({ primary: { remainingPercent: 80, resetsAt: 1800000000 }, secondary: { remainingPercent: 70, resetsAt: 1800003600 }, ordinaryUsageAllowed: true }) }
   })
   const status = await $.command.run({ command: 'model-mod:status', args: '', origin: { kind: 'composer' } } as never)
-  expect(status.text).toContain('account=main; dir=/fake-home/.config/model-mod/accounts/main; python=3.12.0; codex=0.166.0; login=ok')
-  expect(status.text).toContain('primary 80% left'); expect(status.text).toContain('secondary 70% left')
+  expect(statusRow(status.text, 'dir')).toBe('/fake-home/.config/model-mod/accounts/main')
+  expect(statusRow(status.text, 'python')).toBe('3.12.0'); expect(statusRow(status.text, 'codex')).toBe('0.166.0'); expect(statusRow(status.text, 'login')).toBe('ok')
+  expect(status.text).toMatch(/primary +\S+ +20% used/); expect(status.text).toMatch(/secondary +\S+ +30% used/)
   expect(status.text).not.toContain('untested')
   expect(status.text).toContain('invalid apiKey')
   w.chooseUpstream = true
