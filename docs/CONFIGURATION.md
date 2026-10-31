@@ -58,7 +58,7 @@ The mod activates with either a valid `apiKey` or a valid combination of `codexA
 | `codexServiceTier` | `default` (default) or `priority`; actual service tier and billing are unverified. |
 | `codexWebSearch` | `on` (default) or `off`; invalid values use `on` and appear in status. Search is disabled when WebSearch is absent from the session tool list. |
 | `codexStopGate` | `off` (default) or `on`, case-insensitive; invalid values use `off` and appear in status. On may start a read-only Codex review after a main-session turn, send the diff and full contents of untracked, non-ignored files to OpenAI and block ending. Gitignored files are not sent. |
-| `codexStopGateBlocks` | Maximum blocks per session: `1` (default) or `2`; invalid values use `1` and appear in status. Once the limit is reached, an unpassed result allows ending with a human-review warning. |
+| `codexStopGateBlocks` | Maximum blocks per session: `1` (default) or `2`, written as a number (a quoted string stops the hooks module from loading); other invalid values use `1` and appear in status. Once the limit is reached, an unpassed result allows ending with a human-review warning. |
 
 Codex effort is clamped to levels declared by the model: `max` selects the highest supported level; an unsupported explicit level selects the highest supported level at or below it, or the lowest if none is lower. `minimal` is never sent. If no explicit level is given, the supported model default is used when needed.
 

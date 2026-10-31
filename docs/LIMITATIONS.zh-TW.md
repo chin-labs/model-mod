@@ -18,7 +18,7 @@ Marketplace 安裝已用本機 clone 與使用標準 HTTP 協定的 Git 伺服�
 
 ## Codex 登入的限制
 
-- 最近實測的 Codex CLI 版本為 **0.165.0**，也是最低版本；更舊的版本會被拒絕。較新版本會照常執行，但未逐版驗證。更新已測版本紀錄前，應對新版本執行手動 live 契約測試。
+- 最近實測的 Codex CLI 版本為 **0.166.0**；最低版本為 **0.165.0**，更舊的版本會被拒絕。較新版本會照常執行，但未逐版驗證。更新已測版本紀錄前，應對新版本執行手動 live 契約測試。
 - 這是**軟隔離，不是嚴格的工具白名單**。helper 使用專用家目錄、唯讀 sandbox、不允許核准並關閉部分功能，但兩個 MCP 資源清單工具仍可能執行。執行期項目檢查在中斷回合之前、或與等待項目同批到達時遇到不允許或未知的項目，會終止回合並顯示 `Codex used a built-in tool that model-mod does not support (<type>); try again, and report it if it keeps happening` 訊息。若停用功能後仍出現 `sleep` 或 `collabAgentToolCall` 項目，helper 會中斷並正常結束回合，其後的非工具項目會被丟棄，已識別的動態工具呼叫則會保留。開始 thread 前，`config/read` 會檢查有效設定；新版若改變設定或協定，helper 會採保守拒絕。協定不相容時會顯示 `incompatible app-server protocol; update or check Codex`。重試前請檢查設定與 Codex 相容性。
 - Codex 內建 shell、網路與瀏覽器工具、sleep、子代理、apps、plugins 和 goals 均已停用。patch 與檔案操作會被唯讀 sandbox 與項目白名單阻擋；項目處理方式如上述檢查所示。動態工具來自客戶端，另有上述 MCP 資源清單例外。模型會收到簡短的 developer instructions，要求只使用提供的函式工具、不使用內建 sleep、等待、協作及子代理工具，等待背景工作時結束回合；唯讀隔離的細節不會告知模型。
 - Codex 保留 `mcp__` 開頭的名稱並限制工具名稱。bridge 以 `bridge_` 加雜湊作為受影響名稱的別名，回傳時還原原名。
@@ -56,15 +56,15 @@ SDK 與 `-p` 的呼叫端必須檢查結果文字是否以 `model-mod:` 開頭�
 
 以下行為尚未驗證，請勿假設可用。
 
-- 真實客戶端的 setup、Remote Control、review、rescue、Esc 中斷與完成 toast 尚未端到端驗證。
+- 真實客戶端的 setup 與 Remote Control 尚未端到端驗證。在一台 Mac（Claude Code 2.1.316、Codex 0.166.0、單一帳號）上以手動方式檢查過前景 review 與 rescue、Ctrl+C 與 Esc 中斷，以及發起工作的 session 內的完成 toast。
 - Windows 整體尚未驗證；請使用 [Windows 驗證清單](WINDOWS.zh-TW.md)。
 - hook 時間預算、重載行為及 `$.store` 權限尚未驗證。
-- 真實 Codex 的圖片生成、原生搜尋及實驗性 reasoning 重放尚未驗證。
-- 真實 review 是否嚴格遵守 Stop gate 所依賴的 `outputSchema` 尚未驗證。
+- 實驗性 reasoning 重放尚未驗證：兩個含工具往返的真實回合沒有報錯，但逐字稿中沒有出現 thinking 區塊。真實的圖片生成與原生搜尋在單一帳號上各檢查過一次。
+- 真實 review 是否嚴格遵守 Stop gate 所依賴的 `outputSchema` 尚未驗證；真實 Codex 的 pass、block、unknown 結果各觀察到一次。
 - commentary 事件順序，以及 `classic.Stop` 與官方外掛 hook 的真實順序尚未驗證。
 - 與官方 `openai/codex-plugin-cc` 的並存只做了對上游 commit `db52e28f4d9d` 的靜態比對，兩者未實際同時執行。請使用完整指令名稱（`/codex:review`、`/model-mod:review`），並且最多開啟一個 Stop 審查 gate。兩者預設的 Codex home 各自獨立，但若刻意把兩者指向同一個 `CODEX_HOME`，帳號設定與信任紀錄可能互相影響。
-- Codex 額度耗盡時的切換，以及 `priority` 計費與 `codexServiceTier` 實際服務層級尚未驗證。
-- 真實 workspace-write sandbox 驗收與 transfer 後續跑尚未驗證。
+- Codex 額度耗盡時的切換，以及 `priority` 計費與 `codexServiceTier` 實際服務層級尚未驗證；使用 `priority` 的真實回合已被接受。
+- 以 `codex resume` 續跑 transfer 後的工作階段尚未驗證；匯入本身，以及使用 `apply_patch` 的多檔 workspace-write rescue 各檢查過一次。
 - Linux 只做了離線驗證：helper 測試、假 Codex 流程與 socket 路徑長度限制在 Linux arm64 容器（Python 3.12、Git 2.34、無網路）內通過；hook 測試、真實帳號回合、`/proc` 後備路徑與 Git 2.54 的 configured-hook 檢查未在其上執行。exFAT 尚未驗證。
 
 - **Codex 環境。** Windows、Python 3.9 實際執行、live SIGHUP 回收及較新 Codex 版本逐版驗證尚未完成。啟動延遲尚未量測。`max` effort 只用假 Codex 測試過。
@@ -109,14 +109,14 @@ Codex reasoning 保留為實驗性功能：簽章依前綴過濾，快取以第�
 
 ## 審查關卡限制
 
-Stop gate 預設關閉。結構化裁定的品質、漏判情況，以及真實 Codex 是否遵守 `outputSchema` 均未驗證；此功能不是安全或合規保證。真實客戶端的 `classic.Stop`、取消，以及與官方 Codex gate 並存時的順序尚未驗證。Pass 只在記憶體中對相符的工作階段與指紋有效；模組重新載入會清除 pass 快取與 gate 阻擋計數。目前目錄及其祖先均無 `.git` 時，自動 gate 會靜默跳過；儲存庫尚無 HEAD 或 Git 發生錯誤時會顯示未驗證警告。自動 gate 沒有 base ref，若回合內已提交變更，可能靜默跳過。二進位或無法讀取的未追蹤檔案、有未提交變更的 submodule，以及過大的 diff，無法由此 gate 審查。工作區變更後需重新審查；快照檢查後仍可能發生並行變更。Unknown、錯誤與逾時會放行並提示人工審查；阻擋達設定的 1 或 2 次後，再次 block 也會在未通過下放行。
+Stop gate 預設關閉。結構化裁定的品質、漏判情況，以及真實 Codex 是否遵守 `outputSchema` 均未驗證；此功能不是安全或合規保證。與官方 Codex gate 並存時的順序尚未驗證。因阻擋而繼續的回合不會再次審查：狀態會顯示變更未經重新審查，因此上限設為 2 次並不代表修正會被第二次審查。在 gate 審查中按 Esc 會結束 helper，並以未驗證警告放行。Pass 只在記憶體中對相符的工作階段與指紋有效；模組重新載入會清除 pass 快取與 gate 阻擋計數。目前目錄及其祖先均無 `.git` 時，自動 gate 會靜默跳過；儲存庫尚無 HEAD 或 Git 發生錯誤時會顯示未驗證警告。自動 gate 沒有 base ref，若回合內已提交變更，可能靜默跳過。二進位或無法讀取的未追蹤檔案、有未提交變更的 submodule，以及過大的 diff，無法由此 gate 審查。工作區變更後需重新審查；快照檢查後仍可能發生並行變更。Unknown、錯誤與逾時會放行並提示人工審查；阻擋達設定的 1 或 2 次後，再次 block 也會在未通過下放行。
 
 Transfer 僅支援預設 Claude 設定目錄（`~/.claude`）；離線實測 Codex 0.166 的匯入偵測只搜尋 `HOME/.claude`，不搜尋自訂 `CLAUDE_CONFIG_DIR`。
 
 ## 背景委派限制
 
-- Windows 不支援背景指令；前景委派仍可使用。Ctrl+C 與 `/reload-plugins` 對 broker 的影響尚未驗證。
-- broker 死亡時工作會中斷而不會繼續，復原後標為 `interrupted`。清理是盡力而為：macOS `ps lstart` 只有秒級精度，可能遇到 PID 重用與 TOCTOU 時間窗口，呼叫 `setsid` 的孫程序也可能逃過清理。無法確認清理時標示 `possible_leftover`。完成通知僅盡力提供。
+- Windows 不支援背景指令；前景委派仍可使用。手動檢查中，Ctrl+C 與 `/reload-plugins` 都沒有讓 broker 結束（macOS）。
+- broker 死亡時工作會中斷而不會繼續，復原後標為 `interrupted`。清理是盡力而為：macOS `ps lstart` 只有秒級精度，可能遇到 PID 重用與 TOCTOU 時間窗口，呼叫 `setsid` 的孫程序也可能逃過清理。無法確認清理時標示 `possible_leftover`。完成通知僅盡力提供，且只會出現在發起工作的 session；其他 session 請用 `/model-mod:jobs` 與 `/model-mod:result` 查看。
 - 沒有工作在執行時，背景 broker 閒置 30 分鐘後會自行結束；在此之前可能留有殘留的 broker 程序。
 - 背景委派只支援預設帳號根目錄；自訂帳號根目錄請使用前景委派。`codexBin` 必須能在 broker 的環境中執行。
 - write 模式下，Codex 可能執行命令並修改真實工作目錄，沒有自動備份；建議先 commit 或 stash。sandbox 限制 Codex 的命令與檔案寫入，不保證阻擋所有外部副作用；關閉網路的效果尚未跨平台驗證。

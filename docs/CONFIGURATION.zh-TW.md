@@ -58,7 +58,7 @@ API 伺服器路徑會把工作階段送往接受 Messages 風格串流請求（
 | `codexServiceTier` | `default`（預設）或 `priority`；實際服務層級與計費尚未驗證。 |
 | `codexWebSearch` | `on`（預設）或 `off`；無效值視為 `on` 並顯示於 status。工作階段工具清單沒有 WebSearch 時會停用搜尋。 |
 | `codexStopGate` | `off`（預設）或 `on`，不分大小寫；無效值視為 `off` 並顯示於 status。開啟後可能在主工作階段回合結束時啟動唯讀 Codex 審查、把 diff 與未追蹤且未被 gitignore 的檔案全文送往 OpenAI 並阻擋結束；被 gitignore 的檔案不會送出。 |
-| `codexStopGateBlocks` | 每個工作階段最多阻擋 `1` 次（預設）或 `2` 次；無效值視為 `1` 並顯示於 status。達上限後未通過的結果會放行並提示人工審查。 |
+| `codexStopGateBlocks` | 每個工作階段最多阻擋 `1` 次（預設）或 `2` 次，請寫成數字（加引號的字串會使 hooks 模組載入失敗）；其他無效值視為 `1` 並顯示於 status。達上限後未通過的結果會放行並提示人工審查。 |
 
 Codex effort 依模型宣告的等級夾值：`max` 取支援的最高等級；不支援的明設等級取不高於它的最高支援等級，若沒有較低等級則取最低。絕不送出 `minimal`。未明設時，需要調整會採用模型支援的預設值。
 
