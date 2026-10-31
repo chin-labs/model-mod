@@ -346,6 +346,17 @@ class DelegateTest(unittest.TestCase):
         finally:
             if proc.poll() is None: proc.kill(); proc.wait()
             proc.stdout.close()
+        self.mode('delegate_untrusted_record')
+        (self.account_dir / 'started').unlink(missing_ok=True)
+        self.log.unlink(missing_ok=True)
+        self.assertEqual(delegate.execute(dict(request)), 'hello')
+        self.assertTrue(any(r.get('method') == 'turn/start' for r in self.records()))
+        self.mode('delegate_projects_invalid')
+        (self.account_dir / 'started').unlink(missing_ok=True)
+        self.log.unlink(missing_ok=True)
+        with self.assertRaisesRegex(delegate.Failure, 'project trust could not be kept untrusted'):
+            delegate.execute(dict(request))
+        self.assertFalse(any(r.get('method') == 'turn/start' for r in self.records()))
         self.mode('delegate_trust_record')
         (self.account_dir / 'started').unlink(missing_ok=True)
         self.log.unlink(missing_ok=True)
@@ -405,6 +416,9 @@ class DelegateTest(unittest.TestCase):
             (default / 'escape').symlink_to(outside)
             for path in (str(default / 'escape'), str(default / '..' / '..' / 'outside')):
                 with self.assertRaises(delegate.Failure): delegate.transcript_path(path)
+        sub = self.repo / 'sub'
+        sub.mkdir()
+        self.assertFalse(delegate.snapshot_unavailable(str(sub)))
         broken = self.root / 'broken'
         broken.mkdir()
         (broken / '.git').write_text('gitdir: /nonexistent/model-mod-test\n')

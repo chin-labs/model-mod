@@ -85,8 +85,8 @@ for line in sys.stdin:
         if mode == 'delegate_layers_boolean': layers = [dict(project, disabledReason=True)]
         if mode == 'delegate_layers_no_reason': layers = [{'name': project['name']}]
         result = {'config': {'web_search': web_search, 'features': features, 'mcp_servers': {}}, 'layers': layers}
-        if mode == 'delegate_trust_record' and os.path.exists(os.path.join(os.environ['CODEX_HOME'], 'started')):
-            result['config']['projects'] = {params['cwd']: {'trust_level': 'trusted'}}
+        if mode in ('delegate_trust_record', 'delegate_untrusted_record', 'delegate_projects_invalid') and os.path.exists(os.path.join(os.environ['CODEX_HOME'], 'started')):
+            result['config']['projects'] = 'invalid' if mode == 'delegate_projects_invalid' else {params['cwd']: {'trust_level': 'untrusted' if mode == 'delegate_untrusted_record' else 'trusted'}}
         if mode == 'delegate_layers_missing' or not params.get('includeLayers'): del result['layers']
         send({'id': ident, 'result': result})
     elif method == 'thread/start':
@@ -100,7 +100,7 @@ for line in sys.stdin:
         else:
             if mode == 'forbidden_before': event('item/started', {'item': {'type': 'commandExecution'}})
             sandbox = {'type': 'workspaceWrite' if mode == 'delegate_bad_sandbox' else 'readOnly', 'networkAccess': False}
-            if mode in ('delegate_project_after', 'delegate_trust_record'):
+            if mode in ('delegate_project_after', 'delegate_trust_record', 'delegate_untrusted_record', 'delegate_projects_invalid'):
                 open(os.path.join(os.environ['CODEX_HOME'], 'started'), 'w').close()
             if params.get('sandbox') == 'workspace-write':
                 cwd = params['cwd']

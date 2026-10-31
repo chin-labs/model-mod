@@ -501,8 +501,12 @@ def execute(request, own_group=True, on_spawn=None):
         config = checked_config(app, cwd)
         if write:
             projects = config.get('projects')
-            if projects is not None and (not isinstance(projects, dict) or cwd in projects):
-                raise Failure('Codex project trust could not be kept untrusted; remove the account trust record and try again.')
+            if projects is not None:
+                if not isinstance(projects, dict):
+                    raise Failure('Codex project trust could not be kept untrusted; remove the account trust record and try again.')
+                record = projects.get(cwd)
+                if record is not None and not (isinstance(record, dict) and record.get('trust_level') == 'untrusted'):
+                    raise Failure('Codex project trust could not be kept untrusted; remove the account trust record and try again.')
         app.thread = start.get('thread', {}).get('id')
         if not isinstance(app.thread, str) or not app.thread: raise Failure('Invalid Codex thread.')
         if request['kind'] == 'review' and not options.get('adversarial') and not options.get('gate'):
