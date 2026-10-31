@@ -253,6 +253,11 @@ class Contract(unittest.TestCase):
             self.assertEqual(fallback.returncode, 0, fallback.stderr)
             rows = [json.loads(line) for line in log.read_text().splitlines()]
             self.assertTrue([row for row in rows if row.get('method') == 'thread/start'][-1]['params']['ephemeral'])
+            Path(home, 'fake_config.json').write_text(json.dumps({'mode': 'fork_exit', 'log': str(log)}))
+            lost = subprocess.run(cmd, input=json.dumps(body), text=True, capture_output=True, env=env, timeout=15)
+            self.assertEqual(lost.returncode, 0, lost.stderr)
+            self.assertIn('using a new thread', lost.stderr)
+            self.assertNotIn('PRIVATE-MESSAGE', lost.stderr)
             before = sorted((str(p), p.read_bytes()) for p in Path(tmp, 'state').rglob('*.json'))
             off = subprocess.run(cmd[:-2], input=json.dumps(body), text=True, capture_output=True, env=env, timeout=15)
             self.assertEqual(off.returncode, 0, off.stderr)
@@ -324,6 +329,7 @@ class Contract(unittest.TestCase):
                 app.fail_fork = True
                 self.assertIsNone(run(session='session-b'))
                 app.fail_fork = False
+                app.reuse_broken = False  # A real failed fork starts a fresh app-server.
                 with patch.object(thread_reuse, 'TTL_SECONDS', -1): self.assertIsNotNone(run(session='new-session'))
                 entries = list(Path(tmp).rglob('*.json'))
                 self.assertEqual(len(entries), 2)  # Other account remains untouched.

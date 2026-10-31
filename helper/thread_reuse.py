@@ -53,10 +53,18 @@ def record_at(path):
 def delete(app, path, record):
     record['state'] = 'pending-delete'
     write(path, record)
+    idle = getattr(app, 'idle_seconds', None)
+    deadline = getattr(app, 'deadline', None)
+    if idle is not None: app.idle_seconds = min(idle, 3)
+    if deadline is not None: app.deadline = min(deadline, time.monotonic() + 3)
     try:
         app.request('thread/delete', {'threadId': record['thread']})
-    except Exception:
+    except Exception as error:
+        if getattr(error, 'code', None) == 'timeout': app.reuse_broken = True
         return False
+    finally:
+        if idle is not None: app.idle_seconds = idle
+        if deadline is not None: app.deadline = deadline
     os.unlink(path)
     return True
 
@@ -107,6 +115,7 @@ def fork(app, args, session, params):
             if not item or item['account'] != account: continue
             if item['state'] == 'pending-delete' or now - item['used'] >= TTL_SECONDS or (name.startswith(group + '-') and item_path != path):
                 delete(app, item_path, item)
+                if getattr(app, 'reuse_broken', False): return None
         record = record_at(path)
         if record is None and os.path.lexists(path): return None
         if record and (record['state'] != 'active' or record['account'] != account or record['key'] != key): return None
@@ -124,6 +133,10 @@ def fork(app, args, session, params):
                 try: app.request('thread/delete', {'threadId': thread})
                 except Exception: pass
                 raise
+            idle = getattr(app, 'idle_seconds', None)
+            deadline = getattr(app, 'deadline', None)
+            if idle is not None: app.idle_seconds = min(idle, 30)
+            if deadline is not None: app.deadline = min(deadline, time.monotonic() + 30)
             try:
                 if result.get('approvalPolicy') != 'never' or result.get('sandbox', {}).get('type') != 'readOnly':
                     raise ValueError('invalid parent sandbox')
@@ -138,10 +151,14 @@ def fork(app, args, session, params):
                 record['state'] = 'active'
                 write(path, record)
             except Exception:
+                app.reuse_broken = True
                 app.pending.clear()
                 delete(app, path, record)
                 app.pending.clear()
                 return None
+            finally:
+                if idle is not None: app.idle_seconds = idle
+                if deadline is not None: app.deadline = deadline
         fork_params = {'threadId': record['thread'], 'ephemeral': True, 'excludeTurns': True, 'cwd': params['cwd']}
         if FORK_OVERRIDE_INSTRUCTIONS:
             fork_params['baseInstructions'] = params['baseInstructions']
@@ -153,6 +170,7 @@ def fork(app, args, session, params):
                     result.get('approvalPolicy') != 'never' or result.get('sandbox', {}).get('type') != 'readOnly'):
                 raise ValueError('invalid fork response')
         except Exception:
+            app.reuse_broken = True
             delete(app, path, record)
             return None
         record['used'] = now

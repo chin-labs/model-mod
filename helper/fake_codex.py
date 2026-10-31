@@ -125,6 +125,7 @@ for line in sys.stdin:
     if method == 'thread/start' and mode == 'delegate_no_read':
         while True: time.sleep(1)
     elif method == 'thread/fork':
+        if mode == 'fork_exit': sys.exit(0)
         path = os.path.join(os.environ['CODEX_HOME'], 'fake-parent-' + params.get('threadId', ''))
         try:
             with open(path, encoding='utf-8') as f: parent = json.load(f)

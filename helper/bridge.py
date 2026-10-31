@@ -234,6 +234,7 @@ class App:
         self.interrupt_id = None
         self.initialized = False
         self.wait_interrupted = False
+        self.reuse_broken = False
         def reader():
             try:
                 for line in self.proc.stdout:
@@ -391,9 +392,12 @@ def messages(args, app, prepared, cwd):
         try:
             import thread_reuse
             result = thread_reuse.fork(app, args, args.reuse_session, params)
-        except (OSError, ValueError, TypeError, KeyError, BridgeError):
+        except (OSError, ValueError, TypeError, KeyError, BridgeError) as error:
+            if isinstance(error, BridgeError): app.reuse_broken = True
             note('Codex login: thread reuse unavailable; using a new thread')
     if result is None:
+        if args.reuse_session and (app.reuse_broken or app.proc.poll() is not None):
+            raise BridgeError('Codex login: retrying with a new thread', code='reuse_retry')
         try:
             result = app.request('thread/start', params)
         except BridgeError:
@@ -847,7 +851,17 @@ def main():
                                 original_emit(event, data)
                             globals()['emit'] = tracked
                         try:
-                            messages(args, app, prepared, cwd)
+                            try:
+                                messages(args, app, prepared, cwd)
+                            except BridgeError as error:
+                                if error.code != 'reuse_retry': raise
+                                note('Codex login: thread reuse unavailable; using a new thread')
+                                app.close()
+                                install_cancel_handlers()
+                                app = App(args, cwd)
+                                app.initialize()
+                                args.reuse_session = None
+                                messages(args, app, prepared, cwd)
                         except BridgeError as error:
                             has_reasoning = any(item.get('type') == 'reasoning' for item in prepared['history'])
                             if started or not has_reasoning or error.code not in ('invalid_encrypted_content', 'reasoning_unavailable'): raise
