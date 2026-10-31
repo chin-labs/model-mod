@@ -10,7 +10,7 @@ Choose **Manage configured upstreams** in setup to log out or remove a Codex acc
 
 ## Set up your upstream first
 
-Your own upstream must offer a Messages-compatible streaming API at `/v1/messages`, and you need its API key. CLIProxyAPI is the tested upstream. A `/v1/models` list lets setup discover models; without it you enter model IDs by hand.
+Your own upstream must offer a Messages-compatible streaming API at `/v1/messages`, and you need its API key. CLIProxyAPI is one tested example. A `/v1/models` list lets setup discover models; without it you enter model IDs by hand.
 
 For the API-server path, model-mod sends a session to a server that accepts Messages-style streaming requests at `/v1/messages` and checks an API key. Before you install:
 

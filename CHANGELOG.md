@@ -7,7 +7,7 @@ All notable changes to this project are listed here. The format follows [Keep a 
 ### Added
 - Structured manual Codex review gate and an optional, default-off Stop gate with a bounded block count; real-client behavior remains unverified.
 - Keep opaque Codex reasoning in memory during tool exchanges using experimental app-server APIs; replay with a real Codex turn is unverified.
-- Codex login supports native web search when permitted, with activity shown as assistant text lines.
+- Codex login supports native web search when permitted, with activity shown as one assistant text line per search.
 - Interactive confirmation for workspace-write Codex rescue.
 - Confirmed session transfer to a Codex account.
 - Read-only Codex delegation: `/model-mod:review` (native review, `--base`, `--adversarial`) and `/model-mod:rescue` run in the foreground or with `--background`; `/model-mod:jobs`, `/model-mod:result` and `/model-mod:cancel` manage background jobs, with best-effort completion notices.
@@ -26,7 +26,9 @@ All notable changes to this project are listed here. The format follows [Keep a 
 - Side-question command messages no longer repeat the client label, and the informational agent message count status is no longer shown.
 
 ### Fixed
-- Accept Codex workspace-write sandbox responses without explicit writable roots and avoid persisting project trust during rescue. Delegation now refuses enabled project configuration, including when an account already trusts a repository's project configuration.
+- Accept Codex workspace-write sandbox responses without explicit writable roots and avoid persisting project trust during rescue. Delegation and Codex image generation refuse enabled or unverifiable project configuration, including when an account already trusts a repository's project configuration.
+- Transfer accepts transcripts under an absolute `CLAUDE_CONFIG_DIR` projects directory.
+- Warn instead of silently skipping damaged Git repositories, retain possible-leftover job warnings preferentially, bound process cleanup waits and explain overlong background socket paths.
 - Check Codex image output paths before generation and keep image approvals separate for API and Codex upstreams.
 - Improve background job cleanup and status messages; avoid appending native search text after a tool call.
 - Allow the full device code lifetime during Codex setup and report expired login codes.
@@ -40,7 +42,7 @@ All notable changes to this project are listed here. The format follows [Keep a 
 - Use UTF-8 for helper standard streams and clarify setup and account-directory error hints.
 
 ### Documentation
-- Update the English and Traditional Chinese README and documentation for both upstreams. Windows, Python 3.9 and concurrent use of two Codex accounts remain unverified.
+- Update the English and Traditional Chinese README and documentation for both upstreams. Add a Windows verification checklist; Windows, Python 3.9 and concurrent use of two Codex accounts remain unverified.
 - Record the tested Claude Code versions, explain the unrecognized model warning and link to device authentication instructions.
 - Clarify Codex and API data flows, isolation limits, setup and refresh behavior, troubleshooting and unverified environments.
 

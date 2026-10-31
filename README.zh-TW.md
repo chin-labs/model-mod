@@ -13,7 +13,7 @@ model-mod 是供 Claude Code 使用的插件（mod），讓你把自己的 Codex
 ## 需求
 
 - 支援 mod 的 Claude Code：Codex 登入與 API 上游已在 **Claude Code 2.1.314** 測試；API 上游也曾在 2.1.299 至 2.1.310 測試。其他版本未測。
-- Codex 登入：Python 3.9 以上版本及已安裝的 `codex` CLI（最低支援版本 0.165.0；更舊版本會被拒絕）。Codex context 視窗取自帳號模型目錄（套用有效比例），讀不到時退回 128,000 token；`contextWindow` 可覆寫。或使用你自己已啟動的 Messages 相容 API 與其金鑰；CLIProxyAPI 是已測試的 API 上游，model-mod 不會安裝或啟動該伺服器。
+- Codex 登入：Python 3.9 以上版本及已安裝的 `codex` CLI（最低支援版本 0.165.0；更舊版本會被拒絕）。Codex context 視窗取自帳號模型目錄（套用有效比例），讀不到時退回 128,000 token；`contextWindow` 可覆寫。或使用你自己已啟動的 Messages 相容 API 與其金鑰；CLIProxyAPI 是曾測試過的一例 API 上游，model-mod 不會安裝或啟動該伺服器。
 - `curl` 與 `bash`；網頁擷取與圖片生成另需[設定說明](docs/CONFIGURATION.zh-TW.md#系統工具)列出的系統工具。
 
 ## 快速開始

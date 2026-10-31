@@ -20,4 +20,5 @@ Codex 圖片路徑需要 POSIX 不跟隨符號連結的目錄支援。背景工�
 6. 執行 `/model-mod:rescue -- explain this workspace`：預期得到唯讀回答。
 7. 嘗試 `/model-mod:jobs` 與 `/model-mod:cancel ID`：預期收到 Windows 背景工作拒絕訊息，而非啟動工作。
 8. 要求 Codex 生成圖片：預期收到 `Image output requires POSIX no-follow directory support; use a supported platform.`
-9. 執行 `/model-mod:status`：預期顯示帳號與登入資訊，無法取得的欄位標示為 unavailable。
+9. 檢查 SessionStart hook：`hooks/hooks.json` 使用 POSIX `command -v`；請驗證其在 Windows shell 的行為。
+10. 執行 `/model-mod:status`：預期顯示帳號與登入資訊，無法取得的欄位標示為 unavailable。

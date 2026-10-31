@@ -20,4 +20,5 @@ For each step, record the Claude Code, plugin, Python and Codex versions, the re
 6. Run `/model-mod:rescue -- explain this workspace`: expect a read-only answer.
 7. Try `/model-mod:jobs` and `/model-mod:cancel ID`: expect the Windows background-jobs refusal rather than a running job.
 8. Request Codex image generation: expect `Image output requires POSIX no-follow directory support; use a supported platform.`
-9. Run `/model-mod:status`: expect account and login information, with unavailable fields marked accordingly.
+9. Check the SessionStart hook: `hooks/hooks.json` uses the POSIX `command -v`; verify its behavior in the Windows shell.
+10. Run `/model-mod:status`: expect account and login information, with unavailable fields marked accordingly.

@@ -10,7 +10,7 @@ Codex 登入是主要路徑；已有的 Messages 相容 API 伺服器是替代�
 
 ## 先準備好你的上游
 
-你自己的上游需在 `/v1/messages` 提供 Messages 相容的串流 API，並備好 API 金鑰。已測試的上游是 CLIProxyAPI。上游若提供 `/v1/models`，setup 可自動探索模型；否則請手動輸入模型 ID。
+你自己的上游需在 `/v1/messages` 提供 Messages 相容的串流 API，並備好 API 金鑰。 CLIProxyAPI 是曾測試過的一例上游。上游若提供 `/v1/models`，setup 可自動探索模型；否則請手動輸入模型 ID。
 
 API 伺服器路徑會把工作階段送往接受 Messages 風格串流請求（`/v1/messages`）並驗證 API 金鑰的伺服器。安裝前：
 
