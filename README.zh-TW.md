@@ -48,7 +48,7 @@ claude plugin configure model-mod@model-mod
 
 - 你的模型與訂閱模型並存，用 `/model-mod:model` 依工作階段切換。
 - 支援串流、工具呼叫、Skills、MCP 伺服器、子代理與 Workflow agent。
-- 兩種上游都可使用網頁擷取與工具搜尋；網頁搜尋與圖片生成僅供 API 模型使用。
+- 兩種上游都可使用網頁擷取、工具搜尋與圖片生成；Codex 使用原生網頁搜尋，API 路徑使用 mod 的搜尋工具。
 - 暫時性上游錯誤自動重試，採用有上限的 `Retry-After` 處理，並支援 Claude Code 的五級 effort。
 - 以你選的模型壓縮上下文，也可選擇在訂閱用量達上限時自動切換模型。
 
@@ -60,6 +60,12 @@ claude plugin configure model-mod@model-mod
 | `/model-mod:model` | 列出你的模型並切換到所選的那個（↑↓ 移動、Enter 選取、Esc 關閉）。終端機太矮、或來自 Remote Control／手機時，改用分頁選單。 |
 | `/model-mod:refresh` | 重新載入提示檔並檢查 Codex 登入狀態、CLI 版本與額度。若已設定 schema 更新命令，則執行該命令更新工具 schema；否則在已設定 API 金鑰時更新 API 模型清單。改過的選項需 `/reload-plugins` 才會生效。 |
 | `/model-mod:status` | 顯示是否啟用、模型數量及工具設定。回送位址顯示主機名，其他主機顯示 `host=remote`；明文 HTTP 將 API 金鑰以未加密形式送至非回送主機時會提出警告。 |
+| `/model-mod:review` | 請 Codex 審查；`--gate` 要求結構化裁定、`--adversarial` 審查 diff，`--background` 啟動背景工作。 |
+| `/model-mod:rescue` | 向 Codex 求助；`--write` 要求工作區寫入權限，`--background` 啟動背景工作。 |
+| `/model-mod:jobs` | 列出或清除背景工作。 |
+| `/model-mod:result` | 依 ID 讀取工作結果。 |
+| `/model-mod:cancel` | 依 ID 取消工作。 |
+| `/model-mod:transfer` | 確認後將目前工作階段匯入 Codex。 |
 | `/model` | Claude Code 原本的指令，維持不變：訂閱模型。直接輸入你的模型 ID（`/model <id>`）也可以。 |
 | `/btw <question>` | 選了你的模型時，經你的上游以唯讀上下文回答，不使用工具。 |
 

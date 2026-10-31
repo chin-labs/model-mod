@@ -48,7 +48,7 @@ Run `/model-mod:status` to check activation, then select your model and send a s
 
 - Your models alongside subscription models, switched per session with `/model-mod:model`.
 - Streaming, tool calls, Skills, MCP servers, subagents and Workflow agents.
-- Web fetch and tool search for both upstreams; web search and image generation for API models only.
+- Web fetch, tool search and image generation for both upstreams; Codex uses native web search, while the API path uses the mod’s search tool.
 - Automatic retry of transient upstream errors with bounded `Retry-After` handling, and Claude Code's five effort levels.
 - Compaction through your selected model and optional automatic switching at your subscription's usage limit.
 
@@ -60,6 +60,12 @@ Run `/model-mod:status` to check activation, then select your model and send a s
 | `/model-mod:model` | List your models and switch to the one you pick (↑↓ to move, Enter to select, Esc to close). On a short terminal, Remote Control or mobile, a paged menu is used instead. |
 | `/model-mod:refresh` | Reload prompts and check Codex login status, CLI version and quota. If a schema-refresh command is configured, run it to refresh tool schemas; otherwise refresh the API model list when an API key is configured. Changed options need `/reload-plugins`. |
 | `/model-mod:status` | Show activation, model count and tool setup. Loopback hostnames are shown; other hosts appear as `host=remote`. Warns when plain HTTP sends the API key unencrypted to a non-loopback host. |
+| `/model-mod:review` | Review changes with Codex; `--gate` requests a structured verdict, `--adversarial` reviews a diff, and `--background` starts a job. |
+| `/model-mod:rescue` | Ask Codex for help; `--write` requests workspace write access and `--background` starts a job. |
+| `/model-mod:jobs` | List or clear background jobs. |
+| `/model-mod:result` | Read a job result by ID. |
+| `/model-mod:cancel` | Cancel a job by ID. |
+| `/model-mod:transfer` | Import the current session to Codex after confirmation. |
 | `/model` | Claude Code's own command, unchanged: subscription models. Typing one of your model IDs (`/model <id>`) also works. |
 | `/btw <question>` | With one of your models selected, answered through your upstream with read-only context and no tools. |
 

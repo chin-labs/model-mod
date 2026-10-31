@@ -70,7 +70,7 @@ Advanced options are not shown in the dialog. Set them in the plugin's `options`
 | `maxTokens` | Sent as `max_tokens`. | `32000` |
 | `effortMode` | API path only: `suffix` sends `model(level)` for the effort level in use; `none` sends the plain model ID, for an upstream that rejects the suffix. | `suffix` |
 | `sideModel` | Official model for Claude Code's own side requests while one of your models is selected. `none` leaves it alone; a value already in your environment wins. | `claude-haiku-5-5` |
-| `keepThinking` | Hands Codex-style encrypted reasoning back within a tool loop. Set `false` for an upstream that does not accept it. | `true` |
+| `keepThinking` | On the API path, hands Codex-style encrypted reasoning back within a tool loop. Set `false` for an upstream that does not accept it. | `true` |
 | `localTitle` | Names the session from the first prompt through your upstream. `false` sends that prompt to the official `sideModel`. | `true` |
 | `localContext` | Answers `/context` with Claude Code's local estimate. `false` asks the subscription endpoint to count tokens. | `true` |
 | `toolSearch` | Defers large MCP tool schemas: `auto`, `on` or `off`. | `auto` |

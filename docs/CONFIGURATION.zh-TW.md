@@ -70,7 +70,7 @@ API 伺服器路徑會把工作階段送往接受 Messages 風格串流請求（
 | `maxTokens` | 以 `max_tokens` 送出。 | `32000` |
 | `effortMode` | 僅適用 API 路徑：`suffix` 依目前 effort 等級送出 `model(level)`；`none` 送純模型 ID，適用於拒絕後綴的上游。 | `suffix` |
 | `sideModel` | 選了你的模型時，Claude Code 自己的側請求所用的官方模型。`none` 不設定；環境中已有的值優先。 | `claude-haiku-5-5` |
-| `keepThinking` | 在工具迴圈內交回 Codex 形式的加密推理簽章。上游不接受時設為 `false`。 | `true` |
+| `keepThinking` | 僅在 API 路徑的工具迴圈內交回 Codex 形式的加密推理簽章。上游不接受時設為 `false`。 | `true` |
 | `localTitle` | 經你的上游依第一個提示命名工作階段。`false` 則把該提示送到官方 `sideModel`。 | `true` |
 | `localContext` | 以 Claude Code 的本地估算回答 `/context`。`false` 則請訂閱端點計算 token。 | `true` |
 | `toolSearch` | 延後載入大型 MCP 工具 schema：`auto`、`on`、`off`。 | `auto` |

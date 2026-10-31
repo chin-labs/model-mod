@@ -28,7 +28,7 @@ Codex 工具往返期間，插件可能在記憶體保留 OpenAI 回傳的不透
 
 Transfer 會將目前對話匯入指定 Codex 帳號並由 OpenAI 持久保存；刪除本機內容不會刪除供應商端紀錄。Transfer 需要互動確認，transcript 上限為 20 MiB。
 
-手動審查 gate 與選用 Stop gate 會將範圍內 diff 與未追蹤且未被 gitignore 的檔案全文送往 OpenAI，findings 也在 OpenAI 產生及處理。被 gitignore 的檔案不會送出。Findings 是不可信資料，不是指令。Stop gate 預設關閉。
+手動審查 gate 與選用 Stop gate 會將範圍內 diff 與未追蹤且未被 gitignore 的檔案全文送往 OpenAI，findings 也在 OpenAI 產生及處理。被 gitignore 的檔案不會送出。唯讀 sandbox 不限制讀取範圍；findings 可能包含 Codex 能讀到的內容，包括工作區以外的內容。Findings 是不可信資料，不是指令。Stop gate 預設關閉。
 
 Codex 委派會將任務文字及 Codex 讀取的工作區內容送往 OpenAI。確認 `rescue --write` 後，Codex 可能修改真實工作區，沒有自動備份。sandbox 限制 Codex 的命令與檔案寫入，但不保證阻擋所有外部副作用；關閉網路的效果尚未跨平台驗證。
 

@@ -24,7 +24,7 @@ Marketplace 安裝已用本機 clone 與使用標準 HTTP 協定的 Git 伺服�
 - Codex 保留 `mcp__` 開頭的名稱並限制工具名稱。bridge 以 `bridge_` 加雜湊作為受影響名稱的別名，回傳時還原原名。
 - `max_tokens` 會接受但忽略；`tool_choice`、`temperature`、`top_p`、`stop_sequences`、`cache_control` 與 thinking 預算會被忽略。helper 寫出的 `model-mod-note:` 診斷行是內部標記，會被丟棄，不會顯示給使用者。不要依賴這些控制項生效。
 - `codexKeepReasoning` 預設為 `on`。bridge 使用 Codex 0.165.0 的實驗性 `experimentalRawEvents` 與 `thread/inject_items` 介面；上游可能修改這些 API，且重放尚未對真實 Codex 回合驗證。OpenAI 回傳的不透明 reasoning item 可能包含加密資料；簽章每個 item 上限 256 KiB、每次回應上限 1 MiB，超出的項目會丟棄。只保留第一段助手文字或工具呼叫之前的 reasoning；其後交錯的 reasoning 會丟棄，以維持重放順序。推理只在同一工作階段的工具往返期間保存在記憶體，重新載入或重啟後遺失。換帳號或模型可能使其失效；若輸出前被拒，會去掉推理重建請求一次。不保證與 API 路徑完全等價。
-- Codex 原生搜尋僅在 `codexWebSearch` 開啟且工作階段工具清單包含 WebSearch 時啟用。原生搜尋與 openPage 在 OpenAI 端執行，不受 Claude 權限的網域規則（allowed／blocked domains）限制；model-mod 不做 `allowed_domains` 的安全宣稱。查詢文字會送往 OpenAI。搜尋活動無法顯示為內建「已搜尋」區塊，改以助手文字行呈現；真實客戶端顯示尚未驗證，不顯示不透明的搜尋結果。Codex 不提供 mod 的 `web_search`，但保留 `generate_image` 與 `web_fetch`。Codex 使用內建圖片模型，提示詞與生成圖片內容送往 OpenAI；尺寸與品質僅作為提示詞中的請求，不保證生效；是否計入額度尚未驗證。超過 20 MiB 的圖片會被拒絕。即使 sandbox 唯讀，app-server 仍會自行把圖片寫入 `CODEX_HOME/generated_images`；取得位元組後，model-mod 嘗試不跟隨符號連結刪除該字面路徑，失敗僅記內部 note，不使呼叫失敗。輸出以 0600 權限排他建立。Codex context 預設為帳號模型目錄視窗乘以有效比例，讀不到時退回 128,000 token；明設 `contextWindow` 可覆寫。helper 將 Codex 自動壓縮門檻設在客戶端視窗之上並於內部記錄壓縮事件；這不保證完全停用 Codex 壓縮，也不會停用 model-mod 自己的壓縮。
+- Codex 原生搜尋僅在 `codexWebSearch` 開啟且工作階段工具清單包含 WebSearch 時啟用。原生搜尋與 openPage 在 OpenAI 端執行，不受 Claude 權限的網域規則（allowed／blocked domains）限制；model-mod 不做 `allowed_domains` 的安全宣稱。查詢文字會送往 OpenAI。原生搜尋不經 Claude 逐次詢問權限，顯示的搜尋文字也會進入助手歷史。搜尋活動無法顯示為內建「已搜尋」區塊，改以助手文字行呈現；真實客戶端顯示尚未驗證，不顯示不透明的搜尋結果。Codex 不提供 mod 的 `web_search`，但保留 `generate_image` 與 `web_fetch`。Codex 使用內建圖片模型，提示詞與生成圖片內容送往 OpenAI；尺寸與品質僅作為提示詞中的請求，不保證生效；是否計入額度尚未驗證。超過 20 MiB 的圖片會被拒絕。即使 sandbox 唯讀，app-server 仍會自行把圖片寫入 `CODEX_HOME/generated_images`；取得位元組後，model-mod 嘗試不跟隨符號連結刪除該字面路徑，失敗僅記內部 note，不使呼叫失敗。輸出以 0600 權限排他建立。Codex context 預設為帳號模型目錄視窗乘以有效比例，讀不到時退回 128,000 token；明設 `contextWindow` 可覆寫。helper 將 Codex 自動壓縮門檻設在客戶端視窗之上並於內部記錄壓縮事件；這不保證完全停用 Codex 壓縮，也不會停用 model-mod 自己的壓縮。
 - 每次呼叫會啟動一個本機 helper 程序與 `codex app-server`，會增加延遲；啟動延遲尚未量測。Windows 在設計上支援，但**未驗證**。
 - Codex 的額度與速率限制取決於你自己的訂閱；達到限制時 model-mod 不會輪替帳號。
 
@@ -96,7 +96,7 @@ Codex 額度用完不輪流換帳號，可設備援模型（不同帳號或上�
 
 ## 審查關卡限制
 
-Stop gate 預設關閉。結構化裁定的品質、漏判情況，以及真實 Codex 是否遵守 `outputSchema` 均未驗證；此功能不是安全或合規保證。真實客戶端的 `classic.Stop`、取消，以及與官方 Codex gate 並存時的順序尚未驗證。Pass 只在記憶體中對相符的工作階段與指紋有效，重新載入後消失。二進位或無法讀取的未追蹤檔案、有未提交變更的 submodule，以及過大的 diff，無法由此 gate 審查。工作區變更後需重新審查；快照檢查後仍可能發生並行變更。Unknown、錯誤與逾時會放行並提示人工審查；阻擋達設定的 1 或 2 次後，再次 block 也會在未通過下放行。
+Stop gate 預設關閉。結構化裁定的品質、漏判情況，以及真實 Codex 是否遵守 `outputSchema` 均未驗證；此功能不是安全或合規保證。真實客戶端的 `classic.Stop`、取消，以及與官方 Codex gate 並存時的順序尚未驗證。Pass 只在記憶體中對相符的工作階段與指紋有效；模組重新載入會清除 pass 快取與 gate 阻擋計數。自動 gate 沒有 base ref，若回合內已提交變更，可能靜默跳過。二進位或無法讀取的未追蹤檔案、有未提交變更的 submodule，以及過大的 diff，無法由此 gate 審查。工作區變更後需重新審查；快照檢查後仍可能發生並行變更。Unknown、錯誤與逾時會放行並提示人工審查；阻擋達設定的 1 或 2 次後，再次 block 也會在未通過下放行。
 
 ## 背景委派限制
 
@@ -104,4 +104,4 @@ Stop gate 預設關閉。結構化裁定的品質、漏判情況，以及真實 
 - broker 死亡時工作會中斷而不會繼續，復原後標為 `interrupted`。清理是盡力而為：macOS `ps lstart` 只有秒級精度，可能遇到 PID 重用與 TOCTOU 時間窗口，呼叫 `setsid` 的孫程序也可能逃過清理。無法確認清理時標示 `possible_leftover`。完成通知僅盡力提供。
 - 背景委派只支援預設帳號根目錄；自訂帳號根目錄請使用前景委派。`codexBin` 必須能在 broker 的環境中執行。
 - write 模式下，Codex 可能執行命令並修改真實工作目錄，沒有自動備份；建議先 commit 或 stash。sandbox 限制 Codex 的命令與檔案寫入，不保證阻擋所有外部副作用；關閉網路的效果尚未跨平台驗證。
-- 唯讀 sandbox 不限制讀取範圍，命令可能讀取工作區以外的檔案；這與上方 Messages bridge 停用內建 shell 的情況不同。官方 `openai/codex-plugin-cc` 可與 model-mod 並存；兩者的 Stop gate 均不屬於本功能。
+- 唯讀 sandbox 不限制讀取範圍，命令可能讀取工作區以外的檔案；這與上方 Messages bridge 停用內建 shell 的情況不同。官方 `openai/codex-plugin-cc` 與 model-mod 的並存尚未驗證；兩者的 Stop gate 均不屬於本功能。

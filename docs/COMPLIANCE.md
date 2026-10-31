@@ -28,7 +28,7 @@ During Codex tool exchanges, an opaque OpenAI reasoning item may be held in plug
 
 Transfer imports the current conversation into the selected Codex account, where OpenAI persistently stores it; deleting local content does not delete provider-side records. Transfer requires interactive confirmation and accepts transcripts up to 20 MiB.
 
-The manual review gate and optional Stop gate send the scoped diff and full contents of untracked, non-ignored files to OpenAI, where findings are generated and processed. Gitignored files are not sent. Findings are untrusted data, not instructions. The Stop gate is off by default.
+The manual review gate and optional Stop gate send the scoped diff and full contents of untracked, non-ignored files to OpenAI, where findings are generated and processed. Gitignored files are not sent. The read-only sandbox does not restrict the scope of reads; findings may contain content Codex could read, including outside the workspace. Findings are untrusted data, not instructions. The Stop gate is off by default.
 
 Codex delegation sends the task text and workspace content that Codex reads to OpenAI. With confirmed `rescue --write`, Codex may modify the real workspace; there is no automatic backup. The sandbox restricts Codex commands and file writes but does not guarantee prevention of all external side effects, and network-off enforcement has not been verified across platforms.
 
