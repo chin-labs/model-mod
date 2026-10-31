@@ -82,9 +82,9 @@ Codex effort 依模型宣告的等級夾值：`max` 取支援的最高等級；�
 | `toolSearch` | 延後載入大型 MCP 工具 schema：`auto`、`on`、`off`。 | `auto` |
 | `toolSearchPercent` | `auto` 模式下，工具 schema 佔模型 context 視窗多少比例（1–90）時開始延後。 | `10` |
 
-僅設定 Codex 時，`/model-mod:status` 以 `model-mod: <version>: picker=active` 開頭，接著顯示帳號資訊。`rate-limits` 提供各視窗比例、重置時間與 credits；`account-info` 在可取得時提供方案。
+`/model-mod:status` 以 `model-mod <version>: picker=active` 開頭（有警告時附警告數），接著依序是 QUOTA、CURRENT PATH 與 DIAGNOSTICS。`rate-limits` 提供各視窗比例、重置時間與 credits；`account-info` 在可取得時提供方案。
 
-Codex status 顯示各視窗的剩餘比例、重置時間、credits、方案及 `ordinaryUsageAllowed`；取得不到的欄位顯示 unavailable。Codex 額度最多每帳號五分鐘查一次，額度錯誤可立即查詢；沒有可用的未來重置時間時不自動切換。API 上游沒有官方 rateLimits，不適用此機制。額度用完不會自動輪流換帳號，可設定不同上游或帳號的 `fallbackModel`。
+每個 Codex 帳號區塊會就各 rate-limit 視窗（通常是 5 小時與每週）顯示用量條、已用百分比與重置時間（相對時間，括號內為本地時間），另有 credits、方案及 `ordinaryUsageAllowed`；取得不到的欄位顯示 unavailable。讀不到的帳號顯示 `無法取得` 與原因，其他帳號不受影響。Codex 額度最多每帳號五分鐘查一次，額度錯誤可立即查詢；沒有可用的未來重置時間時不自動切換。API 上游沒有官方 rateLimits，不適用此機制。額度用完不會自動輪流換帳號，可設定不同上游或帳號的 `fallbackModel`。
 
 `codexServiceTier` 可設 `default`（預設）或 `priority`；非法值視為 `default`。`priority` 需要 Codex 方案支援，可能較快回應但較快耗用額度；實際層級與計費是否生效未驗證。
 

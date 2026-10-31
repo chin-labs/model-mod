@@ -2,6 +2,16 @@
 
 All notable changes to this project are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Every release that changes plugin code or manifest files raises the `version` in `.claude-plugin/plugin.json`; installed clients only pick up a release whose version differs from the one they have.
 
+## 0.2.2 - 2026-11-01
+
+### Changed
+- `/model-mod:status` prints a plain-text report in the order quota, current path and grouped diagnostics: one quota block per Codex account with 5-hour and weekly usage bars, percent used and the reset time (relative and local); a limited account, a failed query and an API upstream without quota data each carry a text marker (`[LIMIT]`, `[!]`, `[--]`) as well as their reason. Warnings come first; line width follows the terminal and `NO_COLOR` or `TERM=dumb` gives `#`/`-` bars.
+- `/model-mod:setup` shows its fixed menus (upstream, endpoint, model scope, confirmations, manage upstreams) in one pane that stays open until setup ends. Esc closes the pane and cancels without changing anything. Text inputs and menus of more than 12 entries stay dialogs; where no pane can be seated (`-p`, bridge sessions, a body too small) the menus are dialogs and a typed answer that is not a listed option is asked again, three times at most, then setup cancels.
+- A second `/model-mod:setup` while one is open is refused.
+
+### Not verified
+- The setup pane in Remote Control, desktop and VS Code sessions; arrow-key selection in the pane was not driven in an automated terminal (Tab, Enter and Esc were). Checked on one Mac with Claude Code 2.1.316 only.
+
 ## 0.2.1 - 2026-11-01
 
 ### Changed

@@ -43,6 +43,7 @@ Marketplace 安裝已用本機 clone 與使用標準 HTTP 協定的 Git 伺服�
 | 請求內容 | 對話請求帶 `model`、`max_tokens`、`stream`、`messages`、`system` 及選用的 `tools`；客戶端的其他請求欄位不會送出。 | 無需處理。 |
 | 推理 | API 路徑只在工具迴圈內交回 Codex 形式的加密推理簽章；其他 thinking 與 server-tool 區塊會移除。簽章被拒時，去除後重試一次。 | 上游拒絕簽章時，設 `keepThinking: false`。 |
 | Effort | API 路徑以模型後綴（如 `model(high)`）送出五個等級；Codex 登入路徑依模型目錄宣告夾值，`max` 對應最高宣告值，絕不送 `minimal`；目錄不可用時維持原值。未帶 effort 後綴時，若支援 `low` 則使用 `low`，否則使用模型預設值。這只確認名稱有送到上游，不代表推理強度會改變。Ultracode 是獨立開關，不改變等級；`/effort ultra` 由客戶端自己拒絕。 | 上游拒絕後綴時，設 `effortMode: none`。 |
+| setup 選單 | 在終端機輸入 `/model-mod:setup` 時，固定選單在同一個 pane 開啟。文字輸入、超過 12 項的選單、`-p`、bridge 工作階段與太小的 pane 使用對話框，每頁最多四個選項（`More…`）。輸入的答案不是列出的選項時會重新詢問，最多三次，之後取消 setup 且不更動設定。文字輸入對話框之後 pane 會關閉，其餘選單可能改為對話框。 | 放寬終端機視窗，或在對話框中作答。 |
 | 失敗處理 | 尚未有任何輸出前，HTTP 429、502、503、504、529 與可辨識的暫時性錯誤（含早期的 `overloaded_error` 事件）會在 2、6、15 秒後重試（最多三次）。整數 `Retry-After` 為 0–15 秒時，下一次等待至少採用該值；超過 15 秒則立即以 HTTP 狀態與要求的等待秒數結束回合。無效值與 HTTP 日期一律忽略。輸出開始後串流中斷，該回合直接結束，不會重播。失敗的回合不會改用其他模型或訂閱重試。 | 重新送出訊息，或用 `/model` 換模型。 |
 | 壓縮 | 只使用 `prompts/` 內的提示檔；缺檔時略過本地壓縮。摘要品質取決於模型。送去摘要的逐字稿有上限（總計 600000 字元、每則 20000、每個工具結果 1500）。代理內的壓縮尚未驗證。 | 重要事項寫進專案指示，不要只留在對話裡。 |
 | 工具 | 工具 schema 為開放式（只有名稱與描述）。在 API 模型上，`web_search`、`web_fetch` 取代原生 WebSearch、WebFetch；Codex 模型保留 `web_fetch`，並以原生搜尋取代 mod 的 `web_search`，且 `web_fetch` 回傳頁面內容，不做模型摘要。四個 mod 工具（`web_search`、`web_fetch`、`generate_image`、`tool_search`）在訂閱模型下拒絕呼叫，請改用內建工具。`web_fetch` 會拒絕部分公開 IPv6 literal，特殊 IPv6 過渡形式也未完整涵蓋。 | 改用其他網址形式，或用其他工具擷取。 |
@@ -61,6 +62,7 @@ SDK 與 `-p` 的呼叫端必須檢查結果文字是否以 `model-mod:` 開頭�
 
 - 真實客戶端的 setup 與 Remote Control 尚未端到端驗證。在一台 Mac（Claude Code 2.1.316、Codex 0.166.0、單一帳號）上以手動方式檢查過前景 review 與 rescue、Ctrl+C 與 Esc 中斷，以及發起工作的 session 內的完成 toast。
 - Windows 整體尚未驗證；請使用 [Windows 驗證清單](WINDOWS.zh-TW.md)。
+- setup pane 與 status 版面只在一台 Mac 的終端機客戶端（Claude Code 2.1.316）檢查過。Remote Control、桌面 app 與 VS Code 尚未驗證，pane 內以方向鍵選取也未用自動化終端機操作過（驗證的是 Tab、Enter 與 Esc）。
 - hook 時間預算、重載行為及 `$.store` 權限尚未驗證。
 - 實驗性 reasoning 重放尚未驗證：兩個含工具往返的真實回合沒有報錯，但逐字稿中沒有出現 thinking 區塊。真實的圖片生成與原生搜尋在單一帳號上各檢查過一次。
 - 真實 review 是否嚴格遵守 Stop gate 所依賴的 `outputSchema` 尚未驗證；真實 Codex 的 pass、block、unknown 結果各觀察到一次。

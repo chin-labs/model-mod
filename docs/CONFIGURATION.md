@@ -82,9 +82,9 @@ Advanced options are not shown in the dialog. Set them in the plugin's `options`
 | `toolSearch` | Defers large MCP tool schemas: `auto`, `on` or `off`. | `auto` |
 | `toolSearchPercent` | Share of the model's context window (1–90) at which `auto` starts deferring. | `10` |
 
-With only Codex configured, `/model-mod:status` begins `model-mod: <version>: picker=active`, followed by account details. `rate-limits` supplies window percentages, reset times and credits; `account-info` supplies the plan when available.
+`/model-mod:status` begins `model-mod <version>: picker=active` (with the warning count when there are warnings) and continues with QUOTA, CURRENT PATH and DIAGNOSTICS. `rate-limits` supplies window percentages, reset times and credits; `account-info` supplies the plan when available.
 
-Codex status shows remaining percentages, reset times, credits, plan and `ordinaryUsageAllowed`; unavailable fields are marked unavailable. Codex quota is checked at most once per account every five minutes, or immediately after a quota error; no automatic switch occurs without a future reset time. API upstreams have no official rateLimits and are not covered. Accounts are not rotated automatically; configure a `fallbackModel` on another upstream or account.
+Each Codex account block shows, for each rate-limit window (normally 5-hour and weekly), a bar with the percent used and the reset time, relative with the local time in brackets, plus credits, plan and `ordinaryUsageAllowed`; unavailable fields are marked unavailable. An account that cannot be read shows `無法取得` with the reason and the other accounts stay. Codex quota is checked at most once per account every five minutes, or immediately after a quota error; no automatic switch occurs without a future reset time. API upstreams have no official rateLimits and are not covered. Accounts are not rotated automatically; configure a `fallbackModel` on another upstream or account.
 
 `codexServiceTier` is `default` (the default) or `priority`; invalid values use `default`. `priority` requires a supported Codex plan and may respond faster while consuming quota faster; actual tier and billing are unverified.
 

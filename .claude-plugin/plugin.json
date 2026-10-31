@@ -1,6 +1,6 @@
 {
   "name": "model-mod",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Use models from your Codex login or Messages-compatible API next to Claude Code's built-in models.",
   "author": {
     "name": "Chin"

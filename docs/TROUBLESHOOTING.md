@@ -6,7 +6,7 @@
 
 After `/model-mod:setup`:
 
-1. Run `/model-mod:status`. When the mod is active it answers with one line such as `model-mod: <version>: picker=active; host=127.0.0.1; config=…; models=3; …`, where `models` is the number of models offered. With only a Codex login configured, it shows each account's status instead of `host`, `config` and `models`. `model-mod: inactive; …` means there is no usable upstream configuration (see [Symptoms](#symptoms)). If the reply is a text saying that the plugin hooks are not loaded, the plugin is not active in this session: run `/reload-plugins` or restart Claude Code.
+1. Run `/model-mod:status`. When the mod is active it prints a report whose first line is `model-mod <version>: picker=active` (followed by `; N warnings` when there are warnings), then QUOTA, CURRENT PATH and DIAGNOSTICS. Under DIAGNOSTICS, the Picker group shows `picker active` and `models`, the number of models offered, and with an API upstream also `host` and `config`; a Codex login adds one group per account. `model-mod: inactive; …` means there is no usable upstream configuration (see [Symptoms](#symptoms)). If the reply is a text saying that the plugin hooks are not loaded, the plugin is not active in this session: run `/reload-plugins` or restart Claude Code.
 2. Run `/model-mod:model`, pick one of your models and send a short message. The answer comes from your upstream. If the upstream is down or rejects the key, the turn ends with an error message; it is never retried on your subscription.
 
 ## Symptoms
@@ -14,6 +14,11 @@ After `/model-mod:setup`:
 | Symptom | Likely cause | What to do |
 |---|---|---|
 | Status shows `inactive`, or no models are listed | No valid upstream configuration, a refused URL, or the plugin is not loaded | Configure Codex accounts and models or an API key and permitted URL, run `/reload-plugins`, then `/model-mod:setup`. |
+| An account block is marked `[LIMIT]` | A window is at 100% used, or the account reports a rate limit (the reason is on the block) | Wait for the reset time shown, or use another account or a `fallbackModel`. |
+| An account block shows `無法取得: …` | The quota query did not finish: not logged in, `codex` missing or a timeout | Read the reason, then the account's `login` and `codex` rows under DIAGNOSTICS; other accounts are unaffected. |
+| An API upstream shows `沒有額度資料` | API servers report no quota | Expected; nothing to fix. |
+| The setup pane says `Keyboard not captured` | The pane does not hold the keyboard | Press Ctrl+X, then Tab. |
+| `setup is already open; finish or close it first.` | A setup pane from an earlier `/model-mod:setup` is still open | Finish it, or press Esc in the pane. |
 | Model-list error during setup | Network, authentication or server problem | Check the upstream and key. Setting `models` explicitly lets you proceed without discovery. |
 | `model is not in the allowlist` | The ID is outside `models` | Choose an allowed ID or update the list. |
 | Errors after selecting a model | Model unavailable, upstream down or key rejected | Fix the upstream, model or key, then `/model-mod:refresh`. There is no subscription fallback. |

@@ -6,7 +6,7 @@
 
 執行 `/model-mod:setup` 之後：
 
-1. 執行 `/model-mod:status`。mod 啟用時會回覆一行，例如 `model-mod: <version>: picker=active; host=127.0.0.1; config=…; models=3; …`，其中 `models` 是提供的模型數。只設定 Codex 登入時，改顯示各帳號的狀態，不含 `host`、`config`、`models`。`model-mod: inactive; …` 表示沒有可用的上游設定（見下方[常見症狀](#症狀)）。若回覆是說明插件 hook 未載入的文字，代表插件在此工作階段尚未啟用：執行 `/reload-plugins` 或重新啟動 Claude Code。
+1. 執行 `/model-mod:status`。mod 啟用時會輸出一份報告，第一行是 `model-mod <version>: picker=active`（有警告時後接 `; N warnings`），接著是 QUOTA、CURRENT PATH 與 DIAGNOSTICS。DIAGNOSTICS 的 Picker 群組顯示 `picker active` 與 `models`（提供的模型數），有 API 上游時還有 `host` 與 `config`；設定 Codex 登入後，每個帳號多一個群組。`model-mod: inactive; …` 表示沒有可用的上游設定（見下方[常見症狀](#症狀)）。若回覆是說明插件 hook 未載入的文字，代表插件在此工作階段尚未啟用：執行 `/reload-plugins` 或重新啟動 Claude Code。
 2. 執行 `/model-mod:model`，選一個你的模型並送出一則短訊息。回答來自你的上游。上游停擺或拒絕金鑰時，該回合會以錯誤訊息結束，不會改用訂閱重試。
 
 ## 症狀
@@ -14,6 +14,11 @@
 | 症狀 | 可能原因 | 處理方式 |
 |---|---|---|
 | 狀態顯示 `inactive`，或沒有列出模型 | 沒有有效的上游設定、網址被拒絕，或插件未載入 | 設定 Codex 帳號與模型，或設定 API 金鑰與允許的網址，執行 `/reload-plugins`，再執行 `/model-mod:setup`。 |
+| 帳號區塊標示 `[LIMIT]` | 某個視窗已用 100%，或帳號回報 rate limit（原因寫在該區塊） | 等到顯示的重置時間，或改用其他帳號或 `fallbackModel`。 |
+| 帳號區塊顯示 `無法取得: …` | 額度查詢沒有完成：未登入、找不到 `codex` 或逾時 | 看原因，再看 DIAGNOSTICS 中該帳號的 `login` 與 `codex` 列；其他帳號不受影響。 |
+| API 上游顯示 `沒有額度資料` | API 伺服器不回報額度 | 屬正常現象，不需處理。 |
+| setup pane 顯示 `Keyboard not captured` | pane 沒有取得鍵盤 | 按 Ctrl+X，再按 Tab。 |
+| `setup is already open; finish or close it first.` | 先前 `/model-mod:setup` 的 pane 仍開著 | 完成該次 setup，或在 pane 內按 Esc。 |
 | setup 時出現模型清單錯誤 | 網路、驗證或伺服器問題 | 檢查上游與金鑰。明確設定 `models` 可略過探索繼續進行。 |
 | `model is not in the allowlist` | 該 ID 不在 `models` 內 | 選擇允許的 ID，或更新清單。 |
 | 選了模型後出現錯誤 | 模型不可用、上游停機或金鑰被拒絕 | 修正上游、模型或金鑰，再執行 `/model-mod:refresh`。不會退回訂閱。 |
