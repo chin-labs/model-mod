@@ -2246,7 +2246,7 @@ export const register: Register = (on, options) => {
               const lines = (statusTail + piece.text).split('\n')
               statusTail = lines.pop()!.slice(-4096)
               for (const line of lines) {
-                if (codex && line === 'model-mod-note:Codex login: reasoning discarded; retrying once') reasoningRebuilt = true
+                if (codex && line.replace(/\r$/, '') === 'model-mod-note:Codex login: reasoning discarded; retrying once') reasoningRebuilt = true
                 const status = /^model-mod-http:(\d{3})\r?$/.exec(line)
                 if (status) httpStatus = Number(status[1])
                 if (line.startsWith('model-mod-retry-after:')) {

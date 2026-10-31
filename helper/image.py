@@ -11,7 +11,7 @@ import time
 from types import SimpleNamespace
 
 from bridge import FEATURES, account_home, note, verify_version
-from delegate import App, Cancelled, Failure, cancel
+from delegate import App, Cancelled, Failure, cancel, checked_project_layers
 
 MAX_IMAGE = 20 * 1024 * 1024
 MAX_LINE = (MAX_IMAGE + 2) // 3 * 4 + 65536
@@ -72,7 +72,9 @@ def execute(request):
         init = app.request('initialize', {'clientInfo': {'name': 'model-mod-image', 'version': '0.2.0'}, 'capabilities': {'experimentalApi': True}})
         if not isinstance(init.get('codexHome'), str) or os.path.realpath(init['codexHome']) != home: raise Failure('Codex account directory mismatch.')
         app.send({'method': 'initialized', 'params': {}})
-        config = app.request('config/read', {'includeLayers': False, 'cwd': cwd}).get('config', {})
+        result = app.request('config/read', {'includeLayers': True, 'cwd': cwd})
+        checked_project_layers(result)
+        config = result.get('config', {})
         flags = config.get('features', {})
         if config.get('web_search') != 'disabled' or config.get('mcp_servers') != {} or flags.get('image_generation') is not True or any(flags.get(f) is not False for f in IMAGE_DISABLED):
             raise Failure('Image generation is unavailable or Codex isolation could not be verified; update Codex and check its configuration.')

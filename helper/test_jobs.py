@@ -131,5 +131,16 @@ class JobStoreTest(unittest.TestCase):
             self.assertEqual(self.store.resolve(first['id'])['id'], first['id'])
             with self.assertRaises(ValueError): self.store.create(self.tmp.name, 'test', 'chat', None, 'rescue', 'read-only', 'generation')
             with self.assertRaises(ValueError): self.store.resolve('../')
+            self.store.transition(first['id'], 'starting')
+            self.store.transition(first['id'], 'interrupted', error='possible_leftover')
+            self.store.transition(second['id'], 'cancelled')
+            third = self.create()
+            self.assertEqual(self.store.resolve(first['id'])['errorCode'], 'possible_leftover')
+            with self.assertRaises(ValueError): self.store.resolve(second['id'])
+            self.store.transition(third['id'], 'starting')
+            self.store.transition(third['id'], 'interrupted', error='possible_leftover')
+            self.create()
+            with self.assertRaises(ValueError): self.store.resolve(first['id'])
+            self.assertEqual(self.store.resolve(third['id'])['errorCode'], 'possible_leftover')
         finally:
             jobs.MAX_JOBS = old

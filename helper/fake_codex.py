@@ -85,6 +85,8 @@ for line in sys.stdin:
         if mode == 'delegate_layers_boolean': layers = [dict(project, disabledReason=True)]
         if mode == 'delegate_layers_no_reason': layers = [{'name': project['name']}]
         result = {'config': {'web_search': web_search, 'features': features, 'mcp_servers': {}}, 'layers': layers}
+        if mode == 'delegate_trust_record' and os.path.exists(os.path.join(os.environ['CODEX_HOME'], 'started')):
+            result['config']['projects'] = {params['cwd']: {'trust_level': 'trusted'}}
         if mode == 'delegate_layers_missing': del result['layers']
         send({'id': ident, 'result': result})
     elif method == 'thread/start':
@@ -98,7 +100,7 @@ for line in sys.stdin:
         else:
             if mode == 'forbidden_before': event('item/started', {'item': {'type': 'commandExecution'}})
             sandbox = {'type': 'workspaceWrite' if mode == 'delegate_bad_sandbox' else 'readOnly', 'networkAccess': False}
-            if mode == 'delegate_project_after':
+            if mode in ('delegate_project_after', 'delegate_trust_record'):
                 open(os.path.join(os.environ['CODEX_HOME'], 'started'), 'w').close()
             if params.get('sandbox') == 'workspace-write':
                 cwd = params['cwd']

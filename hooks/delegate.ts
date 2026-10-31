@@ -57,7 +57,7 @@ export function parseDelegate(kind: 'review' | 'rescue', input: string): Options
   for (let i = 0; i < tokens.length; i++) {
     const flag = tokens[i]!
     const allowed = ['--account', '--model', '--effort', '--background', ...(kind === 'review' ? ['--base', '--adversarial', '--gate'] : ['--write'])]
-    if (!allowed.includes(flag)) throw new Error('Unknown flag or text before --: ' + flag)
+    if (!allowed.includes(flag)) throw new Error('Unknown flag or text before --: ' + flag + '. Example: /model-mod:rescue -- your task')
     if (seen.has(flag)) throw new Error('Repeated flag: ' + flag)
     seen.add(flag)
     if (flag === '--background') { result.background = true; continue }
@@ -217,7 +217,7 @@ const gateNotified = new Set<string>()
 export async function runStopGate($: EngineInterface, e: StopEvent, next: () => Promise<StopResult>, options: Record<string, unknown>, config: () => Promise<DelegateConfig | undefined>, signal: AbortSignal, turnFailed = false): Promise<StopResult> {
   const warning = 'Codex gate not passed or not verified; human review required. Run /model-mod:review --gate.'
   const settings = stopGateSettings(options)
-  if (settings.enabled && e.stop_hook_active && e.session_id && (gateBlocks.get(e.session_id) ?? 0) > 0 && !gateNotified.has(e.session_id)) {
+  if (settings.enabled && e.agent_id === undefined && e.stop_hook_active && e.session_id && (gateBlocks.get(e.session_id) ?? 0) > 0 && !gateNotified.has(e.session_id)) {
     gateNotified.add(e.session_id)
     try { $.ui.status('Codex gate: changes were not re-reviewed after the block.') } catch { /* status is best effort */ }
   }

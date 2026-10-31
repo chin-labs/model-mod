@@ -8,7 +8,7 @@ import sys
 import tempfile
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, call, patch
 from pathlib import Path
 
 import delegate
@@ -100,6 +100,14 @@ class DelegateTest(unittest.TestCase):
         self.assertEqual(thread['serviceName'], 'model_mod')
         self.assertEqual(thread['sandbox'], 'read-only')
         self.assertEqual(thread['approvalPolicy'], 'never')
+        for mode in ('delegate_project_active', 'delegate_layers_missing', 'delegate_layers_empty', 'delegate_layers_unknown'):
+            self.log.unlink(missing_ok=True)
+            self.mode(mode)
+            with self.subTest(mode=mode), self.assertRaises(delegate.Failure): image.execute(dict(request))
+            self.assertFalse(any(r.get('method') in ('thread/start', 'turn/start') for r in self.records()))
+        (self.repo / '.codex').mkdir()
+        self.mode('image_success')
+        self.assertTrue(image.execute(dict(request))['ok'])
         for mode in ('image_failure', 'image_large', 'bad_flag', 'delegate_bad_sandbox'):
             self.log.unlink(missing_ok=True)
             self.mode(mode)
@@ -338,6 +346,13 @@ class DelegateTest(unittest.TestCase):
         finally:
             if proc.poll() is None: proc.kill(); proc.wait()
             proc.stdout.close()
+        self.mode('delegate_trust_record')
+        (self.account_dir / 'started').unlink(missing_ok=True)
+        self.log.unlink(missing_ok=True)
+        with self.assertRaisesRegex(delegate.Failure, 'project trust could not be kept untrusted'):
+            delegate.execute(dict(request))
+        self.assertTrue(any(r.get('method') == 'thread/start' for r in self.records()))
+        self.assertFalse(any(r.get('method') == 'turn/start' for r in self.records()))
         self.mode('delegate_project_active')
         (self.repo / 'file').write_text('modified\n')
         for kind, options in (('rescue', {'text': 'test'}), ('review', {}),
@@ -365,6 +380,31 @@ class DelegateTest(unittest.TestCase):
                 delegate.execute(dict(req))
             self.assertTrue(any(r.get('method') == 'thread/start' for r in self.records()))
             self.assertFalse(any(r.get('method') in ('turn/start', 'review/start') for r in self.records()))
+
+    def test_custom_transcript_and_git(self):
+        config = self.root / 'custom'
+        projects = config / 'projects'
+        projects.mkdir(parents=True)
+        transcript = projects / 'session.jsonl'
+        transcript.write_text('synthetic')
+        outside = self.root / 'outside'
+        outside.write_text('synthetic')
+        (projects / 'escape').symlink_to(outside)
+        with patch.dict(os.environ, {'HOME': str(self.root), 'CLAUDE_CONFIG_DIR': str(config)}):
+            self.assertEqual(delegate.transcript_path(str(transcript)), str(transcript))
+            (self.account_dir / 'fake_config.json').write_text(json.dumps({'mode': 'transfer', 'session_path': str(transcript), 'session_cwd': str(self.repo)}))
+            proc = subprocess.run([sys.executable, '-E', '-s', HELPER], input=json.dumps(dict(self.request, kind='transfer', transcript=str(transcript))), text=True, capture_output=True, timeout=10)
+            self.assertEqual(proc.returncode, 0)
+            self.assertIn('codex resume', json.loads(proc.stdout)['text'])
+            for path in (str(projects / 'escape'), str(projects / '..' / '..' / 'outside')):
+                with self.assertRaises(delegate.Failure): delegate.transcript_path(path)
+        broken = self.root / 'broken'
+        broken.mkdir()
+        (broken / '.git').write_text('gitdir: /nonexistent/model-mod-test\n')
+        self.assertFalse(delegate.snapshot_unavailable(str(broken)))
+        plain = self.root / 'plain'
+        plain.mkdir()
+        self.assertTrue(delegate.snapshot_unavailable(str(plain)))
 
     def test_transfer(self):
         projects = self.root / '.claude' / 'projects'
@@ -405,6 +445,22 @@ class DelegateTest(unittest.TestCase):
                 with self.assertRaises(delegate.Failure): delegate.transcript_path(invalid)
             with transcript.open('wb') as f: f.truncate(20 * 1024 * 1024 + 1)
             with self.assertRaises(delegate.Failure): delegate.transcript_path(str(transcript))
+
+    def test_close_permission_and_bounded_wait(self):
+        app = object.__new__(delegate.App)
+        app.own_group = True
+        app.proc = Mock(pid=12345, stdin=None, stdout=None)
+        app.proc.poll.return_value = None
+        app.proc.wait.side_effect = [subprocess.TimeoutExpired('codex', 3), subprocess.TimeoutExpired('codex', 3)]
+        app.interrupt = Mock()
+        app.writes = Mock()
+        app.writer = Mock()
+        with patch.object(delegate.os, 'killpg', side_effect=PermissionError), patch.object(delegate, 'note') as note:
+            app.close()
+        app.proc.terminate.assert_called_once()
+        self.assertEqual(app.proc.kill.call_count, 2)
+        self.assertEqual(app.proc.wait.call_args_list, [call(timeout=3), call(timeout=3)])
+        note.assert_called_once()
 
     def test_timeout_and_cancel_reap_app_server(self):
         self.mode('abort')

@@ -127,7 +127,8 @@ class Store:
             if sum(r['account'] == account and r['state'] == 'queued' for r in records) >= 5:
                 raise UserError('Account queue is full; wait for a job to start.')
             if len(records) >= MAX_JOBS:
-                terminal = sorted((r for r in records if r['state'] in TERMINAL), key=lambda r: r['createdAt'])
+                terminal = sorted((r for r in records if r['state'] in TERMINAL),
+                                  key=lambda r: (r['errorCode'] == 'possible_leftover', r['createdAt']))
                 if not terminal: raise UserError('Job limit reached; clear completed jobs.')
                 oldest = terminal[0]
                 for suffix in ('.json', '.result'):

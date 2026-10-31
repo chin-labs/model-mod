@@ -15,7 +15,7 @@ import threading
 import time
 from types import SimpleNamespace
 
-from bridge import account_home, env, verify_version
+from bridge import account_home, env, note, verify_version
 
 FEATURES = ('apps', 'multi_agent', 'image_generation', 'browser_use', 'in_app_browser', 'goals', 'memories',
             'computer_use', 'plugins', 'remote_plugin', 'hooks', 'guardian_approval', 'incremental_tools',
@@ -142,20 +142,13 @@ def diff_for(cwd, base):
 
 
 def snapshot_unavailable(cwd):
-    env = git_env()
-    env['LC_ALL'] = 'C'
-    args = ['git', '-c', 'core.hooksPath=' + os.devnull, '-c', 'core.fsmonitor=false',
-            '-c', 'diff.autoRefreshIndex=false']
-    try:
-        root = subprocess.run(args + ['rev-parse', '--show-toplevel'], cwd=cwd, env=env,
-                              stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=15)
-        if root.returncode:
-            return b'not a git repository' in root.stderr.lower()
-        head = subprocess.run(args + ['rev-parse', '--verify', '--quiet', 'HEAD'], cwd=cwd, env=env,
-                              stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)
-        return head.returncode == 1
-    except (OSError, subprocess.TimeoutExpired):
-        return False
+    if not os.path.isdir(cwd): return False
+    path = os.path.realpath(cwd)
+    while True:
+        if os.path.lexists(os.path.join(path, '.git')): return False
+        parent = os.path.dirname(path)
+        if parent == path: return True
+        path = parent
 
 
 def gate_snapshot(cwd, base, session):
@@ -357,24 +350,29 @@ class App:
             try: self.interrupt()
             except (OSError, ValueError): pass
         finally:
-            try:
-                if os.name == 'posix' and self.own_group: os.killpg(self.proc.pid, signal.SIGTERM)
-                elif self.proc.poll() is None: self.proc.terminate()
-            except (ProcessLookupError, PermissionError): pass
+            def stop(sig):
+                try:
+                    if os.name == 'posix' and self.own_group:
+                        try: os.killpg(self.proc.pid, sig)
+                        except PermissionError:
+                            if sig == signal.SIGTERM: self.proc.terminate()
+                            else: self.proc.kill()
+                    elif self.proc.poll() is None:
+                        if sig == signal.SIGTERM: self.proc.terminate()
+                        else: self.proc.kill()
+                except (ProcessLookupError, PermissionError): pass
+            stop(signal.SIGTERM)
             try: self.proc.wait(timeout=3)
             except subprocess.TimeoutExpired:
-                if os.name == 'posix' and self.own_group:
-                    try: os.killpg(self.proc.pid, signal.SIGKILL)
-                    except (ProcessLookupError, PermissionError): pass
-                else: self.proc.kill()
-                self.proc.wait()
-            if os.name == 'posix' and self.own_group:
-                try: os.killpg(self.proc.pid, signal.SIGKILL)
-                except (ProcessLookupError, PermissionError): pass
+                stop(signal.SIGKILL)
+                try: self.proc.wait(timeout=3)
+                except subprocess.TimeoutExpired: note('Codex process cleanup could not be confirmed; a process may remain.')
+            if os.name == 'posix' and self.own_group: stop(signal.SIGKILL)
             self.writes.put(None)
             self.writer.join(timeout=1)
-            for stream in (self.proc.stdin, self.proc.stdout):
-                if stream: stream.close()
+            if self.proc.poll() is not None:
+                for stream in (self.proc.stdin, self.proc.stdout):
+                    if stream: stream.close()
 
 
 def validate_write_root(cwd, accounts_dir, account):
@@ -406,8 +404,7 @@ def validate_write_root(cwd, accounts_dir, account):
     return root
 
 
-def checked_config(app, cwd):
-    result = app.request('config/read', {'includeLayers': True, 'cwd': cwd})
+def checked_project_layers(result):
     layers = result.get('layers')
     if not isinstance(layers, list) or not layers: raise Failure('Codex project configuration could not be verified.')
     layer_types = ('packagedDefaults', 'mdm', 'system', 'enterpriseManaged', 'user', 'project', 'sessionFlags',
@@ -421,10 +418,16 @@ def checked_config(app, cwd):
                 raise Failure('Codex project configuration could not be verified.')
             if not reason:
                 raise Failure('This account trusts project configuration for this repository; remove its trust or use an untrusted account.')
+
+
+def checked_config(app, cwd):
+    result = app.request('config/read', {'includeLayers': True, 'cwd': cwd})
+    checked_project_layers(result)
     config = result.get('config', {})
     if config.get('web_search') != 'disabled' or any(config.get('features', {}).get(f) is not False for f in FEATURES):
         raise Failure('Codex safety configuration could not be verified.')
     if config.get('mcp_servers') != {}: raise Failure('Codex MCP servers could not be disabled.')
+    return config
 
 
 def execute(request, own_group=True, on_spawn=None):
@@ -495,7 +498,11 @@ def execute(request, own_group=True, on_spawn=None):
             roots = sandbox.get('writableRoots')
             if not isinstance(roots, list) or any(not isinstance(root, str) or not os.path.isabs(root) or os.path.realpath(root) != cwd for root in roots):
                 raise Failure('Codex sandbox or approval policy mismatch.')
-        checked_config(app, cwd)
+        config = checked_config(app, cwd)
+        if write:
+            projects = config.get('projects')
+            if projects is not None and (not isinstance(projects, dict) or cwd in projects):
+                raise Failure('Codex project trust could not be kept untrusted; remove the account trust record and try again.')
         app.thread = start.get('thread', {}).get('id')
         if not isinstance(app.thread, str) or not app.thread: raise Failure('Invalid Codex thread.')
         if request['kind'] == 'review' and not options.get('adversarial') and not options.get('gate'):
@@ -551,7 +558,9 @@ def execute(request, own_group=True, on_spawn=None):
 
 def transcript_path(path):
     if not isinstance(path, str) or not os.path.isabs(path): raise Failure('Transcript is unavailable or invalid.')
-    projects = os.path.realpath(os.path.join(os.path.expanduser('~'), '.claude', 'projects'))
+    config_dir = os.environ.get('CLAUDE_CONFIG_DIR') or os.path.join(os.path.expanduser('~'), '.claude')
+    if not os.path.isabs(config_dir): raise Failure('Transcript is unavailable or invalid.')
+    projects = os.path.realpath(os.path.join(config_dir, 'projects'))
     resolved = os.path.realpath(path)
     try:
         if os.path.commonpath([projects, resolved]) != projects or resolved == projects: raise Failure('Transcript is unavailable or invalid.')
@@ -698,6 +707,9 @@ def client(method):
             payload = {'request': request}
         return broker.connect(broker.root_path(), method, payload, timeout=3)
     except OSError:
+        limit = 104 if sys.platform == 'darwin' else 108 if sys.platform.startswith('linux') else None
+        if limit is not None and len(os.fsencode(broker.paths(broker.root_path())[0])) >= limit:
+            return {'ok': False, 'error': 'Background broker socket is unavailable: the data directory path is too long; use a shorter XDG_STATE_HOME and start a new session.'}
         return {'ok': False, 'error': 'Background broker socket is unavailable; check the broker and start a new session.'}
     except (ValueError, KeyError, TypeError):
         return {'ok': False, 'error': 'Background client request or broker response was invalid; check the installation.'}
