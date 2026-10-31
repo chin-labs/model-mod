@@ -87,7 +87,7 @@ for line in sys.stdin:
         result = {'config': {'web_search': web_search, 'features': features, 'mcp_servers': {}}, 'layers': layers}
         if mode == 'delegate_trust_record' and os.path.exists(os.path.join(os.environ['CODEX_HOME'], 'started')):
             result['config']['projects'] = {params['cwd']: {'trust_level': 'trusted'}}
-        if mode == 'delegate_layers_missing': del result['layers']
+        if mode == 'delegate_layers_missing' or not params.get('includeLayers'): del result['layers']
         send({'id': ident, 'result': result})
     elif method == 'thread/start':
         if mode == 'reasoning_start_error' and params.get('experimentalRawEvents'):

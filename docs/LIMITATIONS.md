@@ -108,6 +108,8 @@ Codex reasoning retention is experimental: signatures are filtered by prefix and
 
 The Stop gate is off by default. Structured verdict quality, missed findings and whether a real Codex honors `outputSchema` are unverified; the gate is not a security or compliance guarantee. Real-client `classic.Stop` behavior, cancellation and ordering alongside the official Codex gate are unverified. A pass is cached in memory for a matching session and fingerprint; module reload resets the pass cache and gate block counts. The automatic gate silently skips directories without `.git` in their ancestry; repositories without HEAD and Git errors produce an unverified warning. It has no base ref; if changes are committed within the turn, it can silently skip them. Binary or unavailable untracked files, dirty submodules and oversized diffs cannot be reviewed by this gate. A changed workspace needs a fresh review, and concurrent changes can occur after the snapshot check. Unknown, error and timeout allow ending with a human-review warning; after the configured maximum of one or two blocks, a further block also allows ending without a pass.
 
+Transfer supports only the default Claude configuration directory (`~/.claude`); offline tests with Codex 0.166 found that its import detection searches `HOME/.claude`, not a custom `CLAUDE_CONFIG_DIR`.
+
 ## Background delegation limitations
 
 - Background commands are unsupported on Windows; foreground delegation remains available. The effects of Ctrl+C and `/reload-plugins` on the broker have not been verified.

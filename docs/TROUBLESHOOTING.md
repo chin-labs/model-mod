@@ -36,6 +36,7 @@ After `/model-mod:setup`:
 | `incompatible app-server protocol; update or check Codex` | Update or check Codex and its effective settings before retrying. |
 | Tool name appears as `bridge_` followed by a hash | Reserved names such as `mcp__...` and names outside Codex's accepted format are mapped to aliases for the Codex call and restored on return. See [limitations](LIMITATIONS.md#codex-login-limitations). |
 | 429, quota or rate limit | Check your Codex subscription's quota and reset time. Before output, retries use `Retry-After` up to 15 seconds; a longer requested wait ends the turn. No automatic account rotation occurs. |
+| Transfer rejects a custom `CLAUDE_CONFIG_DIR` | Transfer supports the default `~/.claude` directory only: Codex 0.166 import detection was tested to search `HOME/.claude`. Unset the custom setting and use a session from the default directory. |
 | Account configuration refused and rollback failed | Open `/plugin configure model-mod@model-mod` and manually restore the previous `codexModels` value; check `codexAccounts` too. Then rerun setup if needed. |
 
 If setup cannot display the device-auth link and code, follow its displayed commands or create the account directory yourself and run `CODEX_HOME=<codexAccountsDir>/<account> codex login --device-auth`. On Windows, use the account-specific `CODEX_HOME` in PowerShell. Then run setup again.

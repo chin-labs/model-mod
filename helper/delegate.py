@@ -558,9 +558,11 @@ def execute(request, own_group=True, on_spawn=None):
 
 def transcript_path(path):
     if not isinstance(path, str) or not os.path.isabs(path): raise Failure('Transcript is unavailable or invalid.')
-    config_dir = os.environ.get('CLAUDE_CONFIG_DIR') or os.path.join(os.path.expanduser('~'), '.claude')
-    if not os.path.isabs(config_dir): raise Failure('Transcript is unavailable or invalid.')
-    projects = os.path.realpath(os.path.join(config_dir, 'projects'))
+    default_config = os.path.join(os.path.expanduser('~'), '.claude')
+    config_dir = os.environ.get('CLAUDE_CONFIG_DIR')
+    if config_dir and (not os.path.isabs(config_dir) or os.path.realpath(config_dir) != os.path.realpath(default_config)):
+        raise Failure('Transfer currently supports only the default Claude config directory (~/.claude); unset CLAUDE_CONFIG_DIR and use a session from the default directory.')
+    projects = os.path.realpath(os.path.join(default_config, 'projects'))
     resolved = os.path.realpath(path)
     try:
         if os.path.commonpath([projects, resolved]) != projects or resolved == projects: raise Failure('Transcript is unavailable or invalid.')

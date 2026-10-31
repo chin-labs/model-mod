@@ -391,12 +391,19 @@ class DelegateTest(unittest.TestCase):
         outside.write_text('synthetic')
         (projects / 'escape').symlink_to(outside)
         with patch.dict(os.environ, {'HOME': str(self.root), 'CLAUDE_CONFIG_DIR': str(config)}):
-            self.assertEqual(delegate.transcript_path(str(transcript)), str(transcript))
-            (self.account_dir / 'fake_config.json').write_text(json.dumps({'mode': 'transfer', 'session_path': str(transcript), 'session_cwd': str(self.repo)}))
+            for path in (str(transcript), str(projects / 'escape'), str(projects / '..' / '..' / 'outside')):
+                with self.assertRaisesRegex(delegate.Failure, 'supports only the default Claude config directory'):
+                    delegate.transcript_path(path)
             proc = subprocess.run([sys.executable, '-E', '-s', HELPER], input=json.dumps(dict(self.request, kind='transfer', transcript=str(transcript))), text=True, capture_output=True, timeout=10)
-            self.assertEqual(proc.returncode, 0)
-            self.assertIn('codex resume', json.loads(proc.stdout)['text'])
-            for path in (str(projects / 'escape'), str(projects / '..' / '..' / 'outside')):
+            self.assertIn('supports only the default Claude config directory', json.loads(proc.stdout)['text'])
+        with patch.dict(os.environ, {'HOME': str(self.root), 'CLAUDE_CONFIG_DIR': str(self.root / '.claude')}):
+            default = self.root / '.claude' / 'projects'
+            default.mkdir(parents=True)
+            valid = default / 'session.jsonl'
+            valid.write_text('synthetic')
+            self.assertEqual(delegate.transcript_path(str(valid)), str(valid))
+            (default / 'escape').symlink_to(outside)
+            for path in (str(default / 'escape'), str(default / '..' / '..' / 'outside')):
                 with self.assertRaises(delegate.Failure): delegate.transcript_path(path)
         broken = self.root / 'broken'
         broken.mkdir()

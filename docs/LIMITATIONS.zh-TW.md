@@ -110,6 +110,8 @@ Codex reasoning 保留為實驗性功能：簽章依前綴過濾，快取以第�
 
 Stop gate 預設關閉。結構化裁定的品質、漏判情況，以及真實 Codex 是否遵守 `outputSchema` 均未驗證；此功能不是安全或合規保證。真實客戶端的 `classic.Stop`、取消，以及與官方 Codex gate 並存時的順序尚未驗證。Pass 只在記憶體中對相符的工作階段與指紋有效；模組重新載入會清除 pass 快取與 gate 阻擋計數。目前目錄及其祖先均無 `.git` 時，自動 gate 會靜默跳過；儲存庫尚無 HEAD 或 Git 發生錯誤時會顯示未驗證警告。自動 gate 沒有 base ref，若回合內已提交變更，可能靜默跳過。二進位或無法讀取的未追蹤檔案、有未提交變更的 submodule，以及過大的 diff，無法由此 gate 審查。工作區變更後需重新審查；快照檢查後仍可能發生並行變更。Unknown、錯誤與逾時會放行並提示人工審查；阻擋達設定的 1 或 2 次後，再次 block 也會在未通過下放行。
 
+Transfer 僅支援預設 Claude 設定目錄（`~/.claude`）；離線實測 Codex 0.166 的匯入偵測只搜尋 `HOME/.claude`，不搜尋自訂 `CLAUDE_CONFIG_DIR`。
+
 ## 背景委派限制
 
 - Windows 不支援背景指令；前景委派仍可使用。Ctrl+C 與 `/reload-plugins` 對 broker 的影響尚未驗證。

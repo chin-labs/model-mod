@@ -27,7 +27,7 @@ All notable changes to this project are listed here. The format follows [Keep a 
 
 ### Fixed
 - Accept Codex workspace-write sandbox responses without explicit writable roots and avoid persisting project trust during rescue. Delegation and Codex image generation refuse enabled or unverifiable project configuration, including when an account already trusts a repository's project configuration.
-- Transfer accepts transcripts under an absolute `CLAUDE_CONFIG_DIR` projects directory.
+- Transfer explains when a custom `CLAUDE_CONFIG_DIR` is unsupported.
 - Warn instead of silently skipping damaged Git repositories, retain possible-leftover job warnings preferentially, bound process cleanup waits and explain overlong background socket paths.
 - Check Codex image output paths before generation and keep image approvals separate for API and Codex upstreams.
 - Improve background job cleanup and status messages; avoid appending native search text after a tool call.

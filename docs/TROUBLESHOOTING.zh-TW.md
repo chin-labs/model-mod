@@ -36,6 +36,7 @@
 | `incompatible app-server protocol; update or check Codex` | 升級或檢查 Codex 及其有效設定後再重試。 |
 | 工具名稱顯示為 `bridge_` 加雜湊 | `mcp__...` 等保留名稱及不符合 Codex 格式的名稱，在呼叫 Codex 時會轉成別名，回傳時還原。見[限制說明](LIMITATIONS.zh-TW.md#codex-登入的限制)。 |
 | 429、額度或速率限制 | 查看你的 Codex 訂閱額度與重置時間。尚未輸出前，重試會遵循最多 15 秒的 `Retry-After`；要求等待更久時直接結束回合。不會自動輪替帳號。 |
+| Transfer 拒絕自訂 `CLAUDE_CONFIG_DIR` | Transfer 僅支援預設 `~/.claude` 目錄；實測 Codex 0.166 匯入偵測搜尋 `HOME/.claude`。請取消自訂設定，並使用預設目錄中的工作階段。 |
 | 帳號設定被拒且回復失敗 | 開啟 `/plugin configure model-mod@model-mod`，手動將 `codexModels` 還原成先前的值，也檢查 `codexAccounts`；需要時再執行 setup。 |
 
 若 setup 無法顯示裝置驗證網址與代碼，請依顯示的命令操作，或自行建立帳號目錄並執行 `CODEX_HOME=<codexAccountsDir>/<帳號> codex login --device-auth`。Windows 請在 PowerShell 設定各帳號專用的 `CODEX_HOME`。之後重新執行 setup。
