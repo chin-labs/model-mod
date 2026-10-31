@@ -283,6 +283,99 @@ class Contract(unittest.TestCase):
             self.assertEqual(off.returncode, 0, off.stderr)
             self.assertEqual(before, sorted((str(p), p.read_bytes()) for p in Path(tmp, 'state').rglob('*.json')))
 
+    def test_reuse_reasoning_and_usage(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp, 'home'); home.mkdir()
+            log = Path(tmp, 'log')
+            Path(home, 'fake_config.json').write_text(json.dumps({'mode': 'reasoning_tool', 'log': str(log)}))
+            env = dict(os.environ, XDG_STATE_HOME=str(Path(tmp, 'state')))
+            cmd = [sys.executable, str(BRIDGE), 'messages', '--codex-home', str(home), '--codex-bin', str(FAKE), '--model-map', 'test=model']
+            body = json.dumps(dict(BASE, stream=False, tools=TOOLS))
+            reuse = subprocess.run(cmd + ['--reuse-session', 'a'], input=body, text=True, capture_output=True, env=env, timeout=15)
+            self.assertEqual(reuse.returncode, 0, reuse.stderr)
+            self.assertNotIn('thinking', [b['type'] for b in json.loads(reuse.stdout)['content']])
+            self.assertIn('raw reasoning unavailable', reuse.stderr)
+            off = subprocess.run(cmd, input=body, text=True, capture_output=True, env=env, timeout=15)
+            self.assertEqual(off.returncode, 0, off.stderr)
+            self.assertIn('thinking', [b['type'] for b in json.loads(off.stdout)['content']])
+
+    def test_reuse_usage_excludes_parent(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp, 'home'); home.mkdir()
+            log = Path(tmp, 'log')
+            Path(home, 'fake_config.json').write_text(json.dumps({'log': str(log)}))
+            env = dict(os.environ, XDG_STATE_HOME=str(Path(tmp, 'state')))
+            cmd = [sys.executable, str(BRIDGE), 'messages', '--codex-home', str(home), '--codex-bin', str(FAKE), '--model-map', 'test=model']
+            for extra in (['--reuse-session', 'a'], []):
+                result = subprocess.run(cmd + extra, input=json.dumps(dict(BASE, stream=False)), text=True, capture_output=True, env=env, timeout=15)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(json.loads(result.stdout)['usage'], {'input_tokens': 60, 'output_tokens': 9, 'cache_read_input_tokens': 40, 'cache_creation_input_tokens': 0})
+
+    def test_cancel_parent_creation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp, 'home'); home.mkdir()
+            log = Path(tmp, 'log')
+            Path(home, 'fake_config.json').write_text(json.dumps({'parent_delay': 5, 'log': str(log)}))
+            env = dict(os.environ, XDG_STATE_HOME=str(Path(tmp, 'state')))
+            cmd = [sys.executable, str(BRIDGE), 'messages', '--codex-home', str(home), '--codex-bin', str(FAKE), '--model-map', 'test=model', '--reuse-session', 'a']
+            proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+            try:
+                proc.stdin.write(json.dumps(dict(BASE, stream=False))); proc.stdin.close(); proc.stdin = None
+                deadline = time.monotonic() + 10
+                while time.monotonic() < deadline:
+                    rows = [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
+                    if any(r.get('method') == 'turn/start' for r in rows): break
+                    time.sleep(.02)
+                else: self.fail('parent turn never started')
+                proc.send_signal(signal.SIGTERM)
+                stdout, stderr = proc.communicate(timeout=15)
+                rows = [json.loads(line) for line in log.read_text().splitlines()]
+                self.assertIn('model-mod-http:499', stderr)
+                self.assertNotIn('"type": "message"', stdout)
+                self.assertEqual(sum(r.get('method') == 'thread/start' for r in rows), 1)
+                self.assertEqual(sum(r.get('method') == 'turn/start' for r in rows), 1)
+                self.assertEqual(json.loads(next(Path(tmp, 'state').rglob('*.json')).read_text())['state'], 'pending-delete')
+                for row in rows:
+                    if 'pid' in row:
+                        with self.assertRaises(ProcessLookupError): os.kill(row['pid'], 0)
+            finally:
+                if proc.poll() is None: proc.kill(); proc.communicate()
+
+    def test_missing_parent_rebuilt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp, 'home'); home.mkdir()
+            log = Path(tmp, 'log')
+            Path(home, 'fake_config.json').write_text(json.dumps({'log': str(log)}))
+            env = dict(os.environ, XDG_STATE_HOME=str(Path(tmp, 'state')))
+            cmd = [sys.executable, str(BRIDGE), 'messages', '--codex-home', str(home), '--codex-bin', str(FAKE), '--model-map', 'test=model', '--reuse-session', 'a']
+            def run():
+                r = subprocess.run(cmd, input=json.dumps(dict(BASE, stream=False)), text=True, capture_output=True, env=env, timeout=15)
+                self.assertEqual(r.returncode, 0, r.stderr)
+            run()
+            next(home.glob('fake-parent-*')).unlink()
+            run(); run()
+            rows = [json.loads(line) for line in log.read_text().splitlines()]
+            starts = [r for r in rows if r.get('method') == 'thread/start']
+            self.assertEqual(sum(not r['params']['ephemeral'] for r in starts), 2)
+            self.assertEqual(sum(r['params']['ephemeral'] for r in starts), 1)
+            self.assertEqual(sum(r.get('method') == 'thread/fork' for r in rows), 3)
+            self.assertEqual(json.loads(next(Path(tmp, 'state').rglob('*.json')).read_text())['state'], 'active')
+
+    def test_alternating_tool_sets(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp, 'home'); home.mkdir()
+            log = Path(tmp, 'log')
+            Path(home, 'fake_config.json').write_text(json.dumps({'log': str(log)}))
+            env = dict(os.environ, XDG_STATE_HOME=str(Path(tmp, 'state')))
+            cmd = [sys.executable, str(BRIDGE), 'messages', '--codex-home', str(home), '--codex-bin', str(FAKE), '--model-map', 'test=model', '--reuse-session', 'a']
+            for i in range(6):
+                r = subprocess.run(cmd, input=json.dumps(dict(BASE, stream=False, tools=TOOLS[i % 2:i % 2 + 1])), text=True, capture_output=True, env=env, timeout=15)
+                self.assertEqual(r.returncode, 0, r.stderr)
+            rows = [json.loads(line) for line in log.read_text().splitlines()]
+            self.assertEqual(sum(r.get('method') == 'thread/start' for r in rows), 2)
+            self.assertEqual(sum(r.get('method') == 'thread/fork' for r in rows), 6)
+            self.assertFalse(any(r.get('method') == 'thread/delete' for r in rows))
+
     def test_parent_lifecycle(self):
         import thread_reuse
         class Stub:
@@ -292,12 +385,18 @@ class Contract(unittest.TestCase):
                 self.rows = []
                 self.fail_delete = False
                 self.fail_fork = False
+                self.cancel_method = None
+                self.invalid_id_method = None
             def request(self, method, params):
                 self.rows.append((method, dict(params)))
+                if method == self.cancel_method: raise bridge.Cancelled()
+                if method == self.invalid_id_method:
+                    return {'thread': {'id': None}, 'approvalPolicy': 'never', 'sandbox': {'type': 'readOnly'}}
                 if method == 'thread/start':
                     import uuid
                     return {'thread': {'id': str(uuid.uuid4())}, 'approvalPolicy': 'never', 'sandbox': {'type': 'readOnly'}}
                 if method == 'turn/start':
+                    self.pending.append({'method': 'thread/tokenUsage/updated', 'params': {'tokenUsage': {'total': {'inputTokens': 10, 'cachedInputTokens': 0, 'outputTokens': 1}}}})
                     return {'turn': {'id': 'synthetic'}}
                 if method == 'thread/delete' and self.fail_delete: raise bridge.BridgeError('synthetic')
                 if method == 'thread/fork' and self.fail_fork: raise bridge.BridgeError('synthetic')
@@ -325,11 +424,11 @@ class Contract(unittest.TestCase):
                 self.assertNotIn('private-one', json.dumps(parent))
                 self.assertEqual(parent['developerInstructions'], 'fixed')
                 app.fail_delete = True
-                self.assertIsNotNone(run(settings=dict(params, dynamicTools=[{'name': 'two'}])))
+                self.assertIsNotNone(run(settings=dict(params, developerInstructions='changed')))
                 entries = list(Path(tmp).rglob('*.json'))
                 self.assertEqual(sum(json.loads(p.read_text())['state'] == 'pending-delete' for p in entries), 1)
                 app.fail_delete = False
-                self.assertIsNotNone(run(settings=dict(params, dynamicTools=[{'name': 'two'}])))
+                self.assertIsNotNone(run(settings=dict(params, developerInstructions='changed')))
                 self.assertEqual(len(list(Path(tmp).rglob('*.json'))), 1)
                 self.assertIsNotNone(run(session='session-b'))
                 self.assertIsNotNone(run(settings=dict(params, model='model-b')))
@@ -362,6 +461,30 @@ class Contract(unittest.TestCase):
                 self.assertEqual(starts[-2]['baseInstructions'], 'private-one')
                 self.assertEqual(starts[-1]['baseInstructions'], 'changed')
                 self.assertNotIn('baseInstructions', [p for m, p in app.rows if m == 'thread/fork'][-1])
+                app.invalid_id_method = 'thread/start'
+                self.assertIsNone(run(session='invalid-parent'))
+                app.invalid_id_method = None
+                self.assertIsNotNone(run(session='invalid-child'))
+                app.invalid_id_method = 'thread/fork'
+                self.assertIsNone(run(session='invalid-child'))
+                app.invalid_id_method = None
+                app.reuse_broken = False
+                self.assertIsNotNone(run(session='cancel-fork'))
+                app.cancel_method = 'thread/fork'
+                with self.assertRaises(bridge.Cancelled): run(session='cancel-fork')
+                app.cancel_method = None
+                app.reuse_broken = False
+                self.assertIsNotNone(run(session='cancel-delete'))
+                app.cancel_method = 'thread/delete'
+                with self.assertRaises(bridge.Cancelled):
+                    with patch.object(thread_reuse, 'TTL_SECONDS', -1): run(session='cancel-delete')
+                app.cancel_method = None
+                with patch.object(thread_reuse, 'MAX_SESSION_PARENTS', 2):
+                    for i in range(3):
+                        self.assertIsNotNone(run(session='bounded', settings=dict(params, dynamicTools=[{'name': str(i)}])))
+                    bounded = [json.loads(p.read_text()) for p in Path(tmp).rglob('*.json') if json.loads(p.read_text()).get('session') == thread_reuse.digest(['bounded', thread_reuse.digest('/account-a')])]
+                    self.assertEqual(len(bounded), 2)
+
 
     def test_web_search_config(self):
         for enabled in (False, True):

@@ -26,6 +26,7 @@ def record(value):
 
 
 def event(method, params):
+    if method == 'rawResponseItem/completed' and forked: return
     send({'method': method, 'params': params})
 
 
@@ -53,6 +54,10 @@ if 'status' in sys.argv:
     sys.exit(1 if config.get('mode') == 'logged_out' else 0)
 mode = config.get('mode', 'text')
 interrupted = threading.Event()
+forked = False
+parent_usage = {'inputTokens': 6200, 'cachedInputTokens': 500, 'outputTokens': 12}
+child_usage = {'inputTokens': 100, 'cachedInputTokens': 40, 'outputTokens': 9}
+
 if mode == 'startup_fail':
     print('unknown option --disable', file=sys.stderr, flush=True)
     sys.exit(2)
@@ -133,6 +138,7 @@ for line in sys.stdin:
         if mode == 'fork_fail' or not parent or not parent['turns'] or not params.get('ephemeral') or not params.get('excludeTurns'):
             send({'id': ident, 'error': {'code': -32600, 'message': 'no rollout found'}})
         else:
+            forked = True
             inherited = dict(parent['params'])
             for field in ('baseInstructions', 'developerInstructions'):
                 if field in params: inherited[field] = params[field]
@@ -143,8 +149,9 @@ for line in sys.stdin:
         if mode == 'delete_fail': send({'id': ident, 'error': {'code': -32000, 'message': 'synthetic'}})
         else:
             try: os.unlink(path)
-            except FileNotFoundError: pass
-            send({'id': ident, 'result': {}})
+            except FileNotFoundError:
+                send({'id': ident, 'error': {'code': -32600, 'message': 'thread not found: ' + params.get('threadId', '')}})
+            else: send({'id': ident, 'result': {}})
     elif method == 'thread/inject_items':
         if mode == 'reasoning_inject_error' and any(item.get('type') == 'reasoning' for item in params['items']):
             send({'id': ident, 'error': {'code': -32602, 'message': 'synthetic'}})
@@ -167,6 +174,8 @@ for line in sys.stdin:
         items = [{'type': 'sleep'}, {'type': 'commandExecution'}] if mode == 'wait_forbidden' else [{'type': 'fileChange'}] if mode == 'forbidden_response' else ([{'type': 'sleep'}] if mode == 'wait_response' else [])
         send({'id': ident, 'result': {'turn': {'id': 'turn1', 'items': items}}})
         if os.path.isfile(parent_path):
+            if config.get('parent_delay'): time.sleep(config['parent_delay'])
+            event('thread/tokenUsage/updated', {'tokenUsage': {'total': parent_usage}})
             event('item/agentMessage/delta', {'delta': 'ok'})
             event('turn/completed', {'turn': {'id': 'turn1', 'status': 'completed'}})
             continue
@@ -285,7 +294,7 @@ for line in sys.stdin:
             event('item/tool/call', {'callId': 'call2', 'tool': 'two', 'arguments': {'n': 2}})
         else:
             if mode == 'delegate_delay': time.sleep(1)
-            event('thread/tokenUsage/updated', {'tokenUsage': {'total': {'inputTokens': 100, 'cachedInputTokens': 40, 'outputTokens': 9}}})
+            event('thread/tokenUsage/updated', {'tokenUsage': {'total': {k: child_usage[k] + (parent_usage[k] if forked else 0) for k in child_usage}, 'last': {'inputTokens': 20, 'cachedInputTokens': 10, 'outputTokens': 2}}})
             event('turn/completed', {'turn': {'id': 'turn1', 'status': 'completed'}})
     elif method == 'turn/interrupt':
         interrupted.set()
@@ -296,7 +305,7 @@ for line in sys.stdin:
                 event('item/agentMessage/delta', {'delta': 'hello'})
                 time.sleep(0.05)
         send({'id': ident, 'result': {}})
-        event('thread/tokenUsage/updated', {'tokenUsage': {'total': {'inputTokens': 100, 'cachedInputTokens': 40, 'outputTokens': 9}}})
+        event('thread/tokenUsage/updated', {'tokenUsage': {'total': {k: child_usage[k] + (parent_usage[k] if forked else 0) for k in child_usage}, 'last': {'inputTokens': 20, 'cachedInputTokens': 10, 'outputTokens': 2}}})
         event('turn/completed', {'turn': {'id': 'turn1', 'status': 'interrupted'}})
     elif method == 'model/list': send({'id': ident, 'result': {'data': config.get('models', [{'id': 'chat', 'displayName': 'Chat'}, {'id': 'image', 'displayName': 'Image'}]), 'nextCursor': None}})
     elif method == 'account/rateLimits/read': send({'id': ident, 'result': config.get('rate_limits', {'rateLimits': {'primary': {'usedPercent': 30}}, 'ordinaryUsageAllowed': True})})

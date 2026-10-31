@@ -25,6 +25,7 @@ import unicodedata
 for stream in (sys.stdin, sys.stdout, sys.stderr):
     stream.reconfigure(encoding='utf-8')
 
+from cancellation import Cancelled
 from mapping import (InvalidRequest, classify, prepare, usage_delta, encode_reasoning,
                      REASONING_RESPONSE_LIMIT)
 
@@ -48,10 +49,6 @@ class BridgeError(Exception):
     def __init__(self, message, status=500, kind='api_error', retry_after=None, code='bridge_error'):
         super().__init__(message)
         self.status, self.kind, self.retry_after, self.code = status, kind, retry_after, code
-
-
-class Cancelled(Exception):
-    pass
 
 
 def cancel(signum, frame):
@@ -293,6 +290,9 @@ class App:
                     if invalid_encrypted_content(obj['error']):
                         raise BridgeError('Codex login: app-server request failed', status, kind, code='invalid_encrypted_content')
                     if method == 'initialize': raise incompatible('experimentalApi')
+                    message = obj['error'].get('message') if isinstance(obj['error'], dict) else None
+                    if method == 'thread/delete' and isinstance(obj['error'], dict) and obj['error'].get('code') == -32600 and message == 'thread not found: ' + str(params.get('threadId')):
+                        raise BridgeError('Codex login: thread already absent', code='thread_not_found')
                     if isinstance(obj['error'], dict) and obj['error'].get('code') in (-32600, -32602):
                         raise BridgeError('Codex login: request rejected by Codex', 400, 'invalid_request_error', code='codex_rejected_request')
                     raise BridgeError('Codex login: app-server request failed', status, kind, retry_seconds(obj['error']))
@@ -388,10 +388,12 @@ def messages(args, app, prepared, cwd):
     params = {'model': p['model'], 'cwd': cwd, 'sandbox': 'read-only', 'approvalPolicy': 'never', 'ephemeral': True, 'baseInstructions': p['system'], 'developerInstructions': instructions, 'dynamicTools': p['tools']}
     if not args.no_keep_reasoning: params['experimentalRawEvents'] = True
     result = None
+    reused = False
     if args.reuse_session and os.name == 'posix':
         try:
             import thread_reuse
             result = thread_reuse.fork(app, args, args.reuse_session, params)
+            reused = result is not None
         except (OSError, ValueError, TypeError, KeyError, BridgeError) as error:
             if isinstance(error, BridgeError): app.reuse_broken = True
             note('Codex login: thread reuse unavailable; using a new thread')
@@ -405,6 +407,9 @@ def messages(args, app, prepared, cwd):
             note('Codex login: raw reasoning unavailable')
             params.pop('experimentalRawEvents', None)
             result = app.request('thread/start', params)
+    parent_usage = result.pop('_parent_usage') if reused else {}
+    if parent_usage and not args.no_keep_reasoning:
+        note('Codex login: raw reasoning unavailable on reused threads')
     try:
         thread_id = result['thread']['id']
         if not isinstance(thread_id, str) or str(uuid.UUID(thread_id)) != thread_id.lower(): raise ValueError()
@@ -548,7 +553,7 @@ def messages(args, app, prepared, cwd):
             app.send({'id': obj['id'], 'error': {'code': -32601, 'message': 'not permitted'}})
     if opened and p['stream']: emit('content_block_stop', {'type': 'content_block_stop', 'index': len(content)-1})
     if reasoning_dropped: note('Codex login: discarded reasoning items: ' + str(reasoning_dropped))
-    usage = usage_delta({}, latest)
+    usage = usage_delta(parent_usage, latest)
     if not latest: note('Codex login: usage unavailable; zero is not an accurate count')
     reason = 'tool_use' if calls else 'end_turn'
     if p['stream']:

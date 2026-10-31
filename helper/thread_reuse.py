@@ -9,7 +9,11 @@ import tempfile
 import time
 import uuid
 
+from cancellation import Cancelled
+
 TTL_SECONDS = 6 * 60 * 60
+MAX_SESSION_PARENTS = 4
+USAGE_FIELDS = ('inputTokens', 'cachedInputTokens', 'outputTokens', 'cacheWriteInputTokens')
 FORK_OVERRIDE_INSTRUCTIONS = True
 PARENT_INSTRUCTIONS = 'Respond briefly.'
 SYNTHETIC_INPUT = 'Reply with ok.'
@@ -40,7 +44,13 @@ def write(path, record):
 def record_at(path):
     try:
         with open(path, encoding='utf-8') as stream: data = json.load(stream)
-        if set(data) != {'key', 'thread', 'account', 'created', 'used', 'state'}: return None
+        old_fields = {'key', 'thread', 'account', 'created', 'used', 'state'}
+        if set(data) not in (old_fields, old_fields | {'session', 'tools', 'usage'}): return None
+        if 'session' in data:
+            if not all(isinstance(data[k], str) and re.fullmatch(r'[0-9a-f]{64}', data[k]) for k in ('session', 'tools')): return None
+            if not isinstance(data['usage'], dict) or set(data['usage']) - set(USAGE_FIELDS): return None
+            if not all(type(v) is int and v >= 0 for v in data['usage'].values()): return None
+            if data['state'] == 'active' and not all(k in data['usage'] for k in USAGE_FIELDS[:3]): return None
         if not all(isinstance(data[k], str) for k in ('key', 'thread', 'account', 'state')): return None
         if not re.fullmatch(r'[0-9a-f]{64}', data['key']) or not re.fullmatch(r'[0-9a-f]{64}', data['account']): return None
         if str(uuid.UUID(data['thread'])) != data['thread'] or data['state'] not in ('active', 'pending-delete'): return None
@@ -59,7 +69,12 @@ def delete(app, path, record):
     if deadline is not None: app.deadline = min(deadline, time.monotonic() + 3)
     try:
         app.request('thread/delete', {'threadId': record['thread']})
+    except Cancelled:
+        raise
     except Exception as error:
+        if getattr(error, 'code', None) == 'thread_not_found':
+            os.unlink(path)
+            return True
         if getattr(error, 'code', None) == 'timeout': app.reuse_broken = True
         return False
     finally:
@@ -100,7 +115,9 @@ def fork(app, args, session, params):
         try: fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError: return None
         account = digest(os.path.realpath(args.codex_home))
+        session_key = digest([session, account])
         group = digest([session, account, params['model']])
+        tools_key = digest(params.get('dynamicTools', []))
         settings = dict(params)
         settings.pop('cwd', None)  # Per-request empty temporary working directory.
         if FORK_OVERRIDE_INSTRUCTIONS:
@@ -108,29 +125,38 @@ def fork(app, args, session, params):
         key = digest([session, account, settings, getattr(app, 'launch_args', []), app.web_search, args.no_keep_reasoning, args.service_tier, args.compact_window])
         path = os.path.join(root, group + '-' + key + '.json')
         now = time.time()
+        candidates = []
         for name in os.listdir(root):
             if not re.fullmatch(r'[0-9a-f]{64}-[0-9a-f]{64}\.json', name): continue
             item_path = os.path.join(root, name)
             item = record_at(item_path)
             if not item or item['account'] != account: continue
-            if item['state'] == 'pending-delete' or now - item['used'] >= TTL_SECONDS or (name.startswith(group + '-') and item_path != path):
+            if (item['state'] == 'pending-delete' or now - item['used'] >= TTL_SECONDS or
+                    (name.startswith(group + '-') and (not item.get('usage') or (item_path != path and item.get('tools') == tools_key)))):
                 delete(app, item_path, item)
                 if getattr(app, 'reuse_broken', False): return None
+            elif item.get('session') == session_key and item['state'] == 'active':
+                candidates.append((item['used'], item_path, item))
         record = record_at(path)
         if record is None and os.path.lexists(path): return None
         if record and (record['state'] != 'active' or record['account'] != account or record['key'] != key): return None
         if not record:
+            while len(candidates) >= MAX_SESSION_PARENTS:
+                _, old_path, old = min(candidates, key=lambda candidate: candidate[0])
+                candidates = [candidate for candidate in candidates if candidate[1] != old_path]
+                if not delete(app, old_path, old): return None
             parent = dict(params, ephemeral=False)
             if FORK_OVERRIDE_INSTRUCTIONS:
                 parent['baseInstructions'] = PARENT_INSTRUCTIONS
             result = app.request('thread/start', parent)
             thread = result['thread']['id']
-            if str(uuid.UUID(thread)) != thread.lower(): return None
-            record = {'key': key, 'thread': thread, 'account': account, 'created': now, 'used': now, 'state': 'pending-delete'}
+            if not isinstance(thread, str) or str(uuid.UUID(thread)) != thread.lower(): return None
+            record = {'key': key, 'thread': thread, 'account': account, 'created': now, 'used': now, 'state': 'pending-delete', 'session': session_key, 'tools': tools_key, 'usage': {}}
             try:
                 write(path, record)
             except OSError:
                 try: app.request('thread/delete', {'threadId': thread})
+                except Cancelled: raise
                 except Exception: pass
                 raise
             idle = getattr(app, 'idle_seconds', None)
@@ -144,12 +170,19 @@ def fork(app, args, session, params):
                 turn_id = turn['turn']['id']
                 while True:
                     obj = app.pending.pop(0) if app.pending else app.next()
+                    if obj.get('method') == 'thread/tokenUsage/updated':
+                        usage = obj.get('params', {}).get('tokenUsage', {}).get('total', {})
+                        if isinstance(usage, dict) and all(type(usage.get(k)) is int and usage[k] >= 0 for k in USAGE_FIELDS[:3]):
+                            record['usage'] = {k: usage.get(k, 0) for k in USAGE_FIELDS if type(usage.get(k, 0)) is int and usage.get(k, 0) >= 0}
                     if obj.get('method') == 'turn/completed' and obj.get('params', {}).get('turn', {}).get('id') == turn_id:
                         if obj['params']['turn'].get('status') != 'completed': raise ValueError('parent turn failed')
                         break
                 app.pending.clear()
+                if not all(k in record['usage'] for k in USAGE_FIELDS[:3]): raise ValueError('parent usage unavailable')
                 record['state'] = 'active'
                 write(path, record)
+            except Cancelled:
+                raise
             except Exception:
                 app.reuse_broken = True
                 app.pending.clear()
@@ -165,16 +198,22 @@ def fork(app, args, session, params):
         try:
             result = app.request('thread/fork', fork_params)
             child = result['thread']['id']
-            if (str(uuid.UUID(child)) != child.lower() or child == record['thread'] or
+            if (not isinstance(child, str) or str(uuid.UUID(child)) != child.lower() or child == record['thread'] or
                     result['thread'].get('forkedFromId', record['thread']) != record['thread'] or
                     result.get('approvalPolicy') != 'never' or result.get('sandbox', {}).get('type') != 'readOnly'):
                 raise ValueError('invalid fork response')
+        except Cancelled:
+            record['state'] = 'pending-delete'
+            try: write(path, record)
+            except OSError: pass
+            raise
         except Exception:
             app.reuse_broken = True
             delete(app, path, record)
             return None
         record['used'] = now
         write(path, record)
+        result['_parent_usage'] = record['usage']
         return result
     finally:
         os.close(fd)

@@ -1530,6 +1530,7 @@ for (const setting of ['on', 'OFF', 'invalid', 'false'] as const) {
     expect(w.spawned[0]!.argv.includes('--reuse-session')).toBe(setting !== 'OFF')
     const status = await $.command.run({ command: 'model-mod:status', args: '', origin: { kind: 'composer' } } as never)
     expect(status.text).toContain('threadReuse=' + (setting === 'OFF' ? 'off' : 'on'))
+    expect(status.text.includes('not kept on reused threads')).toBe(setting !== 'OFF')
     if (setting === 'invalid' || setting === 'false') expect(status.text).toContain('invalid setting; using on')
     await $.session.end({ sessionId: 'test-session', reason: 'other' } as never)
     expect(w.ran.some(argv => argv.includes('cleanup-threads'))).toBe(setting !== 'OFF')
