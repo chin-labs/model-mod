@@ -62,6 +62,8 @@ API 伺服器路徑會把工作階段送往接受 Messages 風格串流請求（
 
 Codex effort 依模型宣告的等級夾值：`max` 取支援的最高等級；不支援的明設等級取不高於它的最高支援等級，若沒有較低等級則取最低。絕不送出 `minimal`。未明設時，需要調整會採用模型支援的預設值。
 
+`/model-mod:review --adversarial` 支援焦點文字與 effort；`--gate` 要求結構化裁定。Stop gate 由 `codexStopGate` 與 `codexStopGateBlocks` 獨立設定；見[審查關卡](FEATURES.zh-TW.md#codex-審查關卡)。
+
 原生搜尋與 openPage 在 OpenAI 端執行，不受 Claude 權限的網域規則（allowed／blocked domains）限制；model-mod 不做 `allowed_domains` 的安全宣稱。查詢文字會送往 OpenAI。
 
 路徑與命令不得包含 NUL 或換行；單純命令名稱只能包含英文字母、數字、`.`、`_`、`-`。帳號與模型組成 ID `<帳號>/<模型>`，顯示為 `<模型> @ <帳號>`。每個帳號都會搭配每個已設定的模型。API 模型 ID 相同時，Codex 優先。`/model-mod:setup` 會合併並去除重複帳號，但會以選定模型**覆寫整個**適用於所有帳號的 `codexModels` 設定；新增帳號時請重新選取完整所需模型清單。`fallbackModel` 與 `workerModel` 可指向有效的 Codex ID。
@@ -113,12 +115,14 @@ claude plugin configure model-mod@model-mod --values-stdin < /path/to/private-co
 
 不要把金鑰放進 `--config` 參數（可能出現在程序列表），也不要貼進訊息。在組織管理的 Claude Code 中，個人安裝的插件可能收不到所有 hook，除非組織把插件列入管理設定。
 
+例如，僅設定 Codex 時，`/model-mod:status` 以 `model-mod 0.2.0: picker=active` 開頭，接著顯示帳號資訊。`rate-limits` 提供各視窗比例、重置時間與 credits；`account-info` 在可取得時提供方案。
+
 Codex status 顯示各視窗的剩餘比例、重置時間、credits、方案及 `ordinaryUsageAllowed`；取得不到的欄位顯示 unavailable。Codex 額度最多每帳號五分鐘查一次，額度錯誤可立即查詢；沒有可用的未來重置時間時不自動切換。API 上游沒有官方 rateLimits，不適用此機制。額度用完不會自動輪流換帳號，可設定不同上游或帳號的 `fallbackModel`。
 
 `codexServiceTier` 可設 `default`（預設）或 `priority`；非法值視為 `default`。`priority` 需要 Codex 方案支援，可能較快回應但較快耗用額度；實際層級與計費是否生效未驗證。
 
 ## 背景工作儲存與限制
 
-SessionStart hook 會啟動本機 broker。所有 session 關閉後，閒置的 broker 最多仍存活 30 分鐘。最多保留 50 個工作，保留七天；新增第 51 個時會先淘汰最舊的終態紀錄與結果；每個帳號最多兩個執行中、五個排隊中，且最多一個未終態的 write 工作。背景執行總時限為 30 分鐘、無活動時限為五分鐘；前景分別為五分鐘及兩分鐘。使用 `/model-mod:jobs --clear` 可移除目前工作區已終態的工作與結果。
+SessionStart hook 會啟動本機 broker。所有 session 關閉後，閒置的 broker 最多仍存活 30 分鐘。最多保留 50 個工作，保留七天；新增第 51 個時會先淘汰最舊的終態紀錄與結果；若沒有終態紀錄則拒絕新增；每個帳號最多兩個執行中、五個排隊中，且最多一個未終態的 write 工作。背景執行總時限為 30 分鐘、無活動時限為五分鐘；前景分別為五分鐘及兩分鐘。使用 `/model-mod:jobs --clear` 可移除目前工作區已終態的工作與結果。
 
 工作輸出保存在本機 `$XDG_STATE_HOME/model-mod/delegate/v1` （未設定時，使用家目錄中隱藏的 `local` 目錄內的 `state` 目錄）（目錄權限 0700、檔案 0600）。結果可能含有你的 prompt 或程式碼片段：遮罩只對長度至少 32 字元的 prompt 或 diff 作精確字串比對，無法識別模型改寫的內容。本機紀錄保留七天；刪除本機紀錄不會刪除 Codex 自己的 thread 或 provider 端紀錄。狀態紀錄本身不儲存 prompt、diff、思考、帳號目錄路徑或環境變數。

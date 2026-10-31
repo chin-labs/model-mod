@@ -62,6 +62,8 @@ The mod activates with either a valid `apiKey` or a valid combination of `codexA
 
 Codex effort is clamped to levels declared by the model: `max` selects the highest supported level; an unsupported explicit level selects the highest supported level at or below it, or the lowest if none is lower. `minimal` is never sent. If no explicit level is given, the supported model default is used when needed.
 
+`/model-mod:review --adversarial` supports focus text and effort; `--gate` requests a structured verdict. The Stop gate is configured independently through `codexStopGate` and `codexStopGateBlocks`; see [review gate](FEATURES.md#codex-review-gate).
+
 Native search and openPage run at OpenAI and are not constrained by Claude permission domain rules (allowed or blocked domains); model-mod makes no `allowed_domains` security claim. Queries are sent to OpenAI.
 
 Paths and commands cannot contain NUL or newline; a command name may contain only letters, digits, `.`, `_` and `-`. An account and a model form ID `<account>/<model>`, displayed as `<model> @ <account>`. Every account is paired with every configured model. When an API model has the same ID, Codex takes precedence. `/model-mod:setup` merges and deduplicates accounts but **replaces the entire** `codexModels` setting with the selected models for all accounts; reselect the complete desired model set when adding an account. `fallbackModel` and `workerModel` may refer to a valid Codex ID.
@@ -113,12 +115,14 @@ claude plugin configure model-mod@model-mod --values-stdin < /path/to/private-co
 
 Never put a key in `--config` arguments (they can show up in process listings) or paste it into a message. In organization-managed Claude Code, personally installed plugins may not receive every hook unless the organization lists the plugin in its managed settings.
 
+For example, a Codex-only `/model-mod:status` begins `model-mod 0.2.0: picker=active`, followed by account details. `rate-limits` supplies window percentages, reset times and credits; `account-info` supplies the plan when available.
+
 Codex status shows remaining percentages, reset times, credits, plan and `ordinaryUsageAllowed`; unavailable fields are marked unavailable. Codex quota is checked at most once per account every five minutes, or immediately after a quota error; no automatic switch occurs without a future reset time. API upstreams have no official rateLimits and are not covered. Accounts are not rotated automatically; configure a `fallbackModel` on another upstream or account.
 
 `codexServiceTier` is `default` (the default) or `priority`; invalid values use `default`. `priority` requires a supported Codex plan and may respond faster while consuming quota faster; actual tier and billing are unverified.
 
 ## Background job storage and limits
 
-The SessionStart hook starts a local broker. After all sessions close, an idle broker can remain alive for up to 30 minutes. Up to 50 jobs are retained for seven days; when admitting job 51, the oldest terminal record and result are evicted first; each account can have at most two running and five queued, with at most one active write job. Background execution has a 30-minute total and five-minute inactivity limit; foreground delegation has five-minute total and two-minute inactivity limits. Use `/model-mod:jobs --clear` to remove terminal jobs and results for the current workspace.
+The SessionStart hook starts a local broker. After all sessions close, an idle broker can remain alive for up to 30 minutes. Up to 50 jobs are retained for seven days; when admitting job 51, the oldest terminal record and result are evicted first; if none is terminal, admission is refused; each account can have at most two running and five queued, with at most one active write job. Background execution has a 30-minute total and five-minute inactivity limit; foreground delegation has five-minute total and two-minute inactivity limits. Use `/model-mod:jobs --clear` to remove terminal jobs and results for the current workspace.
 
 Job output is stored locally under `$XDG_STATE_HOME/model-mod/delegate/v1` (when unset, use the `state` directory inside the hidden `local` directory in the home directory) (directories 0700, files 0600). Results can contain your prompt or code fragments: redaction matches prompt or diff strings exactly only when they are at least 32 characters long, and cannot recognize model paraphrases. Local records are retained for seven days. Deleting local records does not delete Codex threads or provider-side records. Status records themselves do not store prompts, diffs, reasoning, account-directory paths, or environment variables.
