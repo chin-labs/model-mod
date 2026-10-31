@@ -27,7 +27,7 @@ Codex 模型的工具清單不包含 mod 的 `web_search`；原生搜尋無法�
 
 `/model-mod:rescue --write -- TASK` 需要互動確認工作目錄。它要求對該目錄使用 workspace-write 並關閉網路；命令可能有其他外部副作用。每個帳號最多一個未終態的背景 write 工作。review 與一般 rescue 使用唯讀 sandbox，限制寫入與網路，但**不限制讀取範圍**；命令可能讀取工作區外的檔案。這與 Messages bridge 停用內建 shell 不同。見[限制說明](LIMITATIONS.zh-TW.md#背景委派限制)。
 
-透過使用者登入的 Codex CLI，任務與焦點文字及審查內容會送到 OpenAI。Adversarial review 送出 diff；gate review 送出 diff 與未追蹤且未忽略檔案的完整內容。原生 review 把目標交給 Codex，Codex 可讀取 sandbox 內的檔案並送出讀到的內容。啟用選用的 Stop gate 後，符合條件的收尾回合可將 diff 與未追蹤內容送去審查；此功能預設關閉。`transfer` 經確認後把目前對話 transcript 匯入所選 Codex 帳號。官方 CLI 自行處理連線；model-mod 的委派路徑不使用 API 代理。CLI 與供應商的行為（包括是否有遙測）不在本專案的驗證範圍內。
+透過使用者登入的 Codex CLI，任務與焦點文字及審查內容會送到 OpenAI。Adversarial review 送出 diff；gate review 送出 diff 與未追蹤且未忽略檔案的完整內容。原生 review 把目標交給 Codex，Codex 可讀取 sandbox 內的檔案並送出讀到的內容。啟用選用的 Stop gate 後，符合條件的收尾回合可將 diff 與未追蹤內容送去審查；此功能預設關閉。`transfer` 經確認後把目前對話 transcript 匯入所選 Codex 帳號。官方 CLI 自行處理連線；model-mod 的委派路徑不使用 API 代理，外掛本身也未加入遙測。CLI 與供應商的行為（包括是否有遙測）不在本專案的驗證範圍內。
 
 工作狀態與結果留在本機 model-mod 狀態目錄的 `delegate/v1` 下，最多保留七天、50 筆。結果可能包含敏感片段；本機遮罩能力有限。`/model-mod:cancel ID` 停止工作；`/model-mod:jobs --clear` 移除目前工作區的終態紀錄與結果，但不會刪除供應商端紀錄。官方 `openai/codex-plugin-cc` 有獨立的指令與狀態；並存尚未驗證。Codex 輸出是不可信資料；gate findings 會標示並清除控制字元，但不代表已獨立驗證。
 
