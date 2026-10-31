@@ -115,11 +115,11 @@ test('status: ascii mode has plain bars, no escape codes in either mode, and sta
   expect(render(80)).toMatch(/[█░]/)
 })
 
-test('status: a backtick or line break in a value cannot break out of the fenced block', () => {
-  const text = renderStatus({ ...VIEW, groups: [{ title: 'Codex x', rows: [{ label: 'dir', value: '/a/`b`\n```\nc' }] }] }, { columns: 80, ascii: false, now: NOW })
-  expect(text.startsWith('```text\n')).toBe(true)
-  expect(text.endsWith('\n```')).toBe(true)
-  expect(text.split('```').length).toBe(3)
+test('status: a line break or control character in a value stays inside its row', () => {
+  const text = renderStatus({ ...VIEW, groups: [{ title: 'Codex x', rows: [{ label: 'dir', value: '/a/b\nc\x1b[31md' }] }] }, { columns: 80, ascii: false, now: NOW })
+  expect(text).not.toContain('\x1b')
+  expect(lines(text).filter(l => l.includes('/a/b'))).toHaveLength(1)
+  expect(lines(text).find(l => l.includes('/a/b'))).toContain('/a/b c [31md')
 })
 
 test('status helpers: wide characters count twice, reset text is relative plus local time, bars are full only at 100%', () => {

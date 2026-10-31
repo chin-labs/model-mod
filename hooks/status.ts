@@ -1,8 +1,10 @@
 // Layout of /model-mod:status. Pure functions: register.ts gathers the data and passes it in, so the layout can be
 // tested at any width without an engine.
 //
-// A slash command's text is shown as Markdown without colour, so the layout lives in one fenced block (alignment is kept)
-// and every state is spelled out in text as well: `[OK]`, `[!]`, `[LIMIT]` and `[--]` in a margin, never colour alone.
+// A slash command's text is a plain transcript row in the terminal (no Markdown, no colour), so the layout is plain
+// aligned text and every state is spelled out as well: `[OK]`, `[!]`, `[LIMIT]` and `[--]` in a margin, never colour alone.
+// The text starts with a line break: the client puts "model-mod:" in front of the first line, and this keeps the title
+// from sitting behind it.
 // No line is wider than the width given: the longest reset text decides the bar length, text that still does not fit
 // moves to its own line, and wide terminals widen the bars and put the diagnostic groups in two columns instead of
 // stretching the rows.
@@ -50,8 +52,8 @@ export function cellWidth(text: string): number {
 
 const padEnd = (text: string, width: number) => text + ' '.repeat(Math.max(0, width - cellWidth(text)))
 const padStart = (text: string, width: number) => ' '.repeat(Math.max(0, width - cellWidth(text))) + text
-// The block is fenced: a backtick or a line break in a value must not end or split it.
-const clean = (text: string) => text.replace(/`/g, "'").replace(/[\x00-\x1f\x7f]/g, ' ')
+// A line break or control character in a value must not split a row.
+const clean = (text: string) => text.replace(/[\x00-\x1f\x7f]/g, ' ')
 
 // Breaks text at spaces into lines of at most `width` cells; a word longer than a line is cut.
 export function wrap(text: string, width: number): string[] {
@@ -215,5 +217,5 @@ export function renderStatus(view: StatusView, o: RenderOptions): string {
       view.groups.forEach((group, i) => { if (i) out.push(''); out.push(...groupLines(group, width)) })
     }
   }
-  return '```text\n' + out.join('\n') + '\n```'
+  return '\n' + out.join('\n')
 }
