@@ -8,7 +8,7 @@ CLIProxyAPI 是曾測試過的一例 API 上游；Codex 登入是另一種上游
 
 ## 父 thread 隱私與清理
 
-`codexThreadReuse` 開啟時，帳號目錄中的父 rollout 含固定合成回合與工具定義（可能含 MCP 工具名稱），不含對話與系統提示；另含依網頁搜尋設定選定的固定 developer instructions。帳號目錄為私密目錄（0700）。每個工作階段的每個父 thread 都多一個短合成回合；切換設定可能建立另一個。登錄只含雜湊、thread ID 與時間，不含對話內容。閒置六小時的 TTL 由後續請求順手檢查；換父及工作階段結束時也會嘗試 `thread/delete`。這不是精確定時，也不保證刪除：失敗會在該帳號後續請求重試，已移除的帳號無法自動清理。不支援的平台或重用失敗時，bridge 會改用新的 ephemeral thread。將 `codexThreadReuse` 設為 `off` 可只使用 ephemeral thread 並避免存取登錄。
+`codexThreadReuse` 開啟時，帳號目錄中的父 rollout 含固定合成回合與工具定義（可能含 MCP 工具名稱），不含對話與系統提示；另含依網頁搜尋設定選定的固定 developer instructions。2026 年 11 月 1 日在一台 Mac 檢查帳號目錄內的 rollout、SQLite 與 log 檔，未發現對話、歷史或覆寫的 instructions；這不保證本機一定不留痕跡。內容仍會送到 OpenAI，與關閉此功能時相同。帳號目錄為私密目錄（0700）。每個工作階段的每個父 thread 都多一個短合成回合；切換設定可能建立另一個。登錄只含雜湊、thread ID 與時間，不含對話內容。閒置六小時的 TTL 由後續請求順手檢查；換父及工作階段結束時也會嘗試 `thread/delete`。這不是精確定時，也不保證刪除：失敗會在該帳號後續請求重試，已移除的帳號無法自動清理。不支援的平台或重用失敗時，bridge 會改用新的 ephemeral thread。將 `codexThreadReuse` 設為 `off` 可只使用 ephemeral thread 並避免存取登錄。
 
 ## 已測試版本
 

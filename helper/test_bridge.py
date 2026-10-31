@@ -248,6 +248,26 @@ class Contract(unittest.TestCase):
             finally:
                 if proc.poll() is None: proc.kill(); proc.wait()
                 proc.stdout.close(); proc.stderr.close()
+            killed = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
+            try:
+                killed.stdin.write(json.dumps(dict(body, stream=True))); killed.stdin.close()
+                while True:
+                    line = killed.stdout.readline()
+                    if not line: self.fail('stream ended before SIGKILL')
+                    if line.startswith('event: content_block_delta'): break
+                rows = [json.loads(line) for line in log.read_text().splitlines()]
+                pid = [row['pid'] for row in rows if 'pid' in row][-1]
+                killed.kill(); killed.wait(timeout=5)
+                deadline = time.monotonic() + 5
+                while True:
+                    try: os.kill(pid, 0)
+                    except ProcessLookupError: break
+                    if time.monotonic() >= deadline: self.fail('app-server survived SIGKILL')
+                    time.sleep(.02)
+                self.assertTrue(list(home.glob('fake-parent-*')))
+            finally:
+                if killed.poll() is None: killed.kill(); killed.wait()
+                killed.stdout.close(); killed.stderr.close()
             Path(home, 'fake_config.json').write_text(json.dumps({'mode': 'fork_fail', 'log': str(log)}))
             fallback = subprocess.run(cmd, input=json.dumps(body), text=True, capture_output=True, env=env, timeout=15)
             self.assertEqual(fallback.returncode, 0, fallback.stderr)

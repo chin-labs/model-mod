@@ -54,7 +54,7 @@ API 伺服器路徑會把工作階段送往接受 Messages 風格串流請求（
 | `codexAccountsDir` | 絕對目錄；預設 `~/.config/model-mod/accounts`，Windows 為 `%APPDATA%\model-mod\accounts`（未驗證）。每個帳號使用獨立子目錄。 |
 | `codexBin` | 執行檔名稱或絕對路徑；預設 `codex`。 |
 | `pythonBin` | 執行檔名稱或絕對路徑；預設 `python3`。Windows 請設為 `python`（未驗證）。 |
-| `codexThreadReuse` | `on`（預設）或 `off`，不分大小寫；無效值視為 `on` 並顯示於 status。關閉時使用 ephemeral thread，不存取父 thread 登錄。閒置父 thread 的 TTL 為六小時、由請求順手檢查；見[隱私與清理](LIMITATIONS.zh-TW.md#父-thread-隱私與清理)。 |
+| `codexThreadReuse` | `on`（預設）或 `off`，不分大小寫；無效值視為 `on` 並顯示於 status。關閉時使用 ephemeral thread，不存取父 thread 登錄。父 rollout 含固定合成回合與工具定義（可能含 MCP 工具名稱），不含對話與系統提示。2026 年 11 月 1 日在一台 Mac 檢查帳號目錄的 rollout、SQLite 與 log 檔，未發現對話、歷史或覆寫的 instructions；這不是保證。內容仍會送到 OpenAI，與關閉時相同。閒置父 thread 的 TTL 為六小時、由請求順手檢查；刪除屬盡力而為，並非精確定時或保證。見[隱私與清理](LIMITATIONS.zh-TW.md#父-thread-隱私與清理)。 |
 | `codexKeepReasoning` | `on`（預設）或 `off`；無效值視為 `on` 並顯示於 status。使用實驗性 API；真實 Codex 重放尚未驗證。 |
 | `codexServiceTier` | `default`（預設）或 `priority`；實際服務層級與計費尚未驗證。 |
 | `codexWebSearch` | `on`（預設）或 `off`；無效值視為 `on` 並顯示於 status。工作階段工具清單沒有 WebSearch 時會停用搜尋。 |
