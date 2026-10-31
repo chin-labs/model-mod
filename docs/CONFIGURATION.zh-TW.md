@@ -115,7 +115,7 @@ claude plugin configure model-mod@model-mod --values-stdin < /path/to/private-co
 
 不要把金鑰放進 `--config` 參數（可能出現在程序列表），也不要貼進訊息。在組織管理的 Claude Code 中，個人安裝的插件可能收不到所有 hook，除非組織把插件列入管理設定。
 
-例如，僅設定 Codex 時，`/model-mod:status` 以 `model-mod 0.2.0: picker=active` 開頭，接著顯示帳號資訊。`rate-limits` 提供各視窗比例、重置時間與 credits；`account-info` 在可取得時提供方案。
+例如，僅設定 Codex 時，`/model-mod:status` 以 `model-mod: <version>: picker=active` 開頭，接著顯示帳號資訊。`rate-limits` 提供各視窗比例、重置時間與 credits；`account-info` 在可取得時提供方案。
 
 Codex status 顯示各視窗的剩餘比例、重置時間、credits、方案及 `ordinaryUsageAllowed`；取得不到的欄位顯示 unavailable。Codex 額度最多每帳號五分鐘查一次，額度錯誤可立即查詢；沒有可用的未來重置時間時不自動切換。API 上游沒有官方 rateLimits，不適用此機制。額度用完不會自動輪流換帳號，可設定不同上游或帳號的 `fallbackModel`。
 

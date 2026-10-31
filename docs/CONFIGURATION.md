@@ -115,7 +115,7 @@ claude plugin configure model-mod@model-mod --values-stdin < /path/to/private-co
 
 Never put a key in `--config` arguments (they can show up in process listings) or paste it into a message. In organization-managed Claude Code, personally installed plugins may not receive every hook unless the organization lists the plugin in its managed settings.
 
-For example, a Codex-only `/model-mod:status` begins `model-mod 0.2.0: picker=active`, followed by account details. `rate-limits` supplies window percentages, reset times and credits; `account-info` supplies the plan when available.
+For example, a Codex-only `/model-mod:status` begins `model-mod: <version>: picker=active`, followed by account details. `rate-limits` supplies window percentages, reset times and credits; `account-info` supplies the plan when available.
 
 Codex status shows remaining percentages, reset times, credits, plan and `ordinaryUsageAllowed`; unavailable fields are marked unavailable. Codex quota is checked at most once per account every five minutes, or immediately after a quota error; no automatic switch occurs without a future reset time. API upstreams have no official rateLimits and are not covered. Accounts are not rotated automatically; configure a `fallbackModel` on another upstream or account.
 
