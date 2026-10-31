@@ -199,6 +199,7 @@ type CodexAccount = { account: string; model: string; directory: string; window?
 type Config = { codex?: Map<string, CodexAccount>; pythonBin?: string; codexBin?: string; accountsDir?: string; apiInvalid?: boolean; prompts: Prompts; promptsDir?: string; baseUrl: string; headerFile?: string; key?: string; models: string[]; toolsFile?: string; defaultWindow?: number; contextWindowExplicit?: boolean; explicitModels?: boolean; excluded?: Set<string>; codexDirectoryUnavailable?: Set<string>; imageAuto?: boolean; source?: 'options' | 'file'; maxTokens: number; effortMode: 'suffix' | 'none'; imageModel?: string; contextWindows?: Record<string, number>; sideModel?: string; keepThinking?: boolean; localTitle?: boolean; localContext?: boolean; toolSearch?: 'auto' | 'on' | 'off'; toolSearchPercent?: number; refresh?: string[]; fallbackModel?: string; fallbackPercent?: number; workerModel?: string; codexServiceTier?: 'default' | 'priority'; codexServiceTierInvalid?: boolean; codexWebSearch?: 'on' | 'off'; codexWebSearchInvalid?: boolean; codexKeepReasoning?: 'on' | 'off'; codexKeepReasoningInvalid?: boolean; codexThreadReuse?: 'on' | 'off'; codexThreadReuseInvalid?: boolean }
 type Tool = { name: string; description: string; input_schema: Record<string, unknown> }
 
+const threadSessions = new Map<string, Map<string, CodexAccount>>()
 let config: Config | undefined
 let loaded = false
 let missingToolsHint = false
@@ -1645,9 +1646,12 @@ export const register: Register = (on, options) => {
   })
   pluginOptions = options ?? {}
   on('session.end', async ($, e, next) => {
+    const used = threadSessions.get(e.sessionId)
+    threadSessions.delete(e.sessionId)
+    if (!used?.size) return next(e)
     const c = await load($)
-    if (c?.codexThreadReuse !== 'off' && c?.codex) {
-      await Promise.all([...c.codex.values()].map(async item => {
+    if (c && c.codexThreadReuse !== 'off') {
+      await Promise.all([...used.values()].map(async item => {
         try {
           await $.process.run([...helperArgs($, c, 'cleanup-threads', item.directory), '--reuse-session', e.sessionId, '--cleanup-model', item.model], { timeoutMs: 1000 })
         } catch { /* best effort; later requests retry expired entries */ }
@@ -2230,6 +2234,11 @@ export const register: Register = (on, options) => {
         let reuseSession: string | undefined
         if (codex && c.codexThreadReuse !== 'off') {
           try { reuseSession = await $.session.id() } catch { /* a missing session identity disables reuse */ }
+          if (reuseSession) {
+            const used = threadSessions.get(reuseSession) ?? new Map<string, CodexAccount>()
+            used.set(codex.directory + '\0' + codex.model, codex)
+            threadSessions.set(reuseSession, used)
+          }
         }
         const call = codex ? { argv: [...helperArgs($, c, 'messages', codex.directory, codex.model, body.model), ...(searchEnabled ? ['--web-search'] : []), ...(reuseSession ? ['--reuse-session', reuseSession] : [])], env: undefined } : curlCall(c, ['-sN', '--fail-with-body', '--max-time', '900', '--speed-limit', '1', '--speed-time', String(STREAM_IDLE_SECONDS),
           '--write-out', '%{stderr}\nmodel-mod-http:%{http_code}\nmodel-mod-retry-after:%header{retry-after}\n',

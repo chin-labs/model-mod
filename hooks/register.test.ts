@@ -1525,11 +1525,14 @@ for (const setting of ['on', 'OFF', 'invalid', 'false'] as const) {
   test(`Codex thread reuse: ${setting}`, { options: { ...CODEX_OPTIONS, codexThreadReuse: setting } }, async ($, on) => {
     const w = world(on, null, CODEX_MODEL, { stdout: SSE_OK, code: 0 })
     on('session.id', async () => ({ value: 'test-session' }))
+    on('session.end', async (_$, e) => ({ sessionId: e.sessionId }))
     await drain($.turn.step(STEP(CODEX_MODEL)))
     expect(w.spawned[0]!.argv.includes('--reuse-session')).toBe(setting !== 'OFF')
     const status = await $.command.run({ command: 'model-mod:status', args: '', origin: { kind: 'composer' } } as never)
     expect(status.text).toContain('threadReuse=' + (setting === 'OFF' ? 'off' : 'on'))
     if (setting === 'invalid' || setting === 'false') expect(status.text).toContain('invalid setting; using on')
+    await $.session.end({ sessionId: 'test-session', reason: 'other' } as never)
+    expect(w.ran.some(argv => argv.includes('cleanup-threads'))).toBe(setting !== 'OFF')
   })
 }
 
