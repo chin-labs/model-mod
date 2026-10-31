@@ -1,5 +1,6 @@
+import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
-import type { PickerState } from '../types'
+import type { PickerState, SetupMenu } from '../types'
 
 // The /model-mod:model picker pane: the local models in one scrolling list. Official models stay with the client's own /model.
 // The arrow keys move between rows, Enter picks and Esc closes.
@@ -61,39 +62,55 @@ export async function openPane($: EngineInterface, input: { local: readonly stri
   return 'fallback'
 }
 
-// The setup menus: one question and a short list of fixed answers, no free input. Esc closes the pane and counts as no answer.
-// The list is not scrolled: a menu that does not fit the body is handed back, and the caller asks with the paged dialog.
+// The setup menus: one question and a short list of fixed answers, no free input. One pane stays open for the whole
+// setup and shows each menu in turn ("Working…" between them): a pane opened from the command the person typed is seated
+// at any width, one opened later from the flow is not, so the flow opens it once. Esc closes it and counts as no answer.
+// A menu that does not fit the body is handed back and the caller asks with the paged dialog.
 const CHOICE = 'model-mod-setup'
-// `current` gets a check mark; `initial` is the row focused first (the first one when absent).
-export type Choice = { title: string; question: string; options: readonly string[]; current?: string; initial?: string }
+const MENU = atom({ plugin: 'model-mod', key: 'setupMenu' } as const, { busy: true } as SetupMenu, { shape: 'setup-menu-1' })
+const BUSY: SetupMenu = { busy: true }
+export type Choice = { question: string; options: readonly string[]; current?: string; initial?: string }
 export type ChoiceResult = { picked: string } | 'closed' | 'fallback'
-type PendingChoice = Choice & { settle: (result: ChoiceResult) => void }
-let pending: PendingChoice | undefined
+let awaiting: ((result: ChoiceResult) => void) | undefined
+let seated = false
 
-// Opens the menu and returns at once with whether the pane was seated. `settle` is called once, later, with the pick, with
-// 'closed' (Esc or another close) or with 'fallback' (seated, but the body turned out too small). A pane that is not seated
-// calls nothing: the caller goes on with the dialog.
-export async function openChoice($: EngineInterface, choice: Choice, settle: (result: ChoiceResult) => void): Promise<'shown' | 'fallback'> {
-  if (pending) return 'fallback'
-  let done = false
-  const once = (result: ChoiceResult) => { if (!done) { done = true; if (pending === mine) pending = undefined; settle(result) } }
-  const mine: PendingChoice = { ...choice, settle: once }
-  pending = mine
-  try {
-    const opened = await $.ui.open({ id: CHOICE, title: choice.title, focus: true, closeOnEscape: true, holdToasts: true, rows: Math.min(20, choice.options.length + 4) })
-    if (opened.isPlaced) return 'shown'
-  } catch { /* fall back below */ }
-  if (pending === mine) pending = undefined
-  done = true
+// Closes the pane before a dialog, or when the setup is over. A menu still waiting is dropped, not answered.
+export async function dismissSetupPane($: EngineInterface): Promise<void> {
+  if (!seated) return
+  seated = false
+  awaiting = undefined
   await close($, CHOICE)
-  return 'fallback'
 }
 
-// The answer of one menu. `onShown` is called once the pane is seated: a command hook that is still waiting for the flow
-// must answer then, because it may not wait for a person (its own time is capped at 10 s).
-export async function chooseInPane($: EngineInterface, choice: Choice, onShown?: () => void): Promise<ChoiceResult> {
+// Shows one menu, opening the pane for it when it is not open yet (`onSeated` is called then, once the surface seats it).
+// Resolves with the row pressed, 'closed' (Esc) or 'fallback' (no surface seats the pane, or the list has no room).
+export function menuInPane($: EngineInterface, choice: Choice, onSeated: () => void): Promise<ChoiceResult> {
   return new Promise<ChoiceResult>(resolve => {
-    void openChoice($, choice, resolve).then(seat => { if (seat === 'shown') onShown?.(); else resolve('fallback') })
+    if (awaiting) return resolve('fallback')
+    awaiting = resolve
+    void (async () => {
+      try {
+        // The menu is in place before the pane is drawn, so its first row takes the focus when it opens.
+        await update($, MENU, () => ({ ...choice, options: [...choice.options] }))
+        if (!seated) {
+          const opened = await $.ui.open({ id: CHOICE, title: 'model-mod setup', focus: true, closeOnEscape: true, holdToasts: true, rows: 16 })
+          if (!opened.isPlaced) {
+            if (awaiting === resolve) awaiting = undefined
+            await close($, CHOICE)
+            return resolve('fallback')
+          }
+          seated = true
+          onSeated()
+        } else {
+          // Rows drawn after the pane opened do not take the focus by themselves.
+          const key = 'c:' + (choice.initial ?? choice.options[0])
+          $.clock.after(40, () => { void $.ui.focus({ requestId: CHOICE, key }).catch(() => {}) })
+        }
+      } catch {
+        if (awaiting === resolve) awaiting = undefined
+        resolve('fallback')
+      }
+    })()
   })
 }
 
@@ -104,38 +121,43 @@ export function registerPane(on: Parameters<Register>[0]): void {
   })
 
   on('ui.close', { id: CHOICE }, async ($, e, next) => {
-    pending?.settle('closed')
+    seated = false
+    const waiting = awaiting
+    awaiting = undefined
+    waiting?.('closed')
     return next(e)
   })
 
   on('ui.render', { component: 'Pane', requestId: CHOICE }, async ($, e, next) => {
-    const current = pending
-    if (!current) return next(e)
+    const { Box, Text, Button } = $.ui.resolve(e)
+    const state = await read($, MENU)
+    if ('busy' in state) return <Box><Text dimColor>Working…</Text></Box>
     const bodyRows = e.props.scroll?.bodyRows ?? 12
     const columns = Math.max(20, e.props.bodyColumns ?? 76)
-    // One row for the hint, the wrapped question, and every answer.
-    const questionRows = Math.ceil([...current.question].length / columns)
-    if (current.options.length + questionRows + 1 > bodyRows) {
-      pending = undefined
-      $.clock.after(0, () => { later(async () => { await close($, CHOICE); current.settle('fallback') }) })
-      return next(e)
+    // The question (wrapped), the hint row and every answer.
+    if (state.options.length + Math.ceil([...state.question].length / columns) + 1 > bodyRows) {
+      const waiting = awaiting
+      awaiting = undefined
+      $.clock.after(0, () => { if (waiting) waiting('fallback') })
+      return <Box><Text dimColor>Working…</Text></Box>
     }
-    const { Box, Text, Button } = $.ui.resolve(e)
     const focused = e.props.isFocused === true
     return <Box flexDirection="column">
-      <Text>{current.question}</Text>
+      <Text>{state.question}</Text>
       {focused
         ? <Text dimColor>↑↓ move · Enter select · Esc close</Text>
         : <Text color="yellow">Keyboard not captured: press Ctrl+X, then Tab</Text>}
-      {current.options.map(label => <Button key={'c:' + label} plain autoFocus={label === (current.initial ?? current.options[0]) ? true : undefined}
+      {state.options.map(label => <Button key={'c:' + label} plain autoFocus={label === (state.initial ?? state.options[0]) ? true : undefined}
         onPress={() => {
-          pending = undefined
+          const waiting = awaiting
+          if (!waiting) return
+          awaiting = undefined
           later(async () => {
-            await close($, CHOICE)
-            current.settle({ picked: label })
+            await update($, MENU, () => BUSY)
+            waiting({ picked: label })
           })
         }}>
-        {(label === current.current ? '✓ ' : '  ') + label}
+        {(label === state.current ? '✓ ' : '  ') + label}
       </Button>)}
     </Box>
   })

@@ -1178,15 +1178,15 @@ test('setup: the fixed menus open in a pane; the command answers at once and the
   await ui.unmount()
   await choose($, w, 'Compatible API server')
   await choose($, w, 'Keep (recommended)')
-  expect(w.opened).toEqual(['model-mod-setup', 'model-mod-setup', 'model-mod-setup'])
   await choose($, w, 'All (recommended)')
   expect(logged.join('\n')).toContain('2 local models selected')
   expect(w.saved).toEqual([{ key: 'model-mod.baseUrl', value: OPTIONS.baseUrl }, { key: 'model-mod.models', value: '' }])
   expect(w.questions).toEqual([])
-  expect(w.closed).toEqual(['model-mod-setup', 'model-mod-setup', 'model-mod-setup'])
+  // One pane served all three menus and was closed when the setup ended.
+  expect(w.opened).toEqual(['model-mod-setup']); expect(w.closed).toEqual(['model-mod-setup'])
   // The flow is over: the next setup opens a menu again instead of being refused.
   expect(await $.command.run(SETUP)).toEqual({})
-  expect(w.opened).toHaveLength(4)
+  expect(w.opened).toHaveLength(2)
 })
 
 test('setup: a pane that is too small hands the menu to a dialog, and the setup finishes there', { options: OPTIONS }, async ($, on) => {

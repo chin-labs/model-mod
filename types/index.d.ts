@@ -18,6 +18,9 @@ export type FallbackMemo = { from?: string; to?: string; until?: number; suppres
 // The first row of the picker pane's scrolling window.
 export type PickerState = { offset: number }
 
+// What the setup pane shows: `busy` between menus, else one question with its fixed answers (`current` is marked, `initial` focused first).
+export type SetupMenu = { busy: true } | { question: string; options: string[]; current?: string; initial?: string }
+
 export type TrackedBlock = { type: string; [key: string]: unknown }
 export type TrackedTurn = { role: 'user' | 'assistant'; content: TrackedBlock[] }
 // The conversation of a workflow agent that runs on a bridge model (`$.session.messages` cannot read it).
@@ -36,6 +39,7 @@ declare module 'claude-code' {
       agentModel: StateFamily<string>
       tracked: StateFamily<TrackedAgent>
       picker: PickerState
+      setupMenu: SetupMenu
     }
   }
 }

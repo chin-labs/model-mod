@@ -3,7 +3,7 @@ import { update } from 'claude-code'
 import type { EnvMemo, FallbackMemo, TrackedAgent } from '../types'
 import { MessagesStream } from './sse.ts'
 import { htmlToText } from './text.ts'
-import { chooseInPane, openPane, registerPane } from './pane.tsx'
+import { dismissSetupPane, menuInPane, openPane, registerPane } from './pane.tsx'
 import { delegate, backgroundCommand, transfer, runStopGate, stopGateSettings } from './delegate.ts'
 import { renderStatus } from './status.ts'
 import type { Group, QuotaBlock, QuotaWindow, Row, StatusView } from './status.ts'
@@ -49,13 +49,15 @@ async function modelList($: EngineInterface, baseUrl: string, key: string): Prom
 }
 
 class Cancelled extends Error {}
+// A dialog needs the keyboard: the setup pane, if it is open, is closed first.
 async function ask($: EngineInterface, question: string, options: Parameters<EngineInterface['ui']['ask']>[1]): Promise<string> {
+  await dismissSetupPane($)
   try { return await $.ui.ask(question, options) } catch { throw new Cancelled() }
 }
 
 // The fixed menus of /model-mod:setup (an upstream, keep or change, a yes or no) are shown in a pane where the terminal can
 // seat one: no 4-option limit and no free-text box that a stray keystroke could fill. The pane outlives the command hook
-// (a hook may run 10 s of its own time, a person may take longer), so the flow detaches once the first pane is seated and
+// (a hook may run 10 s of its own time, a person may take longer), so the flow detaches once the pane is seated and
 // reports its final text to the transcript. Where no pane is seated (-p, the bridge, a small terminal) the same menus are
 // asked as dialogs. Text boxes (the endpoint URL, an account name, manual model IDs) stay dialogs: they need typed text.
 type SetupFlow = { pane: boolean; detached: boolean; detach: () => void }
@@ -82,7 +84,8 @@ async function askPaged($: EngineInterface, question: string, options: readonly 
 async function pick($: EngineInterface, question: string, options: readonly string[], opts: { header?: string; current?: string; initial?: string } = {}): Promise<string> {
   const flow = setupFlow
   if (flow?.pane && options.length <= PANE_MAX_OPTIONS) {
-    const result = await chooseInPane($, { title: opts.header ?? 'model-mod setup', question, options, current: opts.current, initial: opts.initial }, flow.detach)
+    // After a dialog the pane was closed; opening it again from the flow is usually not seated, and then dialogs stay.
+    const result = await menuInPane($, { question, options, current: opts.current, initial: opts.initial }, flow.detach)
     if (result === 'closed') throw new Cancelled()
     if (result !== 'fallback') return result.picked
     flow.pane = false
@@ -2249,10 +2252,11 @@ export const register: Register = (on, options) => {
     return new Promise<{ text?: string }>(resolve => {
       const flow: SetupFlow = { pane: e.origin.kind === 'composer', detached: false, detach: () => { flow.detached = true; resolve({}) } }
       setupFlow = flow
-      admin($, e, 'setup').catch(() => ({ text: 'model-mod: setup cancelled, nothing changed' })).then(reply => {
+      admin($, e, 'setup').catch(() => ({ text: 'model-mod: setup cancelled, nothing changed' })).then(async reply => {
+        await dismissSetupPane($)
         if (setupFlow === flow) setupFlow = undefined
         if (!flow.detached) resolve(commandText(reply))
-        else if (reply.text) void Promise.resolve($.ui.log(reply.text)).catch(() => {})
+        else if (reply.text) void Promise.resolve($.ui.log(commandText(reply).text)).catch(() => {})
       })
     })
   })
