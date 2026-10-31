@@ -124,6 +124,7 @@ async function pickModel($: EngineInterface, ids: readonly string[], current: st
 }
 
 async function chooseModels($: EngineInterface, ids: string[], notes: string[], upstream = 'local API'): Promise<{ selected: string[]; all: boolean }> {
+  await ensureOpen($) // a setup cancelled while the list was read does not print the list
   $.ui.log((upstream === 'local API' ? 'Local API' : upstream) + ' chat models: ' + ids.join(', '))
   const choice = await pick($, `Which ${upstream} models should /model-mod:model offer?`, ['All (recommended)', 'Choose a subset'], { header: 'Models' })
   if (choice === 'All (recommended)') return { selected: ids, all: true }

@@ -1253,6 +1253,7 @@ test('setup: closing the pane during "Working…" asks nothing more and writes n
   w.openPanes.delete('model-mod-setup') // Esc: the engine closes the pane
   await w.clock.advance(5000); await flush(w)
   expect(logged.join('\n')).toContain('setup cancelled, nothing changed')
+  expect(logged.join('\n')).not.toContain('chat models') // the list that arrived late is not printed either
   expect(w.questions).toEqual([]); expect(w.saved).toEqual([]); expect(w.store).toEqual({}); expect(w.opened).toEqual(['model-mod-setup'])
   // The last menu is answered and the settings are being read when the pane closes: nothing is written.
   w.fetchDelay = 0; w.listDelay = 5000; logged.length = 0
