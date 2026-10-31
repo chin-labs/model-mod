@@ -2,6 +2,7 @@
 import fcntl
 import hashlib
 import json
+import math
 import os
 import re
 import tempfile
@@ -42,10 +43,11 @@ def record_at(path):
         if set(data) != {'key', 'thread', 'account', 'created', 'used', 'state'}: return None
         if not all(isinstance(data[k], str) for k in ('key', 'thread', 'account', 'state')): return None
         if not re.fullmatch(r'[0-9a-f]{64}', data['key']) or not re.fullmatch(r'[0-9a-f]{64}', data['account']): return None
-        if not re.fullmatch(r'[0-9a-f-]{36}', data['thread']) or data['state'] not in ('active', 'pending-delete'): return None
-        if not all(type(data[k]) in (int, float) for k in ('created', 'used')): return None
+        if str(uuid.UUID(data['thread'])) != data['thread'] or data['state'] not in ('active', 'pending-delete'): return None
+        if not all(type(data[k]) in (int, float) and math.isfinite(data[k]) for k in ('created', 'used')): return None
+        if not os.path.basename(path).endswith('-' + data['key'] + '.json'): return None
         return data
-    except (OSError, ValueError, TypeError): return None
+    except (OSError, ValueError, TypeError, RecursionError): return None
 
 
 def delete(app, path, record):
@@ -107,7 +109,7 @@ def fork(app, args, session, params):
                 delete(app, item_path, item)
         record = record_at(path)
         if record is None and os.path.lexists(path): return None
-        if record and record['state'] != 'active': return None
+        if record and (record['state'] != 'active' or record['account'] != account or record['key'] != key): return None
         if not record:
             parent = dict(params, ephemeral=False)
             if FORK_OVERRIDE_INSTRUCTIONS:

@@ -285,6 +285,14 @@ class Contract(unittest.TestCase):
             def run(session='session-a', settings=None): return thread_reuse.fork(app, args, session, settings or params)
             with patch.object(thread_reuse, 'FORK_OVERRIDE_INSTRUCTIONS', True):
                 self.assertIsNotNone(run())
+                entry = next(Path(tmp).rglob('*.json'))
+                saved = entry.read_text()
+                corrupted = json.loads(saved); corrupted['account'] = '0' * 64
+                entry.write_text(json.dumps(corrupted))
+                self.assertIsNone(run())
+                entry.write_text('{')
+                self.assertIsNone(run())
+                entry.write_text(saved)
                 self.assertIsNotNone(run(settings=dict(params, baseInstructions='private-two')))
                 self.assertEqual(sum(m == 'thread/start' for m, _ in app.rows), 1)
                 self.assertEqual([p['baseInstructions'] for m, p in app.rows if m == 'thread/fork'], ['private-one', 'private-two'])
