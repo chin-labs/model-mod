@@ -14,43 +14,45 @@ model-mod is a plugin (a "mod") for Claude Code that puts models from your own C
 
 - Claude Code with mod support: Codex login and the API upstream were tested on **Claude Code 2.1.314**; the API upstream was also tested on 2.1.299 to 2.1.310. Other versions are untested.
 - Codex login: Python 3.9 or newer and an installed `codex` CLI (minimum supported version 0.165.0; lower versions are refused). The Codex context window comes from the account's model catalog (effective percentage applied), falling back to 128,000 tokens; `contextWindow` overrides it. Or use your own running Messages-compatible API and its API key; CLIProxyAPI is the tested API upstream. model-mod does not install or run the API server.
-- `curl` and `bash`; web fetch and image generation need additional system tools listed in [Configuration](docs/CONFIGURATION.md#set-up-your-upstream-first).
+- `curl` and `bash`; web fetch and image generation need additional system tools listed in [Configuration](docs/CONFIGURATION.md#system-tools).
 
 ## Quick start
 
-Choose either or both upstreams. For Codex login, install Python 3.9+ and the official `codex` CLI. Setup creates a dedicated account directory and guides you through device authentication. The code is valid for about 15 minutes; see [Troubleshooting](docs/TROUBLESHOOTING.md) for the manual alternative.
-
-For an API server, [prepare your upstream](docs/CONFIGURATION.md#set-up-your-upstream-first) and its API key. Then run these in an interactive Claude Code session:
+Codex login is the main path. Install Python 3.9+ and the official `codex` CLI, then in an interactive Claude Code session run:
 
 ```text
 /plugin marketplace add chin-labs/model-mod
 /plugin install model-mod@model-mod
-/plugin configure model-mod@model-mod
+```
+
+If `/model-mod:setup` does not respond or reports that hooks are not loaded, run `/reload-plugins` first. Then run:
+
+```text
 /model-mod:setup
 /model-mod:model
 ```
 
-`/model-mod:setup` first asks which upstream to configure. For Codex, choose an account; if it is not logged in, open the displayed link, enter the one-time code, then select **Continue (after logging in)** and choose models. For an API server, enter its API key in the configuration dialog, where it is stored as a secret rather than typed into chat; setup confirms the URL and lets you choose models. The setup menu also manages configured upstreams. `/model-mod:model` lists both kinds; `/model-mod:status` shows each Codex account directory. If the plugin is not active after configuring, run `/reload-plugins` or restart Claude Code.
+Choose **Codex login**, select an account and, if prompted, open the displayed link, enter the one-time code and select **Continue (after logging in)**. Choose models. Setup creates the account directory and writes the account and model settings; `/plugin configure` is not needed for this path. The code expires after about 15 minutes. See [Troubleshooting](docs/TROUBLESHOOTING.md) for manual login.
 
-Alternatively, add and install from a shell:
+Alternatively, if you already have a [Messages-compatible API server](docs/CONFIGURATION.md#set-up-your-upstream-first), use `/plugin configure model-mod@model-mod` to set `baseUrl` and `apiKey` before `/model-mod:setup`, then choose **Compatible API server**. The key is stored as a secret, not typed into chat. Both upstreams can coexist. For a local clone or private configuration file, see [installation alternatives](docs/CONFIGURATION.md#installation-alternatives).
 
-```bash
-claude plugin marketplace add chin-labs/model-mod
-claude plugin install model-mod@model-mod
-claude plugin configure model-mod@model-mod
-```
+First checks:
 
-The last shell command lists options and which are unset; use `/plugin configure model-mod@model-mod` in Claude Code to edit them, or [configure from a private file](docs/CONFIGURATION.md#installation-alternatives). To install from a local clone, use its path instead of `chin-labs/model-mod`.
+- Hooks not loaded: run `/reload-plugins` or restart Claude Code.
+- Not logged in: rerun `/model-mod:setup` and complete device login, or follow the terminal login command in the error.
+- `codex` not on `PATH`: install the official CLI or configure `codexBin`, then retry setup.
+- `model-mod: Codex login: device code expired; run /model-mod:setup again to get a new code.`: rerun setup.
+- `model-mod: no local models. Run /model-mod:setup to add them.`: run setup and select models; use `/model-mod:status` to check activation.
 
-Run `/model-mod:status` to check activation, then select your model and send a short message. An upstream failure ends the turn with an error message; it is never retried through your subscription.
+Send a short message after selecting a model. An upstream failure ends the turn with an error; it is never retried through your subscription.
 
 ## Features
 
 - Your models alongside subscription models, switched per session with `/model-mod:model`.
 - Streaming, tool calls, Skills, MCP servers, subagents and Workflow agents.
-- Web fetch, tool search and image generation for both upstreams; Codex uses native web search, while the API path uses the mod’s search tool.
+- Codex login uses native web search (`codexWebSearch`) and image generation on POSIX; the API path uses the mod’s search, fetch and image-generation tools. Web fetch and tool search are also available to Codex.
 - Automatic retry of transient upstream errors with bounded `Retry-After` handling, and Claude Code's five effort levels.
-- Compaction through your selected model and optional automatic switching at your subscription's usage limit.
+- Compaction through your selected model and optional `fallbackModel` switching at subscription or Codex login rate limits; accounts are not rotated automatically, and API upstream models have no official rate-limit switching.
 
 ## Commands
 
@@ -78,6 +80,7 @@ Run `/model-mod:status` to check activation, then select your model and send a s
 
 ## Limitations, privacy and compliance
 
+- [Windows checklist](docs/WINDOWS.md) covers the unverified platform.
 - [Limitations](docs/LIMITATIONS.md) lists known differences, unverified behavior and [subscription side requests](docs/LIMITATIONS.md#subscription-side-requests).
 - Conversations, system instructions (including project instructions), tool definitions and results, and images go to your upstream and any provider behind it. Search queries, fetch URLs and image prompts go to their respective destinations.
 - Auto permission mode sends the full conversation and project instructions to your subscription for classification, even on your models. Default or acceptEdits mode with allow rules avoids that; other side requests can still use your subscription.

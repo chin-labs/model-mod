@@ -4,7 +4,7 @@
 
 ## Choose an upstream
 
-Codex login and a Messages-compatible API server are equal alternatives and can coexist. For Codex, install Python 3.9+ and the official `codex` CLI, then use `/model-mod:setup` and select **Codex login**. If login is needed, setup creates a dedicated account directory and runs `codex login --device-auth`. Open the displayed link, enter the code and select **Continue (after logging in)**, then choose models. If the link is unavailable, setup displays manual terminal commands instead. For an API server, follow the next section and choose **Compatible API server** in setup.
+Codex login is the main path; an existing Messages-compatible API server is an alternative, and both can coexist. For Codex, install Python 3.9+ and the official `codex` CLI, then use `/model-mod:setup` and select **Codex login**. If login is needed, setup creates a dedicated account directory and runs `codex login --device-auth`. Open the displayed link, enter the code and select **Continue (after logging in)**, then choose models. If the link is unavailable, setup displays manual terminal commands instead. For an API server, follow the next section and choose **Compatible API server** in setup.
 
 Choose **Manage configured upstreams** in setup to log out or remove a Codex account, or remove an API from plugin options. Logout retains the account settings and directory. Removal retains the directory by default; deleting it requires a second confirmation and is limited to that account's directory. An API supplied by `MODEL_MOD_CONFIG` must be removed by editing that file yourself. Removing an API disables it but leaves its key in the client’s secure storage; model-mod cannot clear the key. When readding it, setup confirms the host before sending the stored key.
 
@@ -14,7 +14,7 @@ Your own upstream must offer a Messages-compatible streaming API at `/v1/message
 
 For the API-server path, model-mod sends a session to a server that accepts Messages-style streaming requests at `/v1/messages` and checks an API key. Before you install:
 
-1. **Get an upstream.** CLIProxyAPI is the tested one. Install it and sign in to your own provider account as its documentation describes; model-mod does not install, start or configure it.
+1. **Use your upstream.** Any compatible server may be used; CLIProxyAPI is one tested example. model-mod does not install, start or configure it.
 2. **Make sure it is running** and reachable from the machine where you run Claude Code. This check reads the same model list that `/model-mod:setup` uses (replace the address and set the key in your shell first); `200` means the address and key work:
 
    ```bash
@@ -39,7 +39,7 @@ The mod activates with either a valid `apiKey` or a valid combination of `codexA
 | `apiKey` | Your API upstream's key (secret). Required for the API path. | none |
 | `models` | Comma-separated model IDs the mod answers for. Empty: every chat model the upstream lists. | empty |
 | `imageModel` | API image model for `generate_image`. Empty: `gpt-image-2`, or the first `gpt-image*` the upstream lists. `none` disables the API image path. Codex uses its built-in image model independently of this setting. | empty |
-| `contextWindow` | Input tokens assumed for a model whose window is unknown (minimum 32000). An explicit value overrides the Codex catalog window (see [Limitations](LIMITATIONS.md)). | `272000` (API); catalog effective window or 128,000 (Codex) |
+| `contextWindow` | Input tokens assumed for a model whose window is unknown (minimum 32000). An explicit value overrides the Codex catalog window (see [Limitations](LIMITATIONS.md#codex-login-limitations)). | `272000` (API); catalog effective window or 128,000 (Codex) |
 | `fallbackModel` | Model to switch to when a subscription or Codex login quota is reached; no account rotation, and the same account cannot be the fallback. Empty: off. | empty |
 | `fallbackPercent` | Used share of a rate-limit window (50–100) at which the switch happens. Only read when `fallbackModel` is set. | `100` |
 | `workerModel` | Model for the `model-mod:local-worker` agent type. Empty: the fallback model; if both are empty there is no worker type. | empty |
@@ -55,9 +55,12 @@ The mod activates with either a valid `apiKey` or a valid combination of `codexA
 | `codexBin` | Executable name or absolute path; default `codex`. |
 | `pythonBin` | Executable name or absolute path; default `python3`. On Windows use `python` (unverified). |
 | `codexKeepReasoning` | `on` (default) or `off`; invalid values use `on` and appear in status. Uses experimental APIs; real Codex replay is unverified. |
+| `codexServiceTier` | `default` (default) or `priority`; actual service tier and billing are unverified. |
 | `codexWebSearch` | `on` (default) or `off`; invalid values use `on` and appear in status. Search is disabled when WebSearch is absent from the session tool list. |
 | `codexStopGate` | `off` (default) or `on`, case-insensitive; invalid values use `off` and appear in status. On may start a read-only Codex review after a main-session turn, send the diff and full contents of untracked, non-ignored files to OpenAI and block ending. Gitignored files are not sent. |
 | `codexStopGateBlocks` | Maximum blocks per session: `1` (default) or `2`; invalid values use `1` and appear in status. Once the limit is reached, an unpassed result allows ending with a human-review warning. |
+
+Codex effort is clamped to levels declared by the model: `max` selects the highest supported level; an unsupported explicit level selects the highest supported level at or below it, or the lowest if none is lower. `minimal` is never sent. If no explicit level is given, the supported model default is used when needed.
 
 Native search and openPage run at OpenAI and are not constrained by Claude permission domain rules (allowed or blocked domains); model-mod makes no `allowed_domains` security claim. Queries are sent to OpenAI.
 
@@ -116,6 +119,6 @@ Codex status shows remaining percentages, reset times, credits, plan and `ordina
 
 ## Background job storage and limits
 
-The SessionStart hook starts a local broker. After all sessions close, an idle broker can remain alive for up to 30 minutes. Up to 50 jobs are retained for seven days; each account can have at most two running and five queued, with at most one active write job. Background execution has a 30-minute total and five-minute inactivity limit; foreground delegation has five-minute total and two-minute inactivity limits. Use `/model-mod:jobs --clear` to remove terminal jobs and results for the current workspace.
+The SessionStart hook starts a local broker. After all sessions close, an idle broker can remain alive for up to 30 minutes. Up to 50 jobs are retained for seven days; when admitting job 51, the oldest terminal record and result are evicted first; each account can have at most two running and five queued, with at most one active write job. Background execution has a 30-minute total and five-minute inactivity limit; foreground delegation has five-minute total and two-minute inactivity limits. Use `/model-mod:jobs --clear` to remove terminal jobs and results for the current workspace.
 
 Job output is stored locally under `$XDG_STATE_HOME/model-mod/delegate/v1` (when unset, use the `state` directory inside the hidden `local` directory in the home directory) (directories 0700, files 0600). Results can contain your prompt or code fragments: redaction matches prompt or diff strings exactly only when they are at least 32 characters long, and cannot recognize model paraphrases. Local records are retained for seven days. Deleting local records does not delete Codex threads or provider-side records. Status records themselves do not store prompts, diffs, reasoning, account-directory paths, or environment variables.

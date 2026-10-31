@@ -4,7 +4,7 @@
 
 ## 選擇上游
 
-Codex 登入與 Messages 相容 API 伺服器是同等的選擇，也可並存。使用 Codex 時，先安裝 Python 3.9 以上版本與官方 `codex` CLI，再執行 `/model-mod:setup` 並選 **Codex login**。需要登入時，setup 會建立專用帳號目錄並執行 `codex login --device-auth`。請開啟顯示的網址、輸入代碼，選 **Continue (after logging in)**，再選模型。若無法取得網址，setup 會改顯示手動終端機命令。使用 API 伺服器時，請依下一節準備，並在 setup 選 **Compatible API server**。
+Codex 登入是主要路徑；已有的 Messages 相容 API 伺服器是替代選擇，兩者也可並存。使用 Codex 時，先安裝 Python 3.9 以上版本與官方 `codex` CLI，再執行 `/model-mod:setup` 並選 **Codex login**。需要登入時，setup 會建立專用帳號目錄並執行 `codex login --device-auth`。請開啟顯示的網址、輸入代碼，選 **Continue (after logging in)**，再選模型。若無法取得網址，setup 會改顯示手動終端機命令。使用 API 伺服器時，請依下一節準備，並在 setup 選 **Compatible API server**。
 
 在 setup 選 **Manage configured upstreams** 可登出或移除 Codex 帳號，也可移除插件選項中的 API。登出會保留帳號設定與目錄；移除預設保留目錄，若要刪除須再次確認，且只刪該帳號目錄。由 `MODEL_MOD_CONFIG` 提供的 API 須自行編輯該檔移除。 移除 API 會停用上游，但金鑰仍留在客戶端的安全儲存中，model-mod 無法清除；重新加入時 setup 會先確認要把已存金鑰送往哪個主機。
 
@@ -14,7 +14,7 @@ Codex 登入與 Messages 相容 API 伺服器是同等的選擇，也可並存�
 
 API 伺服器路徑會把工作階段送往接受 Messages 風格串流請求（`/v1/messages`）並驗證 API 金鑰的伺服器。安裝前：
 
-1. **取得上游。** 已測試的是 CLIProxyAPI。依其文件安裝，並用你自己的供應商帳號登入；model-mod 不會安裝、啟動或設定它。
+1. **使用你的上游。** 可使用相容伺服器；CLIProxyAPI 是曾測試過的一例。model-mod 不會安裝、啟動或設定伺服器。
 2. **確認它正在執行**，且從執行 Claude Code 的機器連得到。下列檢查讀取的是 `/model-mod:setup` 使用的同一份模型清單（請先在 shell 設好金鑰並換成你的位址）；回傳 `200` 表示位址與金鑰可用：
 
    ```bash
@@ -39,7 +39,7 @@ API 伺服器路徑會把工作階段送往接受 Messages 風格串流請求（
 | `apiKey` | API 上游的金鑰（機密）。API 路徑需要此欄位。 | 無 |
 | `models` | 以逗號分隔的模型 ID，mod 只接管這些。空白：上游列出的所有 chat 模型。 | 空白 |
 | `imageModel` | API 路徑的 `generate_image` 圖片模型。空白：`gpt-image-2`，或上游列出的第一個 `gpt-image*`。`none` 關閉 API 圖片路徑；Codex 使用內建圖片模型，不受此設定影響。 | 空白 |
-| `contextWindow` | 對未知視窗大小的模型所假設的輸入 token 數（最小 32000）。明設的值會覆寫 Codex 模型目錄視窗（見[限制](LIMITATIONS.zh-TW.md)）。 | `272000`（API）；目錄有效視窗或 128,000（Codex） |
+| `contextWindow` | 對未知視窗大小的模型所假設的輸入 token 數（最小 32000）。明設的值會覆寫 Codex 模型目錄視窗（見[限制](LIMITATIONS.zh-TW.md#codex-登入的限制)）。 | `272000`（API）；目錄有效視窗或 128,000（Codex） |
 | `fallbackModel` | 訂閱或 Codex 登入額度達上限時切換的模型；不會輪流換帳號，同帳號不可作為備援。空白：不自動切換。 | 空白 |
 | `fallbackPercent` | rate-limit 視窗用量達多少比例（50–100）時切換。僅在設定 `fallbackModel` 時有效。 | `100` |
 | `workerModel` | `model-mod:local-worker` 代理類型使用的模型。空白：用 fallback 模型；兩者都空白則不提供 worker 代理類型。 | 空白 |
@@ -55,9 +55,12 @@ API 伺服器路徑會把工作階段送往接受 Messages 風格串流請求（
 | `codexBin` | 執行檔名稱或絕對路徑；預設 `codex`。 |
 | `pythonBin` | 執行檔名稱或絕對路徑；預設 `python3`。Windows 請設為 `python`（未驗證）。 |
 | `codexKeepReasoning` | `on`（預設）或 `off`；無效值視為 `on` 並顯示於 status。使用實驗性 API；真實 Codex 重放尚未驗證。 |
+| `codexServiceTier` | `default`（預設）或 `priority`；實際服務層級與計費尚未驗證。 |
 | `codexWebSearch` | `on`（預設）或 `off`；無效值視為 `on` 並顯示於 status。工作階段工具清單沒有 WebSearch 時會停用搜尋。 |
 | `codexStopGate` | `off`（預設）或 `on`，不分大小寫；無效值視為 `off` 並顯示於 status。開啟後可能在主工作階段回合結束時啟動唯讀 Codex 審查、把 diff 與未追蹤且未被 gitignore 的檔案全文送往 OpenAI 並阻擋結束；被 gitignore 的檔案不會送出。 |
 | `codexStopGateBlocks` | 每個工作階段最多阻擋 `1` 次（預設）或 `2` 次；無效值視為 `1` 並顯示於 status。達上限後未通過的結果會放行並提示人工審查。 |
+
+Codex effort 依模型宣告的等級夾值：`max` 取支援的最高等級；不支援的明設等級取不高於它的最高支援等級，若沒有較低等級則取最低。絕不送出 `minimal`。未明設時，需要調整會採用模型支援的預設值。
 
 原生搜尋與 openPage 在 OpenAI 端執行，不受 Claude 權限的網域規則（allowed／blocked domains）限制；model-mod 不做 `allowed_domains` 的安全宣稱。查詢文字會送往 OpenAI。
 
@@ -116,6 +119,6 @@ Codex status 顯示各視窗的剩餘比例、重置時間、credits、方案及
 
 ## 背景工作儲存與限制
 
-SessionStart hook 會啟動本機 broker。所有 session 關閉後，閒置的 broker 最多仍存活 30 分鐘。最多保留 50 個工作，保留七天；每個帳號最多兩個執行中、五個排隊中，且最多一個未終態的 write 工作。背景執行總時限為 30 分鐘、無活動時限為五分鐘；前景分別為五分鐘及兩分鐘。使用 `/model-mod:jobs --clear` 可移除目前工作區已終態的工作與結果。
+SessionStart hook 會啟動本機 broker。所有 session 關閉後，閒置的 broker 最多仍存活 30 分鐘。最多保留 50 個工作，保留七天；新增第 51 個時會先淘汰最舊的終態紀錄與結果；每個帳號最多兩個執行中、五個排隊中，且最多一個未終態的 write 工作。背景執行總時限為 30 分鐘、無活動時限為五分鐘；前景分別為五分鐘及兩分鐘。使用 `/model-mod:jobs --clear` 可移除目前工作區已終態的工作與結果。
 
 工作輸出保存在本機 `$XDG_STATE_HOME/model-mod/delegate/v1` （未設定時，使用家目錄中隱藏的 `local` 目錄內的 `state` 目錄）（目錄權限 0700、檔案 0600）。結果可能含有你的 prompt 或程式碼片段：遮罩只對長度至少 32 字元的 prompt 或 diff 作精確字串比對，無法識別模型改寫的內容。本機紀錄保留七天；刪除本機紀錄不會刪除 Codex 自己的 thread 或 provider 端紀錄。狀態紀錄本身不儲存 prompt、diff、思考、帳號目錄路徑或環境變數。

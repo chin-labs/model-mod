@@ -6,7 +6,7 @@
 
 After `/model-mod:setup`:
 
-1. Run `/model-mod:status`. When the mod is active it answers with one line such as `model-mod: <version>: picker=active; host=127.0.0.1; config=…; models=3; …`, where `models` is the number of models offered. With only a Codex login configured, it shows each account's status instead of `host`, `config` and `models`. `model-mod: inactive; …` means there is no usable upstream configuration (see Troubleshooting). If the reply is a text saying that the plugin hooks are not loaded, the plugin is not active in this session: run `/reload-plugins` or restart Claude Code.
+1. Run `/model-mod:status`. When the mod is active it answers with one line such as `model-mod 0.2.0: picker=active; host=127.0.0.1; config=…; models=3; …`, where `models` is the number of models offered. With only a Codex login configured, it shows each account's status instead of `host`, `config` and `models`. `model-mod: inactive; …` means there is no usable upstream configuration (see [Symptoms](#symptoms)). If the reply is a text saying that the plugin hooks are not loaded, the plugin is not active in this session: run `/reload-plugins` or restart Claude Code.
 2. Run `/model-mod:model`, pick one of your models and send a short message. The answer comes from your upstream. If the upstream is down or rejects the key, the turn ends with an error message; it is never retried on your subscription.
 
 ## Symptoms

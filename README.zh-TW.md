@@ -14,43 +14,45 @@ model-mod 是供 Claude Code 使用的插件（mod），讓你把自己的 Codex
 
 - 支援 mod 的 Claude Code：Codex 登入與 API 上游已在 **Claude Code 2.1.314** 測試；API 上游也曾在 2.1.299 至 2.1.310 測試。其他版本未測。
 - Codex 登入：Python 3.9 以上版本及已安裝的 `codex` CLI（最低支援版本 0.165.0；更舊版本會被拒絕）。Codex context 視窗取自帳號模型目錄（套用有效比例），讀不到時退回 128,000 token；`contextWindow` 可覆寫。或使用你自己已啟動的 Messages 相容 API 與其金鑰；CLIProxyAPI 是已測試的 API 上游，model-mod 不會安裝或啟動該伺服器。
-- `curl` 與 `bash`；網頁擷取與圖片生成另需[設定說明](docs/CONFIGURATION.zh-TW.md#先準備好你的上游)列出的系統工具。
+- `curl` 與 `bash`；網頁擷取與圖片生成另需[設定說明](docs/CONFIGURATION.zh-TW.md#系統工具)列出的系統工具。
 
 ## 快速開始
 
-可選擇其中一種或同時使用兩種上游。使用 Codex 登入時，先安裝 Python 3.9 以上版本與官方 `codex` CLI。setup 會建立專用帳號目錄並引導裝置驗證；代碼約 15 分鐘內有效。手動登入方式見[疑難排解](docs/TROUBLESHOOTING.zh-TW.md)。
-
-使用 API 伺服器時，先[準備好上游](docs/CONFIGURATION.zh-TW.md#先準備好你的上游)及其 API 金鑰。接著在 Claude Code 的互動工作階段中執行：
+Codex 登入是主要路徑。先安裝 Python 3.9 以上版本與官方 `codex` CLI，再於 Claude Code 互動工作階段中執行：
 
 ```text
 /plugin marketplace add chin-labs/model-mod
 /plugin install model-mod@model-mod
-/plugin configure model-mod@model-mod
+```
+
+若 `/model-mod:setup` 沒反應或提示 hooks 未載入，請先執行 `/reload-plugins`。接著執行：
+
+```text
 /model-mod:setup
 /model-mod:model
 ```
 
-`/model-mod:setup` 第一步會詢問要設定哪種上游。選擇 Codex 帳號後，若尚未登入，請開啟顯示的網址並輸入一次性代碼，再選 **Continue (after logging in)** 並選擇模型。API 伺服器的金鑰請在設定對話框填入，會當作機密儲存，不必在對話中輸入；setup 會確認網址並讓你選模型。setup 選單也可管理已設定的上游；`/model-mod:model` 列出兩種模型，`/model-mod:status` 顯示每個 Codex 帳號目錄。設定完成後若插件尚未啟用，請執行 `/reload-plugins` 或重新啟動 Claude Code。
+選擇 **Codex login** 與帳號；若系統要求登入，開啟顯示的網址、輸入一次性代碼，再選 **Continue (after logging in)**。選擇模型。setup 會建立帳號目錄並寫入帳號與模型設定；此路徑不需要 `/plugin configure`。代碼約 15 分鐘後失效；手動登入方式見[疑難排解](docs/TROUBLESHOOTING.zh-TW.md)。
 
-也可從 shell 加入 marketplace 並安裝：
+若已有 [Messages 相容 API 伺服器](docs/CONFIGURATION.zh-TW.md#先準備好你的上游)，也可先用 `/plugin configure model-mod@model-mod` 設定 `baseUrl` 與 `apiKey`，再執行 `/model-mod:setup` 並選 **Compatible API server**。金鑰會當作機密儲存，不必輸入對話。兩種上游可並存。本機 clone 或私密設定檔用法見[其他安裝與設定方式](docs/CONFIGURATION.zh-TW.md#其他安裝與設定方式)。
 
-```bash
-claude plugin marketplace add chin-labs/model-mod
-claude plugin install model-mod@model-mod
-claude plugin configure model-mod@model-mod
-```
+首次檢查：
 
-最後一行 shell 指令會列出選項及尚未設定的項目；請在 Claude Code 內用 `/plugin configure model-mod@model-mod` 編輯，或[從私密檔案設定](docs/CONFIGURATION.zh-TW.md#其他安裝與設定方式)。要從本機 clone 安裝，把 `chin-labs/model-mod` 換成 clone 的路徑。
+- hooks 未載入：執行 `/reload-plugins` 或重新啟動 Claude Code。
+- 尚未登入：重新執行 `/model-mod:setup` 完成裝置登入，或依錯誤訊息中的終端機指令登入。
+- `codex` 不在 `PATH`：安裝官方 CLI 或設定 `codexBin`，再重試 setup。
+- `model-mod: Codex login: device code expired; run /model-mod:setup again to get a new code.`：重新執行 setup。
+- `model-mod: no local models. Run /model-mod:setup to add them.`：執行 setup 並選模型；用 `/model-mod:status` 檢查是否啟用。
 
-用 `/model-mod:status` 檢查是否啟用，再選你的模型並送一則短訊息。上游出錯時，該回合以錯誤訊息結束，絕不改走你的訂閱重試。
+選模型後送一則短訊息。上游出錯時，該回合以錯誤訊息結束，絕不改走訂閱重試。
 
 ## 特色
 
 - 你的模型與訂閱模型並存，用 `/model-mod:model` 依工作階段切換。
 - 支援串流、工具呼叫、Skills、MCP 伺服器、子代理與 Workflow agent。
-- 兩種上游都可使用網頁擷取、工具搜尋與圖片生成；Codex 使用原生網頁搜尋，API 路徑使用 mod 的搜尋工具。
+- Codex 登入使用原生網頁搜尋（`codexWebSearch`）及僅支援 POSIX 的圖片生成；API 路徑使用 mod 的搜尋、擷取及圖片生成工具。Codex 也可使用網頁擷取與工具搜尋。
 - 暫時性上游錯誤自動重試，採用有上限的 `Retry-After` 處理，並支援 Claude Code 的五級 effort。
-- 以你選的模型壓縮上下文，也可選擇在訂閱用量達上限時自動切換模型。
+- 以你選的模型壓縮上下文；訂閱或 Codex 登入額度達上限時，可選擇切換至 `fallbackModel`，不會自動輪流更換帳號；API 上游模型沒有官方額度切換機制。
 
 ## 指令
 
@@ -78,6 +80,7 @@ claude plugin configure model-mod@model-mod
 
 ## 限制、隱私與合規
 
+- [Windows 驗證清單](docs/WINDOWS.zh-TW.md)說明尚未驗證的平台。
 - [限制說明](docs/LIMITATIONS.zh-TW.md)列出已知差異、尚未驗證的行為及[訂閱側請求](docs/LIMITATIONS.zh-TW.md#訂閱側請求)。
 - 對話、系統指示（含專案指示）、工具定義與結果、圖片會送往你的上游及其背後的供應商。搜尋查詢、擷取網址、圖片提示分別送往對應的目的地。
 - Auto 權限模式會把完整對話與專案指示送到你的訂閱做分類，即使目前選的是你的模型。改用 default 或 acceptEdits 模式搭配 allow 規則即可避免；其他側請求仍可能使用你的訂閱。

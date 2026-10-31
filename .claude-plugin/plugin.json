@@ -17,7 +17,7 @@
     "baseUrl": {
       "type": "string",
       "title": "Upstream base URL",
-      "description": "Base URL of your Messages-compatible upstream, without /v1. CLIProxyAPI with your own Codex login is the tested upstream.",
+      "description": "Base URL of your Messages-compatible API server, without /v1. Codex login uses the official Codex CLI separately.",
       "default": "http://127.0.0.1:8317"
     },
     "codexAccounts": {
