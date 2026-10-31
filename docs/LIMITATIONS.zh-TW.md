@@ -62,9 +62,10 @@ SDK 與 `-p` 的呼叫端必須檢查結果文字是否以 `model-mod:` 開頭�
 - 真實 Codex 的圖片生成、原生搜尋及實驗性 reasoning 重放尚未驗證。
 - 真實 review 是否嚴格遵守 Stop gate 所依賴的 `outputSchema` 尚未驗證。
 - commentary 事件順序，以及 `classic.Stop` 與官方外掛 hook 的真實順序尚未驗證。
+- 與官方 `openai/codex-plugin-cc` 的並存只做了對上游 commit `db52e28f4d9d` 的靜態比對，兩者未實際同時執行。請使用完整指令名稱（`/codex:review`、`/model-mod:review`），並且最多開啟一個 Stop 審查 gate。兩者預設的 Codex home 各自獨立，但若刻意把兩者指向同一個 `CODEX_HOME`，帳號設定與信任紀錄可能互相影響。
 - Codex 額度耗盡時的切換，以及 `priority` 計費與 `codexServiceTier` 實際服務層級尚未驗證。
 - 真實 workspace-write sandbox 驗收與 transfer 後續跑尚未驗證。
-- exFAT 與 Linux 尚未驗證。
+- Linux 只做了離線驗證：helper 測試、假 Codex 流程與 socket 路徑長度限制在 Linux arm64 容器（Python 3.12、Git 2.34、無網路）內通過；hook 測試、真實帳號回合、`/proc` 後備路徑與 Git 2.54 的 configured-hook 檢查未在其上執行。exFAT 尚未驗證。
 
 - **Codex 環境。** Windows、Python 3.9 實際執行、live SIGHUP 回收及較新 Codex 版本逐版驗證尚未完成。啟動延遲尚未量測。`max` effort 只用假 Codex 測試過。
 - **自動切換。** 真實用量重置後切回、真實被拒請求後的 rate-limit 資料，以及從 Remote Control 觸發。
@@ -116,7 +117,8 @@ Transfer 僅支援預設 Claude 設定目錄（`~/.claude`）；離線實測 Cod
 
 - Windows 不支援背景指令；前景委派仍可使用。Ctrl+C 與 `/reload-plugins` 對 broker 的影響尚未驗證。
 - broker 死亡時工作會中斷而不會繼續，復原後標為 `interrupted`。清理是盡力而為：macOS `ps lstart` 只有秒級精度，可能遇到 PID 重用與 TOCTOU 時間窗口，呼叫 `setsid` 的孫程序也可能逃過清理。無法確認清理時標示 `possible_leftover`。完成通知僅盡力提供。
+- 沒有工作在執行時，背景 broker 閒置 30 分鐘後會自行結束；在此之前可能留有殘留的 broker 程序。
 - 背景委派只支援預設帳號根目錄；自訂帳號根目錄請使用前景委派。`codexBin` 必須能在 broker 的環境中執行。
 - write 模式下，Codex 可能執行命令並修改真實工作目錄，沒有自動備份；建議先 commit 或 stash。sandbox 限制 Codex 的命令與檔案寫入，不保證阻擋所有外部副作用；關閉網路的效果尚未跨平台驗證。
-- Codex 啟動 workspace-write 時可能在帳號的 `config.toml` 記錄專案信任；model-mod 為 thread 指定不信任專案的覆寫，離線測試 Codex 0.166.0 時未留下持久信任紀錄。委派與圖片生成會拒絕已啟用或無法驗證的專案設定層，包括帳號原有信任所啟用的設定。寫入委派也會拒絕 thread 啟動後存在的工作目錄專案信任紀錄。若要移除信任，請在帳號的 Codex 設定中取消該專案的信任。
-- 唯讀 sandbox 不限制讀取範圍，命令可能讀取工作區以外的檔案；這與上方 Messages bridge 停用內建 shell 的情況不同。官方 `openai/codex-plugin-cc` 與 model-mod 的並存尚未驗證。
+- Codex 啟動 workspace-write 時可能在帳號的 `config.toml` 記錄專案信任；model-mod 為 thread 指定不信任專案的覆寫，離線測試 Codex 0.166.0 時未留下持久信任紀錄。委派與圖片生成會拒絕已啟用或無法驗證的專案設定層，包括帳號原有信任所啟用的設定。寫入委派也會拒絕 thread 啟動後存在的工作目錄「已信任」專案紀錄；明確標為 `untrusted` 的紀錄會放行。若要移除信任，請在帳號的 Codex 設定中取消該專案的信任。
+- 唯讀 sandbox 不限制讀取範圍，命令可能讀取工作區以外的檔案；這與上方 Messages bridge 停用內建 shell 的情況不同。
