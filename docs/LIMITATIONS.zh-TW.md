@@ -116,4 +116,5 @@ Stop gate 預設關閉。結構化裁定的品質、漏判情況，以及真實 
 - broker 死亡時工作會中斷而不會繼續，復原後標為 `interrupted`。清理是盡力而為：macOS `ps lstart` 只有秒級精度，可能遇到 PID 重用與 TOCTOU 時間窗口，呼叫 `setsid` 的孫程序也可能逃過清理。無法確認清理時標示 `possible_leftover`。完成通知僅盡力提供。
 - 背景委派只支援預設帳號根目錄；自訂帳號根目錄請使用前景委派。`codexBin` 必須能在 broker 的環境中執行。
 - write 模式下，Codex 可能執行命令並修改真實工作目錄，沒有自動備份；建議先 commit 或 stash。sandbox 限制 Codex 的命令與檔案寫入，不保證阻擋所有外部副作用；關閉網路的效果尚未跨平台驗證。
+- Codex 啟動 workspace-write 時可能在帳號的 `config.toml` 記錄專案信任；model-mod 為 thread 指定不信任專案的覆寫，離線測試 Codex 0.166.0 時未留下持久信任紀錄。委派會拒絕已啟用的專案設定層，包括帳號原有信任所啟用的設定。
 - 唯讀 sandbox 不限制讀取範圍，命令可能讀取工作區以外的檔案；這與上方 Messages bridge 停用內建 shell 的情況不同。官方 `openai/codex-plugin-cc` 與 model-mod 的並存尚未驗證；兩者各有獨立的指令與狀態。

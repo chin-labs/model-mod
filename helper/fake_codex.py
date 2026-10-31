@@ -74,7 +74,10 @@ for line in sys.stdin:
         if mode == 'bad_unified_exec': features['unified_exec'] = True
         web_search = 'live' if 'web_search="live"' in sys.argv else 'disabled'
         if mode == 'bad_web_search': web_search = 'disabled' if web_search == 'live' else 'live'
-        send({'id': ident, 'result': {'config': {'web_search': web_search, 'features': features, 'mcp_servers': {}}}})
+        layers = [{'name': {'type': 'user'}, 'disabledReason': None}]
+        if mode == 'delegate_project_active' or (mode == 'delegate_project_after' and os.path.exists(os.path.join(os.environ['CODEX_HOME'], 'started'))):
+            layers.append({'name': {'type': 'project', 'dotCodexFolder': os.path.join(params['cwd'], '.codex')}, 'disabledReason': None})
+        send({'id': ident, 'result': {'config': {'web_search': web_search, 'features': features, 'mcp_servers': {}}, 'layers': layers}})
     elif method == 'thread/start':
         if mode == 'reasoning_start_error' and params.get('experimentalRawEvents'):
             send({'id': ident, 'error': {'code': -32000, 'message': 'synthetic'}})
@@ -86,8 +89,18 @@ for line in sys.stdin:
         else:
             if mode == 'forbidden_before': event('item/started', {'item': {'type': 'commandExecution'}})
             sandbox = {'type': 'workspaceWrite' if mode == 'delegate_bad_sandbox' else 'readOnly', 'networkAccess': False}
-            if params.get('sandbox') == 'workspace-write' and mode != 'delegate_bad_sandbox':
-                sandbox = {'type': 'workspaceWrite', 'writableRoots': params['config']['sandbox_workspace_write']['writable_roots'], 'networkAccess': False, 'excludeTmpdirEnvVar': True, 'excludeSlashTmp': True}
+            if params.get('sandbox') == 'workspace-write':
+                cwd = params['cwd']
+                override = params.get('config', {}).get('projects', {}).get(cwd, {}).get('trust_level')
+                if override != 'untrusted':
+                    with open(os.path.join(os.environ['CODEX_HOME'], 'config.toml'), 'a', encoding='utf-8') as f:
+                        f.write('\n[projects.' + json.dumps(cwd) + ']\ntrust_level = "trusted"\n')
+                if mode == 'delegate_project_after':
+                    open(os.path.join(os.environ['CODEX_HOME'], 'started'), 'w').close()
+                if mode != 'delegate_bad_sandbox':
+                    roots = {'delegate_root_cwd': [cwd], 'delegate_root_extra': [cwd, '/'],
+                             'delegate_root_nonstring': [None], 'delegate_root_symlink': [config.get('root_alias', '/')]}.get(mode, [])
+                    sandbox = {'type': 'workspaceWrite', 'writableRoots': roots, 'networkAccess': False, 'excludeTmpdirEnvVar': True, 'excludeSlashTmp': True}
             if mode == 'delegate_network': sandbox['networkAccess'] = True
             send({'id': ident, 'result': {'thread': {'id': 'invalid' if mode == 'invalid_uuid' else '12345678-1234-4234-8234-123456789abc'}, 'approvalPolicy': 'on-request' if mode == 'delegate_approval_mismatch' else 'never', 'sandbox': sandbox}})
     if method == 'thread/start' and mode == 'delegate_no_read':

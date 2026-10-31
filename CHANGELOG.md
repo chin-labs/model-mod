@@ -26,6 +26,7 @@ All notable changes to this project are listed here. The format follows [Keep a 
 - Side-question command messages no longer repeat the client label, and the informational agent message count status is no longer shown.
 
 ### Fixed
+- Accept Codex workspace-write sandbox responses without explicit writable roots and avoid persisting project trust during rescue.
 - Check Codex image output paths before generation and keep image approvals separate for API and Codex upstreams.
 - Improve background job cleanup and status messages; avoid appending native search text after a tool call.
 - Allow the full device code lifetime during Codex setup and report expired login codes.

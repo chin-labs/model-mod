@@ -259,7 +259,8 @@ class DelegateTest(unittest.TestCase):
         turn = next(r['params'] for r in records if r.get('method') == 'turn/start')
         self.assertEqual(thread, {'serviceName': 'model_mod', 'model': 'chat', 'cwd': root, 'sandbox': 'workspace-write',
                                   'approvalPolicy': 'never', 'ephemeral': True,
-                                  'config': {'sandbox_workspace_write': {'writable_roots': [root], 'network_access': False,
+                                  'config': {'projects': {root: {'trust_level': 'untrusted'}},
+                                             'sandbox_workspace_write': {'writable_roots': [root], 'network_access': False,
                                                                          'exclude_tmpdir_env_var': True, 'exclude_slash_tmp': True}}})
         self.assertEqual(turn, {'threadId': '12345678-1234-4234-8234-123456789abc', 'model': 'chat', 'effort': None,
                                 'sandboxPolicy': {'type': 'workspaceWrite', 'writableRoots': [root], 'networkAccess': False,
@@ -276,6 +277,19 @@ class DelegateTest(unittest.TestCase):
             self.mode(mode)
             with self.assertRaises(delegate.Failure): delegate.execute(dict(request))
             self.assertFalse(any(r.get('method') == 'turn/start' for r in self.records()))
+        self.mode('delegate_root_cwd')
+        self.assertEqual(delegate.execute(dict(request)), 'hello')
+        inside_alias = self.root / 'repo-link'
+        inside_alias.symlink_to(self.repo, target_is_directory=True)
+        (self.account_dir / 'fake_config.json').write_text(json.dumps({'mode': 'delegate_root_symlink', 'log': str(self.log), 'root_alias': str(inside_alias)}))
+        self.assertEqual(delegate.execute(dict(request)), 'hello')
+        alias = self.root / 'outside-link'
+        alias.symlink_to(self.root, target_is_directory=True)
+        for mode in ('delegate_root_extra', 'delegate_root_nonstring', 'delegate_root_symlink'):
+            self.log.unlink(missing_ok=True)
+            (self.account_dir / 'fake_config.json').write_text(json.dumps({'mode': mode, 'log': str(self.log), 'root_alias': str(alias)}))
+            with self.assertRaisesRegex(delegate.Failure, 'sandbox'): delegate.execute(dict(request))
+            self.assertFalse(any(r.get('method') == 'turn/start' for r in self.records()))
         self.mode('delegate_approval')
         with self.assertRaisesRegex(delegate.Failure, 'Working directory'): delegate.execute(dict(request, writeRoot='/'))
         codex_home = self.root / 'envcodex'
@@ -288,6 +302,55 @@ class DelegateTest(unittest.TestCase):
         alias = str(self.account_dir.parent).replace('accounts', 'ACCOUNTS')
         if os.path.isdir(alias):
             with self.assertRaises(delegate.Failure): delegate.validate_write_root(alias, str(self.account_dir.parent), 'test')
+
+    def test_project_trust_is_not_persisted(self):
+        root = os.path.realpath(self.repo)
+        request = dict(self.request, options={'text': 'test', 'write': True}, writeRoot=root)
+        config = self.account_dir / 'config.toml'
+        for initial in (None, b'model = "user-model"\n# preserve this comment\n',
+                        ('[projects.' + json.dumps(root) + ']\ntrust_level = "trusted"\n').encode()):
+            for mode in ('delegate_approval', 'delegate_bad_sandbox', 'abort'):
+                with self.subTest(initial=initial, mode=mode):
+                    if initial is None: config.unlink(missing_ok=True)
+                    else: config.write_bytes(initial)
+                    self.mode(mode)
+                    if mode == 'delegate_approval':
+                        self.assertEqual(delegate.execute(dict(request)), 'hello')
+                    else:
+                        with patch.object(delegate, 'IDLE_SECONDS', .1):
+                            with self.assertRaises(delegate.Failure): delegate.execute(dict(request))
+                    self.assertEqual(config.read_bytes() if config.exists() else None, initial)
+        config.unlink(missing_ok=True)
+        self.mode('abort')
+        self.log.unlink(missing_ok=True)
+        proc = subprocess.Popen([sys.executable, HELPER], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+        try:
+            proc.stdin.write(json.dumps(request)); proc.stdin.close()
+            for _ in range(150):
+                if any(r.get('method') == 'turn/start' for r in self.records()): break
+                time.sleep(.02)
+            else: self.fail('write turn did not start')
+            proc.send_signal(signal.SIGTERM)
+            self.assertIn('Cancelled', proc.stdout.read())
+            self.assertEqual(proc.wait(timeout=5), 0)
+            self.assertFalse(config.exists())
+        finally:
+            if proc.poll() is None: proc.kill(); proc.wait()
+            proc.stdout.close()
+        self.mode('delegate_project_active')
+        (self.repo / 'file').write_text('modified\n')
+        for kind, options in (('rescue', {'text': 'test'}), ('review', {}),
+                              ('review', {'gate': True}), ('review', {'adversarial': True})):
+            self.log.unlink(missing_ok=True)
+            with self.assertRaisesRegex(delegate.Failure, 'trusts project configuration'):
+                delegate.execute(dict(self.request, kind=kind, options=options, sessionId='test'))
+            self.assertFalse(any(r.get('method') == 'thread/start' for r in self.records()))
+        self.mode('delegate_project_after')
+        self.log.unlink(missing_ok=True)
+        with self.assertRaisesRegex(delegate.Failure, 'trusts project configuration'):
+            delegate.execute(dict(request))
+        self.assertTrue(any(r.get('method') == 'thread/start' for r in self.records()))
+        self.assertFalse(any(r.get('method') == 'turn/start' for r in self.records()))
 
     def test_transfer(self):
         projects = self.root / '.claude' / 'projects'

@@ -406,6 +406,21 @@ def validate_write_root(cwd, accounts_dir, account):
     return root
 
 
+def checked_config(app, cwd):
+    result = app.request('config/read', {'includeLayers': True, 'cwd': cwd})
+    layers = result.get('layers')
+    if not isinstance(layers, list): raise Failure('Codex project configuration could not be verified.')
+    for layer in layers:
+        if not isinstance(layer, dict) or not isinstance(layer.get('name'), dict):
+            raise Failure('Codex project configuration could not be verified.')
+        if layer['name'].get('type') == 'project' and not layer.get('disabledReason'):
+            raise Failure('This account trusts project configuration for this repository; remove its trust or use an untrusted account.')
+    config = result.get('config', {})
+    if config.get('web_search') != 'disabled' or any(config.get('features', {}).get(f) is not False for f in FEATURES):
+        raise Failure('Codex safety configuration could not be verified.')
+    if config.get('mcp_servers') != {}: raise Failure('Codex MCP servers could not be disabled.')
+
+
 def execute(request, own_group=True, on_spawn=None):
     started = time.monotonic()
     cwd = request['cwd']
@@ -445,10 +460,7 @@ def execute(request, own_group=True, on_spawn=None):
         if not isinstance(init.get('codexHome'), str) or os.path.realpath(init['codexHome']) != home:
             raise Failure('Codex account directory mismatch.', 'account_mismatch')
         app.send({'method': 'initialized', 'params': {}})
-        config = app.request('config/read', {'includeLayers': False, 'cwd': cwd}).get('config', {})
-        if config.get('web_search') != 'disabled' or any(config.get('features', {}).get(f) is not False for f in FEATURES):
-            raise Failure('Codex safety configuration could not be verified.')
-        if config.get('mcp_servers') != {}: raise Failure('Codex MCP servers could not be disabled.')
+        checked_config(app, cwd)
         cursor, seen, models = None, set(), set()
         while True:
             page = app.request('model/list', {'cursor': cursor, 'includeHidden': False})
@@ -465,12 +477,19 @@ def execute(request, own_group=True, on_spawn=None):
         start_params = {'serviceName': 'model_mod', 'model': request['model'], 'cwd': cwd,
                         'sandbox': 'workspace-write' if write else 'read-only', 'approvalPolicy': 'never', 'ephemeral': True}
         if write:
-            start_params['config'] = {'sandbox_workspace_write': {'writable_roots': [cwd], 'network_access': False,
-                                                                   'exclude_tmpdir_env_var': True, 'exclude_slash_tmp': True}}
+            start_params['config'] = {'projects': {cwd: {'trust_level': 'untrusted'}},
+                                      'sandbox_workspace_write': {'writable_roots': [cwd], 'network_access': False,
+                                                                  'exclude_tmpdir_env_var': True, 'exclude_slash_tmp': True}}
         start = app.request('thread/start', start_params)
         sandbox = start.get('sandbox')
-        if start.get('approvalPolicy') != 'never' or not isinstance(sandbox, dict) or any(sandbox.get(k) != v for k, v in policy.items()):
+        fields = {k: v for k, v in policy.items() if not write or k != 'writableRoots'}
+        if start.get('approvalPolicy') != 'never' or not isinstance(sandbox, dict) or any(sandbox.get(k) != v for k, v in fields.items()):
             raise Failure('Codex sandbox or approval policy mismatch.')
+        if write:
+            roots = sandbox.get('writableRoots')
+            if not isinstance(roots, list) or any(not isinstance(root, str) or os.path.realpath(root) != cwd for root in roots):
+                raise Failure('Codex sandbox or approval policy mismatch.')
+            checked_config(app, cwd)
         app.thread = start.get('thread', {}).get('id')
         if not isinstance(app.thread, str) or not app.thread: raise Failure('Invalid Codex thread.')
         if request['kind'] == 'review' and not options.get('adversarial') and not options.get('gate'):
