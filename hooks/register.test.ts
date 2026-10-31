@@ -18,7 +18,7 @@ type RunReply = { exitCode: number; stdout: string; stderr?: string; isStdoutTru
 // `wait`: mock-clock milliseconds between the last stdout piece and the first stderr piece (curl's write-out comes when the transfer ends);
 // `hang`: the child writes its pieces and then neither ends nor writes again until it is closed.
 type SpawnReply = { stdout: string | readonly string[]; stderr?: string | readonly string[]; code: number; wait?: number; hang?: boolean }
-type World = { messages?: unknown[]; runDelay?: number; rateStarted?: boolean; system: string; killed: number; toolsList?: string[]; toolListFailsAfter?: number; toolListCalls: number /* tool.list throws from the call after this many have succeeded */; spawned: { argv: readonly string[]; input?: string; env?: Record<string, string> }[]; ran: (readonly string[])[]
+type World = { paneSeat?: boolean; opened: string[]; closed: string[]; messages?: unknown[]; runDelay?: number; rateStarted?: boolean; system: string; killed: number; toolsList?: string[]; toolListFailsAfter?: number; toolListCalls: number /* tool.list throws from the call after this many have succeeded */; spawned: { argv: readonly string[]; input?: string; env?: Record<string, string> }[]; ran: (readonly string[])[]
   ranEnv: (Record<string, string> | undefined)[]; reached: string[]; envSet: [string, string | undefined][]; messagesRead: number; failEnvSets: number; failEnvName?: string
   // The upstream's model list (null: unreachable), what the store holds, the picker rows of the settings, the requests
   // `$.http.fetch` made (the authorization header is reduced to its first 6 characters).
@@ -45,7 +45,7 @@ const statusRow = (text: string, label: string) => new RegExp(`^\\s*(?:\\[!\\]\\
 
 function world(on: On, config: Record<string, unknown> | null, model: string, spawn: SpawnReply | SpawnReply[],
   run?: RunReply | ((argv: readonly string[], stdin?: string) => RunReply), env: Record<string, string> = {}): World {
-  const w: World = { system: 'Linux', killed: 0, spawned: [], ran: [], ranEnv: [], reached: [], envSet: [], messagesRead: 0, toolListCalls: 0, failEnvSets: 0,
+  const w: World = { opened: [], closed: [], system: 'Linux', killed: 0, spawned: [], ran: [], ranEnv: [], reached: [], envSet: [], messagesRead: 0, toolListCalls: 0, failEnvSets: 0,
     switchEnv: [], toolDescriptions: {}, answers: ['Keep (recommended)', 'All (recommended)'], questions: [], scopes: {}, files: {}, writes: [], saved: [], registered: [], configValues: {}, models: null, store: {}, picker: [], fetched: [], current: model, agents: [], modelRuns: [], limits: [], clock: undefined as never }
   // The test engine has no plugin.root; supply prompt files explicitly instead of built-in text.
   for (const name of ['compact', 'title', 'subagent-note', 'worker']) w.files[PROMPTS_DIR + '/' + name + '.md'] = 'TEST ' + name + ' prompt\n'
@@ -58,6 +58,9 @@ function world(on: On, config: Record<string, unknown> | null, model: string, sp
     if (w.models === null) throw new Error('unreachable')
     return { value: { status: 200, ok: true, headers: {}, text: JSON.stringify({ data: w.models.map(id => ({ id })) }) } }
   })
+  // A pane is seated only when a test says so (w.paneSeat): otherwise setup asks its menus as dialogs, as in -p or a small terminal.
+  on('ui.open', async (_$, e) => { w.opened.push(e.id); return { value: { isPlaced: w.paneSeat === true } } })
+  on('ui.close', async (_$, e) => { w.closed.push(e.id); return { value: undefined } })
   on('store.get', async (_$, e) => ({ value: w.store[e.key] }))
   on('store.set', async (_$, e) => { w.store[e.key] = e.value; return { value: undefined } })
   on('settings.read', async (_$, e) => {
@@ -1125,6 +1128,92 @@ test('setup: dismissing any question changes nothing', { options: OPTIONS }, asy
   expect(w.writes).toEqual([]); expect(w.saved).toEqual([]); expect(w.store).toEqual({})
 })
 
+// The setup menus as a pane. A test works the pane as a person does: it draws the Pane the plugin renders and presses a row.
+// The press answers the flow from a task of its own, which flush() lets run.
+const SETUP_PANE = { plugin: 'model-mod', component: 'Pane', requestId: 'model-mod-setup', surface: 'terminal' } as const
+const paneProps = (bodyRows = 14) => ({ title: 'model-mod setup', isFocused: true, bodyColumns: 76, placement: 'inline', scroll: { offset: 0, bodyRows }, view: {} }) as const
+async function flush(w: World): Promise<void> { for (let i = 0; i < 20; i++) await w.clock.advance(1) }
+async function choose($: Engine, w: World, key: string): Promise<void> {
+  const ui = await $.ui.mount({ ...SETUP_PANE, props: paneProps() })
+  await ui.press({ key: 'c:' + key })
+  await ui.unmount()
+  await flush(w)
+}
+function transcript(on: On): string[] {
+  const lines: string[] = []
+  on('ui.log', async (_$, e) => { lines.push(e.text); return { value: undefined } })
+  return lines
+}
+
+test('setup: a fixed menu asked as a dialog takes only a listed option; text typed under Other is asked again, never a cancel', { options: OPTIONS }, async ($, on) => {
+  const w = world(on, null, LOCAL, { stdout: '', code: 0 })
+  w.models = [LOCAL]; w.scopes.user = { enabledPlugins: { 'model-mod@test': true } }
+  w.answers = ['something typed', 'Keep (recommended)', 'All (recommended)']
+  const out = await $.command.run(SETUP)
+  expect(out.text).toContain('1 local models selected')
+  expect(w.questions[1]!.question.startsWith('請選擇列出的選項')).toBe(true)
+  expect(w.questions[1]!.labels).toEqual(w.questions[0]!.labels)
+  expect(w.opened).toEqual(['model-mod-setup'])
+  // Three answers that are not listed end the setup in words, with nothing changed.
+  w.saved = []; w.answers = ['a', 'b', 'c']
+  expect((await $.command.run(SETUP)).text).toContain('setup cancelled, nothing changed')
+  expect(w.saved).toEqual([])
+})
+
+test('setup: the fixed menus open in a pane; the command answers at once and the result goes to the transcript', { options: OPTIONS }, async ($, on) => {
+  const w = world(on, null, LOCAL, { stdout: '', code: 0 })
+  const logged = transcript(on)
+  w.paneSeat = true
+  w.models = [LOCAL, 'gpt-other']; w.scopes.user = { enabledPlugins: { 'model-mod@test': true } }
+  expect(await $.command.run(SETUP)).toEqual({})
+  expect(w.questions).toEqual([])
+  // One setup at a time: a second one while the menu is open is refused and opens nothing.
+  expect((await $.command.run(SETUP)).text).toContain('already open')
+  expect(w.opened).toEqual(['model-mod-setup'])
+  const ui = await $.ui.mount({ ...SETUP_PANE, props: paneProps() })
+  expect(await ui.find({ type: 'Text', text: /Choose an upstream/ })).toBeTruthy()
+  // The rows are the fixed answers only: no text box.
+  expect(await ui.findAll({ type: 'Button' })).toHaveLength(3)
+  expect(await ui.find({ type: 'Input' })).toBeFalsy()
+  await ui.unmount()
+  await choose($, w, 'Compatible API server')
+  await choose($, w, 'Keep (recommended)')
+  expect(w.opened).toEqual(['model-mod-setup', 'model-mod-setup', 'model-mod-setup'])
+  await choose($, w, 'All (recommended)')
+  expect(logged.join('\n')).toContain('2 local models selected')
+  expect(w.saved).toEqual([{ key: 'model-mod.baseUrl', value: OPTIONS.baseUrl }, { key: 'model-mod.models', value: '' }])
+  expect(w.questions).toEqual([])
+  expect(w.closed).toEqual(['model-mod-setup', 'model-mod-setup', 'model-mod-setup'])
+  // The flow is over: the next setup opens a menu again instead of being refused.
+  expect(await $.command.run(SETUP)).toEqual({})
+  expect(w.opened).toHaveLength(4)
+})
+
+test('setup: a pane that is too small hands the menu to a dialog, and the setup finishes there', { options: OPTIONS }, async ($, on) => {
+  const w = world(on, null, LOCAL, { stdout: '', code: 0 })
+  const logged = transcript(on)
+  w.paneSeat = true; w.models = [LOCAL]; w.scopes.user = { enabledPlugins: { 'model-mod@test': true } }
+  w.answers = ['Keep (recommended)', 'All (recommended)']
+  // Nothing beneath the plugin draws: this hook stands for the engine's own drawing of a pane the plugin leaves.
+  on('ui.render', ($, e) => h($.ui.resolve(e).Text, {}, 'engine') as never)
+  expect(await $.command.run(SETUP)).toEqual({})
+  const small = await $.ui.mount({ ...SETUP_PANE, props: paneProps(2) })
+  await flush(w)
+  await small.unmount()
+  expect(w.questions[0]!.question).toContain('Keep the API endpoint')
+  expect(logged.join('\n')).toContain('1 local models selected')
+  // After the fallback the rest of the setup does not try another pane.
+  expect(w.opened).toEqual(['model-mod-setup'])
+})
+
+test('setup: the bridge never gets a pane', { options: OPTIONS }, async ($, on) => {
+  const w = world(on, null, LOCAL, { stdout: '', code: 0 })
+  w.paneSeat = true; w.models = [LOCAL]; w.scopes.user = { enabledPlugins: { 'model-mod@test': true } }
+  expect((await $.command.run({ ...SETUP, origin: { kind: 'bridge' } } as never)).text).toContain('1 local models selected')
+  expect(w.opened).toEqual([])
+  expect(w.questions).toHaveLength(2)
+})
+
 for (const url of ['https://api.anthropic.com', 'https://claude.ai', 'https://tenant.claude.ai']) {
   test(`setup: rejects subscription endpoint ${url}`, { options: OPTIONS }, async ($, on) => {
     const w = world(on, null, LOCAL, { stdout: '', code: 0 })
@@ -2091,4 +2180,15 @@ test('web_fetch classifies embedded IPv4 addresses in DNS answers', () => {
     expect(privateAddress(address)).toBe(false)
   }
   expect(privateAddress('fe80::5efe:8.8.8.8')).toBe(true)
+})
+
+test('setup: a menu with more than four rows is asked page by page and Back stays reachable', { options: { ...CODEX_OPTIONS, codexAccounts: 'main,b,c,d' } }, async ($, on) => {
+  const w = world(on, null, CODEX_MODEL, { stdout: '', code: 0 }, () => ({ exitCode: 0, stdout: '{}' }))
+  w.chooseUpstream = true
+  w.answers = ['Manage configured upstreams', 'More…', 'Back']
+  expect((await $.command.run({ ...SETUP, origin: { kind: 'bridge' } } as never)).text).toContain('no changes')
+  expect(w.opened).toEqual([])
+  expect(w.questions.map(q => q.header)).toEqual(['Upstream', 'Upstream 1/2', 'Upstream 2/2'])
+  expect(w.questions[1]!.labels).toHaveLength(4); expect(w.questions[1]!.labels.at(-1)).toBe('More…')
+  expect(w.questions[2]!.labels.at(-1)).toBe('Back')
 })

@@ -37,8 +37,8 @@ let open: Open | undefined
 // Rows the window shows; the render writes it and the focus hook reads it.
 let windowSize = 6
 
-async function close($: EngineInterface): Promise<void> {
-  try { await $.ui.close({ id: PANE }) } catch { /* already gone */ }
+async function close($: EngineInterface, id: string = PANE): Promise<void> {
+  try { await $.ui.close({ id }) } catch { /* already gone */ }
 }
 
 function later(task: () => Promise<void>): void {
@@ -61,10 +61,83 @@ export async function openPane($: EngineInterface, input: { local: readonly stri
   return 'fallback'
 }
 
+// The setup menus: one question and a short list of fixed answers, no free input. Esc closes the pane and counts as no answer.
+// The list is not scrolled: a menu that does not fit the body is handed back, and the caller asks with the paged dialog.
+const CHOICE = 'model-mod-setup'
+// `current` gets a check mark; `initial` is the row focused first (the first one when absent).
+export type Choice = { title: string; question: string; options: readonly string[]; current?: string; initial?: string }
+export type ChoiceResult = { picked: string } | 'closed' | 'fallback'
+type PendingChoice = Choice & { settle: (result: ChoiceResult) => void }
+let pending: PendingChoice | undefined
+
+// Opens the menu and returns at once with whether the pane was seated. `settle` is called once, later, with the pick, with
+// 'closed' (Esc or another close) or with 'fallback' (seated, but the body turned out too small). A pane that is not seated
+// calls nothing: the caller goes on with the dialog.
+export async function openChoice($: EngineInterface, choice: Choice, settle: (result: ChoiceResult) => void): Promise<'shown' | 'fallback'> {
+  if (pending) return 'fallback'
+  let done = false
+  const once = (result: ChoiceResult) => { if (!done) { done = true; if (pending === mine) pending = undefined; settle(result) } }
+  const mine: PendingChoice = { ...choice, settle: once }
+  pending = mine
+  try {
+    const opened = await $.ui.open({ id: CHOICE, title: choice.title, focus: true, closeOnEscape: true, holdToasts: true, rows: Math.min(20, choice.options.length + 4) })
+    if (opened.isPlaced) return 'shown'
+  } catch { /* fall back below */ }
+  if (pending === mine) pending = undefined
+  done = true
+  await close($, CHOICE)
+  return 'fallback'
+}
+
+// The answer of one menu. `onShown` is called once the pane is seated: a command hook that is still waiting for the flow
+// must answer then, because it may not wait for a person (its own time is capped at 10 s).
+export async function chooseInPane($: EngineInterface, choice: Choice, onShown?: () => void): Promise<ChoiceResult> {
+  return new Promise<ChoiceResult>(resolve => {
+    void openChoice($, choice, resolve).then(seat => { if (seat === 'shown') onShown?.(); else resolve('fallback') })
+  })
+}
+
 export function registerPane(on: Parameters<Register>[0]): void {
   on('ui.close', { id: PANE }, async ($, e, next) => {
     open = undefined
     return next(e)
+  })
+
+  on('ui.close', { id: CHOICE }, async ($, e, next) => {
+    pending?.settle('closed')
+    return next(e)
+  })
+
+  on('ui.render', { component: 'Pane', requestId: CHOICE }, async ($, e, next) => {
+    const current = pending
+    if (!current) return next(e)
+    const bodyRows = e.props.scroll?.bodyRows ?? 12
+    const columns = Math.max(20, e.props.bodyColumns ?? 76)
+    // One row for the hint, the wrapped question, and every answer.
+    const questionRows = Math.ceil([...current.question].length / columns)
+    if (current.options.length + questionRows + 1 > bodyRows) {
+      pending = undefined
+      $.clock.after(0, () => { later(async () => { await close($, CHOICE); current.settle('fallback') }) })
+      return next(e)
+    }
+    const { Box, Text, Button } = $.ui.resolve(e)
+    const focused = e.props.isFocused === true
+    return <Box flexDirection="column">
+      <Text>{current.question}</Text>
+      {focused
+        ? <Text dimColor>↑↓ move · Enter select · Esc close</Text>
+        : <Text color="yellow">Keyboard not captured: press Ctrl+X, then Tab</Text>}
+      {current.options.map(label => <Button key={'c:' + label} plain autoFocus={label === (current.initial ?? current.options[0]) ? true : undefined}
+        onPress={() => {
+          pending = undefined
+          later(async () => {
+            await close($, CHOICE)
+            current.settle({ picked: label })
+          })
+        }}>
+        {(label === current.current ? '✓ ' : '  ') + label}
+      </Button>)}
+    </Box>
   })
 
   // Focus reaching a "more" row scrolls the window and moves focus to the row that came into view.

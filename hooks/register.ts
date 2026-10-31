@@ -3,7 +3,7 @@ import { update } from 'claude-code'
 import type { EnvMemo, FallbackMemo, TrackedAgent } from '../types'
 import { MessagesStream } from './sse.ts'
 import { htmlToText } from './text.ts'
-import { openPane, registerPane } from './pane.tsx'
+import { chooseInPane, openPane, registerPane } from './pane.tsx'
 import { delegate, backgroundCommand, transfer, runStopGate, stopGateSettings } from './delegate.ts'
 import { renderStatus } from './status.ts'
 import type { Group, QuotaBlock, QuotaWindow, Row, StatusView } from './status.ts'
@@ -53,6 +53,47 @@ async function ask($: EngineInterface, question: string, options: Parameters<Eng
   try { return await $.ui.ask(question, options) } catch { throw new Cancelled() }
 }
 
+// The fixed menus of /model-mod:setup (an upstream, keep or change, a yes or no) are shown in a pane where the terminal can
+// seat one: no 4-option limit and no free-text box that a stray keystroke could fill. The pane outlives the command hook
+// (a hook may run 10 s of its own time, a person may take longer), so the flow detaches once the first pane is seated and
+// reports its final text to the transcript. Where no pane is seated (-p, the bridge, a small terminal) the same menus are
+// asked as dialogs. Text boxes (the endpoint URL, an account name, manual model IDs) stay dialogs: they need typed text.
+type SetupFlow = { pane: boolean; detached: boolean; detach: () => void }
+let setupFlow: SetupFlow | undefined
+// A longer list does not fit the pane's body on most terminals; it is asked page by page instead.
+const PANE_MAX_OPTIONS = 12
+const NOT_LISTED = '請選擇列出的選項 (choose one of the listed options). '
+
+// ui.ask takes 2 to 4 options: three per page and a "More…" row that wraps to the first page.
+async function askPaged($: EngineInterface, question: string, options: readonly string[], header: string | undefined): Promise<string> {
+  if (options.length <= 4) return ask($, question, header ? { options: [...options], header } : [...options])
+  const pages = Math.ceil(options.length / 3)
+  for (let page = 0;; page = (page + 1) % pages) {
+    const listed = options.slice(page * 3, page * 3 + 3)
+    const more = (page + 1) * 3 < options.length || listed.length < 2
+    // The header is at most 12 characters.
+    const tag = ` ${page + 1}/${pages}`
+    const answer = await ask($, question, { options: more ? [...listed, 'More…'] : listed, header: (header ?? 'Choose').slice(0, 12 - tag.length) + tag })
+    if (answer !== 'More…') return answer
+  }
+}
+
+// One of `options`, nothing else: text typed under Other is asked again instead of ending the setup.
+async function pick($: EngineInterface, question: string, options: readonly string[], opts: { header?: string; current?: string; initial?: string } = {}): Promise<string> {
+  const flow = setupFlow
+  if (flow?.pane && options.length <= PANE_MAX_OPTIONS) {
+    const result = await chooseInPane($, { title: opts.header ?? 'model-mod setup', question, options, current: opts.current, initial: opts.initial }, flow.detach)
+    if (result === 'closed') throw new Cancelled()
+    if (result !== 'fallback') return result.picked
+    flow.pane = false
+  }
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const answer = await askPaged($, attempt ? NOT_LISTED + question : question, options, opts.header)
+    if (options.includes(answer)) return answer
+  }
+  throw new Cancelled()
+}
+
 // ui.ask exposes labels only; include the current-model description in its label.
 async function pickModel($: EngineInterface, ids: readonly string[], current: string, label: (id: string) => string = id => id): Promise<string> {
   for (let page = 0;; page = (page + 1) % Math.ceil(ids.length / 3)) {
@@ -71,10 +112,8 @@ async function pickModel($: EngineInterface, ids: readonly string[], current: st
 
 async function chooseModels($: EngineInterface, ids: string[], notes: string[], upstream = 'local API'): Promise<{ selected: string[]; all: boolean }> {
   $.ui.log((upstream === 'local API' ? 'Local API' : upstream) + ' chat models: ' + ids.join(', '))
-  const choice = await ask($, `Which ${upstream} models should /model-mod:model offer?`, ['All (recommended)', 'Choose a subset'])
+  const choice = await pick($, `Which ${upstream} models should /model-mod:model offer?`, ['All (recommended)', 'Choose a subset'], { header: 'Models' })
   if (choice === 'All (recommended)') return { selected: ids, all: true }
-  if (ids.includes(choice)) return { selected: [choice], all: false }
-  if (choice !== 'Choose a subset') notes.push('Ignored text that did not match a listed model ID.')
   for (;;) {
     const selected = new Set<string>()
     const pages = Math.ceil(ids.length / 4)
@@ -89,7 +128,7 @@ async function chooseModels($: EngineInterface, ids: string[], notes: string[], 
       }
     }
     if (selected.size) return { selected: [...selected], all: false }
-    const retry = await ask($, 'At least one model is required. Choose again?', ['Choose again (recommended)', 'Cancel'])
+    const retry = await pick($, 'At least one model is required. Choose again?', ['Choose again (recommended)', 'Cancel'], { header: 'Models' })
     if (retry !== 'Choose again (recommended)') throw new Cancelled()
   }
 }
@@ -97,7 +136,7 @@ async function chooseModels($: EngineInterface, ids: string[], notes: string[], 
 const storedKeyCancelled = 'model-mod: set an API key in /plugin → model-mod configure, then run /model-mod:setup again; nothing changed.'
 async function confirmStoredKey($: EngineInterface, baseUrl: string): Promise<boolean> {
   try {
-    return await ask($, `Send the API key stored by the client to ${new URL(baseUrl).hostname}?`, ['Use stored key', 'Cancel, set a new key in /plugin first']) === 'Use stored key'
+    return await pick($, `Send the API key stored by the client to ${new URL(baseUrl).hostname}?`, ['Use stored key', 'Cancel, set a new key in /plugin first'], { header: 'API key', initial: 'Cancel, set a new key in /plugin first' }) === 'Use stored key'
   } catch { return false }
 }
 
@@ -108,9 +147,9 @@ async function configurePicker($: EngineInterface, c: { baseUrl: string; key?: s
   try {
     let baseUrl = c.baseUrl
     if (setup) {
-      const choice = await ask($, `Keep the API endpoint ${baseUrl}?`, ['Keep (recommended)', 'Change'])
+      const choice = await pick($, `Keep the API endpoint ${baseUrl}?`, ['Keep (recommended)', 'Change'], { header: 'Endpoint' })
       if (choice !== 'Keep (recommended)') {
-        const input = choice === 'Change' ? await ask($, 'What is the API endpoint URL? Type it under Other.', ['Cancel', 'Keep current endpoint']) : choice
+        const input = await ask($, 'What is the API endpoint URL? Type it under Other.', ['Cancel', 'Keep current endpoint'])
         if (input === 'Cancel') throw new Cancelled()
         if (input !== 'Keep current endpoint') baseUrl = input
       }
@@ -1293,7 +1332,7 @@ async function deviceSetup($: EngineInterface, c: Config, home: string, root: st
     for (;;) {
       let answer: string
       try {
-        answer = await ask($, `Open ${details.url} and enter the one-time code ${details.code}. The code is valid for about 15 minutes. Continue after logging in? You can press Continue again if login is still pending.`, ['Continue (after logging in)', 'Cancel'])
+        answer = await pick($, `Open ${details.url} and enter the one-time code ${details.code}. The code is valid for about 15 minutes. Continue after logging in? You can press Continue again if login is still pending.`, ['Continue (after logging in)', 'Cancel'], { header: 'Codex login' })
       } catch { return expired || helperExpired ? 'expired' : 'cancelled' }
       if (expired || helperExpired) return 'expired'
       if (answer !== 'Continue (after logging in)') return 'cancelled'
@@ -1556,20 +1595,11 @@ async function manageUpstreams($: EngineInterface, c: Config): Promise<string> {
   }
   if (c.key || c.headerFile) entries.push({ label: scrub(c, `API ${new URL(c.baseUrl).hostname}; models=${c.models.filter(id => !c.codex?.has(id)).length}; key=${c.key || c.headerFile ? 'configured' : 'not configured'}${c.source === 'file' ? '; from configuration file' : ''}`, false) })
   if (!entries.length) return 'model-mod: no configured upstreams.'
-  let chosen: typeof entries[number] | undefined
-  for (let page = 0; ; page = (page + 1) % Math.ceil(entries.length / 2)) {
-    const listed = entries.slice(page * 2, page * 2 + 2)
-    const labels = listed.map(entry => entry.label)
-    const options = [...labels, ...(entries.length > 2 ? ['More…'] : []), 'Back']
-    const answer = await ask($, `Manage configured upstreams (${page + 1}/${Math.ceil(entries.length / 2)}). Choose one?`, { options, header: 'Upstreams' })
-    if (answer === 'Back') return 'model-mod: no changes.'
-    if (answer === 'More…') continue
-    chosen = listed[labels.indexOf(answer)]
-    if (!chosen) return 'model-mod: no changes.'
-    break
-  }
+  const answer = await pick($, 'Manage configured upstreams. Choose one?', [...entries.map(entry => entry.label), 'Back'], { header: 'Upstreams' })
+  const chosen = entries.find(entry => entry.label === answer)
+  if (!chosen) return 'model-mod: no changes.'
   if (!chosen.item) {
-    if (await ask($, 'Remove this API upstream?', ['Remove', 'Back']) !== 'Remove') return 'model-mod: no changes.'
+    if (await pick($, 'Remove this API upstream?', ['Remove', 'Back'], { header: 'Upstreams', initial: 'Back' }) !== 'Remove') return 'model-mod: no changes.'
     if (c.source === 'file') return 'model-mod: API uses a configuration file; remove it from that file manually.'
     const removed = c.models.filter(id => !c.codex?.has(id))
     const changes: Record<string, string> = { baseUrl: '', models: '' }
@@ -1581,7 +1611,7 @@ async function manageUpstreams($: EngineInterface, c: Config): Promise<string> {
     return `model-mod: API upstream removed and disabled. The key remains in the client's secure storage; model-mod cannot clear it. When readding it, setup confirms the host before sending the stored key.${cleared.length ? ' Cleared: ' + cleared.join(', ') + '.' : ''}${file ? ' A configuration file is also configured; edit it separately if needed.' : ''}`
   }
   const item = chosen.item
-  const action = await ask($, `Manage Codex account ${item.account}?`, ['Log out', 'Remove', 'Back'])
+  const action = await pick($, `Manage Codex account ${item.account}?`, ['Log out', 'Remove', 'Back'], { header: 'Upstreams', initial: 'Back' })
   if (action === 'Back') return 'model-mod: no changes.'
   const root = c.accountsDir!
   const pathArgs = (command: string) => [...helperArgs($, c, command, item.directory), '--accounts-dir', root, '--account', item.account]
@@ -1591,9 +1621,9 @@ async function manageUpstreams($: EngineInterface, c: Config): Promise<string> {
   }
   if (action === 'Log out') return await logout() ? `model-mod: Codex login (${item.account}): login=missing; settings and directory retained.` : 'model-mod: logout failed; settings and directory retained.'
   if (action !== 'Remove') return 'model-mod: no changes.'
-  const removeDir = await ask($, `Also delete the account directory ${item.directory}?`, ['Keep directory (recommended)', 'Delete directory'])
+  const removeDir = await pick($, `Also delete the account directory ${item.directory}?`, ['Keep directory (recommended)', 'Delete directory'], { header: 'Upstreams' })
   let deleteDir = false
-  if (removeDir === 'Delete directory') deleteDir = await ask($, `Permanently delete only ${item.directory}?`, ['Keep directory (recommended)', 'Confirm deletion']) === 'Confirm deletion'
+  if (removeDir === 'Delete directory') deleteDir = await pick($, `Permanently delete only ${item.directory}?`, ['Keep directory (recommended)', 'Confirm deletion'], { header: 'Upstreams' }) === 'Confirm deletion'
   let logoutFailed = false
   if (deleteDir) {
     logoutFailed = !await logout()
@@ -1731,7 +1761,7 @@ async function admin($: EngineInterface, e: { origin: { kind: string }; presenta
     try {
       const configured = [c?.codex?.size ? 'Codex login configured' : '', c?.key || c?.headerFile ? 'API server configured' : ''].filter(Boolean).join('; ')
       const choices = ['Codex login (recommended)', 'Compatible API server', ...(c && (c.codex?.size || c.key || c.headerFile) ? ['Manage configured upstreams'] : [])]
-      const choice = await ask($, `Choose an upstream.${configured ? ' ' + configured + '.' : ''}`, choices)
+      const choice = await pick($, `Choose an upstream.${configured ? ' ' + configured + '.' : ''}`, choices, { header: 'Upstream' })
       if (choice === 'Manage configured upstreams' && c) return { text: await manageUpstreams($, c) }
       if (choice === 'Codex login (recommended)') return { text: await setupCodex($, c) }
       if (choice !== 'Compatible API server') return { text: 'model-mod: setup cancelled, nothing changed' }
@@ -2212,7 +2242,20 @@ export const register: Register = (on, options) => {
   })
 
   // The names stay literal: the engine reads them statically.
-  on('command.run', { command: 'model-mod:setup' }, ($, e) => admin($, e, 'setup').then(commandText))
+  // One setup at a time: its pane outlives this hook, and a second setup must not meet the first one's menu. A flow whose
+  // first pane was seated answers `{}` here and reports its final text to the transcript; any other flow answers inline.
+  on('command.run', { command: 'model-mod:setup' }, ($, e) => {
+    if (setupFlow) return Promise.resolve({ text: 'setup is already open; finish or close it first.' })
+    return new Promise<{ text?: string }>(resolve => {
+      const flow: SetupFlow = { pane: e.origin.kind === 'composer', detached: false, detach: () => { flow.detached = true; resolve({}) } }
+      setupFlow = flow
+      admin($, e, 'setup').catch(() => ({ text: 'model-mod: setup cancelled, nothing changed' })).then(reply => {
+        if (setupFlow === flow) setupFlow = undefined
+        if (!flow.detached) resolve(commandText(reply))
+        else if (reply.text) void Promise.resolve($.ui.log(reply.text)).catch(() => {})
+      })
+    })
+  })
   on('command.run', { command: 'model-mod:status' }, ($, e) => admin($, e, 'status').then(commandText))
   on('command.run', { command: 'model-mod:refresh' }, ($, e) => admin($, e, 'refresh').then(commandText))
   on('command.run', { command: 'model-mod:review' }, async ($, e, next) => delegate($, 'review', e.args, await load($), next.signal))
