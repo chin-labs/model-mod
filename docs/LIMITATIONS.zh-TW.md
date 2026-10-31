@@ -8,7 +8,7 @@ CLIProxyAPI 是曾測試過的一例 API 上游；Codex 登入是另一種上游
 
 ## 已測試版本
 
-Codex 登入與 API 上游已在 **Claude Code 2.1.314** 測試。API 上游也曾在 2.1.299 至 2.1.310 測試；在 2.1.310 檢查了插件載入、單元測試、回合與更新路徑。其他版本未測，請勿假設可用。這些檢查使用測試用設定，而非一般的機密選項流程，因此無法說明你的金鑰如何儲存（見[尚未驗證](#尚未驗證)）。
+Codex 登入與 API 上游已在 **Claude Code 2.1.314** 測試。API 上游也曾在 2.1.299 至 2.1.310 測試；在 2.1.310 檢查了插件載入、單元測試、回合與更新路徑。另在一台 Mac 上以 Claude Code 2.1.316 搭配 Codex 0.166.0 做過手動端到端檢查（見[尚未驗證](#尚未驗證)）。其他版本未測，請勿假設可用。這些檢查使用測試用設定，而非一般的機密選項流程，因此無法說明你的金鑰如何儲存（見[尚未驗證](#尚未驗證)）。
 
 Marketplace 安裝已用本機 clone 與使用標準 HTTP 協定的 Git 伺服器測試過。客戶端不支援從單純（dumb）HTTP 的 Git 伺服器安裝，且解除安裝後會留下插件快取。
 
@@ -24,15 +24,14 @@ Marketplace 安裝已用本機 clone 與使用標準 HTTP 協定的 Git 伺服�
 - Codex 保留 `mcp__` 開頭的名稱並限制工具名稱。bridge 以 `bridge_` 加雜湊作為受影響名稱的別名，回傳時還原原名。
 - `max_tokens` 會接受但忽略；`tool_choice`、`temperature`、`top_p`、`stop_sequences`、`cache_control` 與 thinking 預算會被忽略。helper 寫出的 `model-mod-note:` 診斷行是內部標記，會被丟棄，不會顯示給使用者。不要依賴這些控制項生效。
 - `codexKeepReasoning` 預設為 `on`。bridge 使用 Codex 0.165.0 的實驗性 `experimentalRawEvents` 與 `thread/inject_items` 介面；上游可能修改這些 API，且重放尚未對真實 Codex 回合驗證。OpenAI 回傳的不透明 reasoning item 可能包含加密資料；簽章每個 item 上限 256 KiB、每次回應上限 1 MiB，超出的項目會丟棄。只保留第一段助手文字或工具呼叫之前的 reasoning；其後交錯的 reasoning 會丟棄，以維持重放順序。推理只在同一工作階段的工具往返期間保存在記憶體，重新載入或重啟後遺失。換帳號或模型可能使其失效；若輸出前被拒，會去掉推理重建請求一次。不保證與 API 路徑完全等價。
-- Codex 原生搜尋僅在 `codexWebSearch` 開啟且工作階段工具清單包含 WebSearch 時啟用。原生搜尋與 openPage 在 OpenAI 端執行，不受 Claude 權限的網域規則（allowed／blocked domains）限制；model-mod 不做 `allowed_domains` 的安全宣稱。查詢文字會送往 OpenAI。原生搜尋不經 Claude 逐次詢問權限，顯示的搜尋文字也會進入助手歷史。搜尋活動每次顯示為一行助手文字，不是可展開的工具結果或內建「已搜尋」區塊；真實客戶端顯示尚未驗證，不顯示不透明的搜尋結果。Codex 不提供 mod 的 `web_search`，但保留 `generate_image` 與 `web_fetch`。Codex 使用內建圖片模型，提示詞與生成圖片內容送往 OpenAI；尺寸與品質僅作為提示詞中的請求，不保證生效；是否計入額度尚未驗證。超過 20 MiB 的圖片會被拒絕。即使 sandbox 唯讀，app-server 仍會自行把圖片寫入 `CODEX_HOME/generated_images`；取得位元組後，model-mod 嘗試不跟隨符號連結刪除該字面路徑，失敗僅記內部 note，不使呼叫失敗。輸出以 0600 權限排他建立。Codex context 預設為帳號模型目錄視窗乘以有效比例，讀不到時退回 128,000 token；明設 `contextWindow` 可覆寫。helper 將 Codex 自動壓縮門檻設在客戶端視窗之上並於內部記錄壓縮事件；這不保證完全停用 Codex 壓縮，也不會停用 model-mod 自己的壓縮。
+- Codex 原生搜尋僅在 `codexWebSearch` 開啟且工作階段工具清單包含 WebSearch 時啟用。原生搜尋與 openPage 在 OpenAI 端執行，不受 Claude 權限的網域規則（allowed／blocked domains）限制；model-mod 不做 `allowed_domains` 的安全宣稱。查詢文字會送往 OpenAI。原生搜尋不經 Claude 逐次詢問權限，顯示的搜尋文字也會進入助手歷史。搜尋活動每次顯示為一行助手文字，不是可展開的工具結果或內建「已搜尋」區塊；該行助手文字僅在一台 Mac 的真實客戶端看過一次，且不顯示不透明的搜尋結果。Codex 不提供 mod 的 `web_search`，但保留 `generate_image` 與 `web_fetch`。Codex 使用內建圖片模型，提示詞與生成圖片內容送往 OpenAI；尺寸與品質僅作為提示詞中的請求，不保證生效；是否計入額度尚未驗證。超過 20 MiB 的圖片會被拒絕。即使 sandbox 唯讀，app-server 仍會自行把圖片寫入 `CODEX_HOME/generated_images`；取得位元組後，model-mod 嘗試不跟隨符號連結刪除該字面路徑，失敗僅記內部 note，不使呼叫失敗。輸出以 0600 權限排他建立。Codex context 預設為帳號模型目錄視窗乘以有效比例，讀不到時退回 128,000 token；明設 `contextWindow` 可覆寫。helper 將 Codex 自動壓縮門檻設在客戶端視窗之上並於內部記錄壓縮事件；這不保證完全停用 Codex 壓縮，也不會停用 model-mod 自己的壓縮。
 - 每次呼叫會啟動一個本機 helper 程序與 `codex app-server`，會增加延遲；啟動延遲尚未量測。Windows **尚未驗證**；見 [Windows 驗證清單](WINDOWS.zh-TW.md)。Codex 圖片生成僅支援 POSIX。
 - Codex 的額度與速率限制取決於你自己的訂閱；達到限制時 model-mod 不會輪替帳號。
-
 - 帳號名稱含 `claude` 或 `anthropic` 時，該帳號的模型 ID 會被過濾。若有效的 API 金鑰搭配遭拒的 `baseUrl`，整個 mod（含 Codex）都會停用。
 
 ## 已知限制
 
-移除上游後，先前儲存的舊版 `/model` 自訂列可能仍會顯示；選取已移除的模型會被拒絕，請改選其他模型或從設定中移除舊列。`MODEL_MOD_CONFIG` 提供的 API 無法在 setup 中移除，須自行編輯該檔。 移除 API 會停用上游，但金鑰仍留在客戶端的安全儲存中，model-mod 無法清除；重新加入時 setup 會先確認要把已存金鑰送往哪個主機。
+移除上游後，先前儲存的舊版 `/model` 自訂列可能仍會顯示；選取已移除的模型會被拒絕，請改選其他模型或從設定中移除舊列。`MODEL_MOD_CONFIG` 提供的 API 無法在 setup 中移除，須自行編輯該檔。移除 API 會停用上游，但金鑰仍留在客戶端的安全儲存中，model-mod 無法清除；重新加入時 setup 會先確認要把已存金鑰送往哪個主機。
 
 | 項目 | 會發生什麼 | 變通方法 |
 |---|---|---|
@@ -66,7 +65,6 @@ SDK 與 `-p` 的呼叫端必須檢查結果文字是否以 `model-mod:` 開頭�
 - Codex 額度耗盡時的切換，以及 `priority` 計費與 `codexServiceTier` 實際服務層級尚未驗證；使用 `priority` 的真實回合已被接受。
 - 以 `codex resume` 續跑 transfer 後的工作階段尚未驗證；匯入本身，以及使用 `apply_patch` 的多檔 workspace-write rescue 各檢查過一次。
 - Linux 只做了離線驗證：helper 測試、假 Codex 流程與 socket 路徑長度限制在 Linux arm64 容器（Python 3.12、Git 2.34、無網路）內通過；hook 測試、真實帳號回合、`/proc` 後備路徑與 Git 2.54 的 configured-hook 檢查未在其上執行。exFAT 尚未驗證。
-
 - **Codex 環境。** Windows、Python 3.9 實際執行、live SIGHUP 回收及較新 Codex 版本逐版驗證尚未完成。啟動延遲尚未量測。`max` effort 只用假 Codex 測試過。
 - **自動切換。** 真實用量重置後切回、真實被拒請求後的 rate-limit 資料，以及從 Remote Control 觸發。
 - **Remote Control 與手機。** 只試過簡短的工作階段。長時間連線與從手機選模型未測。

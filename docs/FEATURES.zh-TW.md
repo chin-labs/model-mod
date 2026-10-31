@@ -17,7 +17,7 @@
 
 Codex 登入的官方 `rateLimits` 達設定門檻且已知未來重置時間時，也會切換至 `fallbackModel`。不會輪流更換帳號；API 上游模型沒有官方額度切換機制。
 
-Codex 模型的工具清單不包含 mod 的 `web_search`；原生搜尋無法顯示為內建「已搜尋」區塊，改以每次搜尋一行助手文字呈現，真實客戶端顯示尚未驗證；但仍可使用 `generate_image`、`web_fetch` 與 `tool_search`。Codex 自動壓縮項目不受支援；見[限制說明](LIMITATIONS.zh-TW.md#codex-登入的限制)。
+Codex 模型的工具清單不包含 mod 的 `web_search`；原生搜尋無法顯示為內建「已搜尋」區塊，改以每次搜尋一行助手文字呈現（該行僅在一台 Mac 的真實客戶端看過一次）；但仍可使用 `generate_image`、`web_fetch` 與 `tool_search`。Codex 自動壓縮項目不受支援；見[限制說明](LIMITATIONS.zh-TW.md#codex-登入的限制)。
 
 `web_search`、`web_fetch`、`generate_image`、`tool_search` 在 model-mod 啟用期間註冊（`generate_image` 需設定 API 圖片模型或 Codex 帳號，關閉工具搜尋時不註冊 `tool_search`），最多讓訂閱模型的請求多約 3 KB 的工具定義；訂閱模型呼叫時會被拒絕，請改用 Claude Code 內建工具。它們遵循 Claude Code 的權限規則。模型的實際表現取決於模型本身；本插件不會讓它等同訂閱模型。
 
@@ -29,7 +29,7 @@ Codex 模型的工具清單不包含 mod 的 `web_search`；原生搜尋無法�
 
 透過使用者登入的 Codex CLI，任務與焦點文字及審查內容會送到 OpenAI。Adversarial review 送出 diff；gate review 送出 diff 與未追蹤且未忽略檔案的完整內容。原生 review 把目標交給 Codex，Codex 可讀取 sandbox 內的檔案並送出讀到的內容。啟用選用的 Stop gate 後，符合條件的收尾回合可將 diff 與未追蹤內容送去審查；此功能預設關閉。`transfer` 經確認後把目前對話 transcript 匯入所選 Codex 帳號，由 OpenAI 持久保存。官方 CLI 自行處理連線；model-mod 的委派路徑不使用 API 代理，外掛本身也未加入遙測。CLI 與供應商的行為（包括是否有遙測）不在本專案的驗證範圍內。
 
-工作狀態與結果留在本機 model-mod 狀態目錄的 `delegate/v1` 下，最多保留七天、50 筆。結果可能包含敏感片段；本機遮罩能力有限。`/model-mod:cancel ID` 停止工作；`/model-mod:jobs --clear` 移除目前工作區的終態紀錄與結果，但不會刪除供應商端紀錄。與官方 `openai/codex-plugin-cc` 並存尚未驗證。Codex 輸出是不可信資料；gate findings 會標示並清除控制字元，但不代表已獨立驗證。
+工作狀態與結果留在本機 model-mod 狀態目錄的 `delegate/v1` 下，最多保留七天、50 筆。結果可能包含敏感片段；本機遮罩能力有限。`/model-mod:cancel ID` 停止工作；`/model-mod:jobs --clear` 移除目前工作區的終態紀錄與結果，但不會刪除供應商端紀錄。與官方 `openai/codex-plugin-cc` 並存只做了原始碼的靜態比對；見[限制說明](LIMITATIONS.zh-TW.md#尚未驗證)。Codex 輸出是不可信資料；gate findings 會標示並清除控制字元，但不代表已獨立驗證。
 
 ## Codex 審查關卡
 

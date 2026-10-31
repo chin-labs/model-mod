@@ -81,6 +81,12 @@ Advanced options are not shown in the dialog. Set them in the plugin's `options`
 | `toolSearch` | Defers large MCP tool schemas: `auto`, `on` or `off`. | `auto` |
 | `toolSearchPercent` | Share of the model's context window (1–90) at which `auto` starts deferring. | `10` |
 
+With only Codex configured, `/model-mod:status` begins `model-mod: <version>: picker=active`, followed by account details. `rate-limits` supplies window percentages, reset times and credits; `account-info` supplies the plan when available.
+
+Codex status shows remaining percentages, reset times, credits, plan and `ordinaryUsageAllowed`; unavailable fields are marked unavailable. Codex quota is checked at most once per account every five minutes, or immediately after a quota error; no automatic switch occurs without a future reset time. API upstreams have no official rateLimits and are not covered. Accounts are not rotated automatically; configure a `fallbackModel` on another upstream or account.
+
+`codexServiceTier` is `default` (the default) or `priority`; invalid values use `default`. `priority` requires a supported Codex plan and may respond faster while consuming quota faster; actual tier and billing are unverified.
+
 ### Advanced: external configuration file
 
 For scripts and test setups, the mod can read its settings from a JSON file instead of the plugin options. Set the environment variable `MODEL_MOD_CONFIG` to the file's absolute path before starting Claude Code. The plugin options take precedence: the file is read only when neither usable plugin-option upstream is configured, and an `apiKey` that cannot be used leaves the mod inactive instead of falling back to the file. The mod never reads credentials from Claude Code's own credential files.
@@ -115,14 +121,8 @@ claude plugin configure model-mod@model-mod --values-stdin < /path/to/private-co
 
 Never put a key in `--config` arguments (they can show up in process listings) or paste it into a message. In organization-managed Claude Code, personally installed plugins may not receive every hook unless the organization lists the plugin in its managed settings.
 
-For example, a Codex-only `/model-mod:status` begins `model-mod: <version>: picker=active`, followed by account details. `rate-limits` supplies window percentages, reset times and credits; `account-info` supplies the plan when available.
-
-Codex status shows remaining percentages, reset times, credits, plan and `ordinaryUsageAllowed`; unavailable fields are marked unavailable. Codex quota is checked at most once per account every five minutes, or immediately after a quota error; no automatic switch occurs without a future reset time. API upstreams have no official rateLimits and are not covered. Accounts are not rotated automatically; configure a `fallbackModel` on another upstream or account.
-
-`codexServiceTier` is `default` (the default) or `priority`; invalid values use `default`. `priority` requires a supported Codex plan and may respond faster while consuming quota faster; actual tier and billing are unverified.
-
 ## Background job storage and limits
 
 The SessionStart hook starts a local broker. After all sessions close, an idle broker can remain alive for up to 30 minutes. Up to 50 jobs are retained for seven days; when admitting job 51, the oldest terminal record and result are evicted first; if none is terminal, admission is refused; each account can have at most two running and five queued, with at most one active write job. Background execution has a 30-minute total and five-minute inactivity limit; foreground delegation has five-minute total and two-minute inactivity limits. Use `/model-mod:jobs --clear` to remove terminal jobs and results for the current workspace.
 
-Job output is stored locally under `$XDG_STATE_HOME/model-mod/delegate/v1` (when unset, use the `state` directory inside the hidden `local` directory in the home directory) (directories 0700, files 0600). Results can contain your prompt or code fragments: redaction matches prompt or diff strings exactly only when they are at least 32 characters long, and cannot recognize model paraphrases. Local records are retained for seven days. Deleting local records does not delete Codex threads or provider-side records. Status records themselves do not store prompts, diffs, reasoning, account-directory paths, or environment variables.
+Job output is stored locally under `$XDG_STATE_HOME/model-mod/delegate/v1`; when `XDG_STATE_HOME` is unset, the XDG default state directory is used instead (directories 0700, files 0600). Results can contain your prompt or code fragments: redaction matches prompt or diff strings exactly only when they are at least 32 characters long, and cannot recognize model paraphrases. Local records are retained for seven days. Deleting local records does not delete Codex threads or provider-side records. Status records themselves do not store prompts, diffs, reasoning, account-directory paths, or environment variables.

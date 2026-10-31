@@ -6,7 +6,7 @@
 
 Codex 登入是主要路徑；已有的 Messages 相容 API 伺服器是替代選擇，兩者也可並存。使用 Codex 時，先安裝 Python 3.9 以上版本與官方 `codex` CLI，再執行 `/model-mod:setup` 並選 **Codex login**。需要登入時，setup 會建立專用帳號目錄並執行 `codex login --device-auth`。請開啟顯示的網址、輸入代碼，選 **Continue (after logging in)**，再選模型。若無法取得網址，setup 會改顯示手動終端機命令。使用 API 伺服器時，請依下一節準備，並在 setup 選 **Compatible API server**。
 
-在 setup 選 **Manage configured upstreams** 可登出或移除 Codex 帳號，也可移除插件選項中的 API。登出會保留帳號設定與目錄；移除預設保留目錄，若要刪除須再次確認，且只刪該帳號目錄。由 `MODEL_MOD_CONFIG` 提供的 API 須自行編輯該檔移除。 移除 API 會停用上游，但金鑰仍留在客戶端的安全儲存中，model-mod 無法清除；重新加入時 setup 會先確認要把已存金鑰送往哪個主機。
+在 setup 選 **Manage configured upstreams** 可登出或移除 Codex 帳號，也可移除插件選項中的 API。登出會保留帳號設定與目錄；移除預設保留目錄，若要刪除須再次確認，且只刪該帳號目錄。由 `MODEL_MOD_CONFIG` 提供的 API 須自行編輯該檔移除。移除 API 會停用上游，但金鑰仍留在客戶端的安全儲存中，model-mod 無法清除；重新加入時 setup 會先確認要把已存金鑰送往哪個主機。
 
 ## 先準備好你的上游
 
@@ -81,6 +81,12 @@ Codex effort 依模型宣告的等級夾值：`max` 取支援的最高等級；�
 | `toolSearch` | 延後載入大型 MCP 工具 schema：`auto`、`on`、`off`。 | `auto` |
 | `toolSearchPercent` | `auto` 模式下，工具 schema 佔模型 context 視窗多少比例（1–90）時開始延後。 | `10` |
 
+僅設定 Codex 時，`/model-mod:status` 以 `model-mod: <version>: picker=active` 開頭，接著顯示帳號資訊。`rate-limits` 提供各視窗比例、重置時間與 credits；`account-info` 在可取得時提供方案。
+
+Codex status 顯示各視窗的剩餘比例、重置時間、credits、方案及 `ordinaryUsageAllowed`；取得不到的欄位顯示 unavailable。Codex 額度最多每帳號五分鐘查一次，額度錯誤可立即查詢；沒有可用的未來重置時間時不自動切換。API 上游沒有官方 rateLimits，不適用此機制。額度用完不會自動輪流換帳號，可設定不同上游或帳號的 `fallbackModel`。
+
+`codexServiceTier` 可設 `default`（預設）或 `priority`；非法值視為 `default`。`priority` 需要 Codex 方案支援，可能較快回應但較快耗用額度；實際層級與計費是否生效未驗證。
+
 ### 進階：外部設定檔
 
 給腳本與測試環境使用：mod 可改從 JSON 檔讀取設定，不用插件選項。啟動 Claude Code 前，把環境變數 `MODEL_MOD_CONFIG` 設為該檔的絕對路徑。插件選項優先：只有插件選項沒有可用的上游設定時才會讀檔；`apiKey` 若無法使用，mod 會停用，不會退回讀檔。mod 絕不讀取 Claude Code 自己的憑證檔。
@@ -115,14 +121,8 @@ claude plugin configure model-mod@model-mod --values-stdin < /path/to/private-co
 
 不要把金鑰放進 `--config` 參數（可能出現在程序列表），也不要貼進訊息。在組織管理的 Claude Code 中，個人安裝的插件可能收不到所有 hook，除非組織把插件列入管理設定。
 
-例如，僅設定 Codex 時，`/model-mod:status` 以 `model-mod: <version>: picker=active` 開頭，接著顯示帳號資訊。`rate-limits` 提供各視窗比例、重置時間與 credits；`account-info` 在可取得時提供方案。
-
-Codex status 顯示各視窗的剩餘比例、重置時間、credits、方案及 `ordinaryUsageAllowed`；取得不到的欄位顯示 unavailable。Codex 額度最多每帳號五分鐘查一次，額度錯誤可立即查詢；沒有可用的未來重置時間時不自動切換。API 上游沒有官方 rateLimits，不適用此機制。額度用完不會自動輪流換帳號，可設定不同上游或帳號的 `fallbackModel`。
-
-`codexServiceTier` 可設 `default`（預設）或 `priority`；非法值視為 `default`。`priority` 需要 Codex 方案支援，可能較快回應但較快耗用額度；實際層級與計費是否生效未驗證。
-
 ## 背景工作儲存與限制
 
 SessionStart hook 會啟動本機 broker。所有 session 關閉後，閒置的 broker 最多仍存活 30 分鐘。最多保留 50 個工作，保留七天；新增第 51 個時會先淘汰最舊的終態紀錄與結果；若沒有終態紀錄則拒絕新增；每個帳號最多兩個執行中、五個排隊中，且最多一個未終態的 write 工作。背景執行總時限為 30 分鐘、無活動時限為五分鐘；前景分別為五分鐘及兩分鐘。使用 `/model-mod:jobs --clear` 可移除目前工作區已終態的工作與結果。
 
-工作輸出保存在本機 `$XDG_STATE_HOME/model-mod/delegate/v1` （未設定時，使用家目錄中隱藏的 `local` 目錄內的 `state` 目錄）（目錄權限 0700、檔案 0600）。結果可能含有你的 prompt 或程式碼片段：遮罩只對長度至少 32 字元的 prompt 或 diff 作精確字串比對，無法識別模型改寫的內容。本機紀錄保留七天；刪除本機紀錄不會刪除 Codex 自己的 thread 或 provider 端紀錄。狀態紀錄本身不儲存 prompt、diff、思考、帳號目錄路徑或環境變數。
+工作輸出保存在本機 `$XDG_STATE_HOME/model-mod/delegate/v1`；未設定 `XDG_STATE_HOME` 時改用 XDG 預設的 state 目錄（目錄權限 0700、檔案 0600）。結果可能含有你的 prompt 或程式碼片段：遮罩只對長度至少 32 字元的 prompt 或 diff 作精確字串比對，無法識別模型改寫的內容。本機紀錄保留七天；刪除本機紀錄不會刪除 Codex 自己的 thread 或 provider 端紀錄。狀態紀錄本身不儲存 prompt、diff、思考、帳號目錄路徑或環境變數。
