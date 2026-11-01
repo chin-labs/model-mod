@@ -1587,6 +1587,34 @@ test('/model-mod:model: sdk is refused and an empty local list points to setup',
 const CODEX_MODEL = 'main/gpt-6.1-terra'
 const CODEX_OPTIONS = { codexAccounts: 'main', codexModels: 'gpt-6.1-terra', promptsDir: PROMPTS_DIR }
 
+test('worker: a bare Codex model resolves to the only account', { options: { ...CODEX_OPTIONS, workerModel: 'gpt-6.1-terra' } }, async ($, on) => {
+  const w = fbWorld(on)
+  await $.session.start({ cwd: '/work' } as never)
+  expect(w.agents).toEqual([{ name: 'local-worker', model: CODEX_MODEL }])
+})
+
+test('worker: a bare Codex model matching several accounts is refused', { options: { ...CODEX_OPTIONS, codexAccounts: 'main,other', workerModel: 'gpt-6.1-terra' } }, async ($, on) => {
+  const w = fbWorld(on); const notes = quotaLine(on)
+  await $.session.start({ cwd: '/work' } as never)
+  expect(w.agents).toEqual([])
+  expect(notes.statuses).toContain('model-mod: workerModel "gpt-6.1-terra" matches several Codex accounts (main/gpt-6.1-terra, other/gpt-6.1-terra); set the full ID.')
+})
+
+test('worker: an unknown bare Codex model explains the full ID', { options: { ...CODEX_OPTIONS, workerModel: 'gpt-unknown' } }, async ($, on) => {
+  const w = fbWorld(on); const notes = quotaLine(on)
+  await $.session.start({ cwd: '/work' } as never)
+  expect(w.agents).toEqual([])
+  expect(notes.statuses).toContain('model-mod: workerModel "gpt-unknown" is not one of this mod\'s model IDs; with Codex login use <account>/<model>. That feature is off.')
+})
+
+test('fallback: a bare Codex model resolves to the only account', { options: { ...CODEX_OPTIONS, fallbackModel: 'gpt-6.1-terra' } }, async ($, on) => {
+  const w = fbWorld(on)
+  await $.session.start({ cwd: '/work' } as never)
+  expect(w.agents).toEqual([{ name: 'local-worker', model: CODEX_MODEL }])
+  await $.turn.complete(END)
+  expect(w.modelRuns).toEqual([CODEX_MODEL])
+})
+
 test('Codex fallback: throttles reads, switches on quota and returns after reset', { options: { ...OPTIONS, ...CODEX_OPTIONS, fallbackModel: 'gpt-fb' } }, async ($, on) => {
   let used = 20
   const w = world(on, null, CODEX_MODEL, { stdout: SSE_OK, code: 0 }, argv => {
@@ -2172,14 +2200,19 @@ test('manage: refusing a setting restores earlier account settings', { options: 
   expect(w.store.retiredModels).toEqual([])
 })
 
-test('manage: deleting the last account requires confirmation and logs out first', { options: CODEX_OPTIONS }, async ($, on) => {
+test('manage: deleting the last account requires confirmation and logs out first', { options: { ...OPTIONS, ...CODEX_OPTIONS, models: LOCAL, workerModel: 'gpt-6.1-terra' } }, async ($, on) => {
   const w = world(on, null, CODEX_MODEL, { stdout: '', code: 0 }, () => ({ exitCode: 0, stdout: '{}' }))
-  w.configValues = { codexAccounts: 'main', codexModels: 'gpt-6.1-terra' }
+  const notes = quotaLine(on)
+  w.configValues = { codexAccounts: 'main', codexModels: 'gpt-6.1-terra', workerModel: 'gpt-6.1-terra' }
   w.chooseUpstream = true
   w.answers = ['Manage configured upstreams', 'Codex main; dir=/fake-home/.config/model-mod/accounts/main; login=ok; models=1', 'Remove', 'Delete directory', 'Confirm deletion']
   expect((await $.command.run(SETUP)).text).toContain('Codex account main removed')
   expect(w.saved).toContainEqual({ key: 'model-mod.codexAccounts', value: '' })
   expect(w.saved).toContainEqual({ key: 'model-mod.codexModels', value: '' })
+  expect(w.saved.some(x => x.key === 'model-mod.workerModel')).toBe(false)
+  await $.session.start({ cwd: '/work' } as never)
+  expect(w.agents).toEqual([])
+  expect(notes.statuses).toContain('model-mod: workerModel is not a model of this mod (it must be in the allowlist); that feature is off.')
   const logout = w.ran.findIndex(argv => argv.includes('logout'))
   const remove = w.ran.findIndex(argv => argv.includes('remove-home'))
   expect(logout >= 0 && remove > logout).toBe(true)

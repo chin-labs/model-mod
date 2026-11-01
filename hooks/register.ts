@@ -573,11 +573,20 @@ async function loadNow($: EngineInterface) {
       const id = fromOptions && typeof candidate[name] === 'string' ? candidate[name] : ''
       if (id === '') return undefined
       if (!built.explicitModels && (built.key !== undefined || built.headerFile !== undefined)) addModels(built, [id])
-      if (!MODEL_ID.test(id) || !built.models.includes(id)) {
-        $.ui.status(`model-mod: ${name} is not a model of this mod (it must be in the allowlist); that feature is off.`)
+      if (MODEL_ID.test(id) && built.models.includes(id)) return id
+      if (MODEL_ID.test(id) && !id.includes('/') && built.codex?.size) {
+        const matches = [...built.codex.keys()].filter(model => model.endsWith('/' + id) && built.models.includes(model))
+        if (matches.length === 1) return matches[0]
+        if (matches.length > 1) {
+          const list = matches.slice(0, 4).join(', ') + (matches.length > 4 ? ', …' : '')
+          $.ui.status(`model-mod: ${name} "${id}" matches several Codex accounts (${list}); set the full ID.`)
+        } else {
+          $.ui.status(`model-mod: ${name} "${id}" is not one of this mod's model IDs; with Codex login use <account>/<model>. That feature is off.`)
+        }
         return undefined
       }
-      return id
+      $.ui.status(`model-mod: ${name} is not a model of this mod (it must be in the allowlist); that feature is off.`)
+      return undefined
     }
     built.fallbackModel = usable('fallbackModel')  // `candidate` was spread into `built`; only a checked value stays
     built.workerModel = usable('workerModel')
