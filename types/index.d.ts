@@ -21,6 +21,19 @@ export type PickerState = { offset: number }
 // What the setup pane shows: `busy` between menus, else one question with its fixed answers (`current` is marked, `initial` focused first).
 export type SetupMenu = { busy: true } | { question: string; options: string[]; current?: string; initial?: string }
 
+// The write phase of a setup, kept so that the plugin loaded by a reload (every changed option reloads it) can finish what
+// the module that began it cannot: see commit.ts. `previous` is what a step restores; the three texts are the answer when it
+// is refused, when it fails and when its restore fails too. `runner`: the module carrying it out ('inline': the only one).
+export type SetupTail = {
+  at: number
+  runner?: string
+  steps: { key: string; value: string; previous: string; denied: string; failed: string; rollbackFailed: string }[]
+  undo?: { store?: Record<string, unknown[]>; customModelOption?: string }
+  ok: string
+  after?: { argv: string[]; timeoutMs: number; failed: string }
+  failure?: { index: number; kind: 'denied' | 'failed'; rollbackFailed: boolean }
+}
+
 export type TrackedBlock = { type: string; [key: string]: unknown }
 export type TrackedTurn = { role: 'user' | 'assistant'; content: TrackedBlock[] }
 // The conversation of a workflow agent that runs on a bridge model (`$.session.messages` cannot read it).
@@ -40,6 +53,7 @@ declare module 'claude-code' {
       tracked: StateFamily<TrackedAgent>
       picker: PickerState
       setupMenu: SetupMenu
+      setupTail: SetupTail | null
     }
   }
 }

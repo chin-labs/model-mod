@@ -98,6 +98,12 @@ async function closeSetupPane($: EngineInterface): Promise<void> {
   try { await close($, CHOICE) } finally { closing = false }
 }
 
+// Closes the setup pane from a module that did not open it: the one a reload put in place of the setup that was writing.
+export async function closeSetupPaneNow($: EngineInterface): Promise<void> {
+  seated = false
+  await closeSetupPane($)
+}
+
 // The setup pane is gone: Esc, the close mark, an unload, another plugin's close, or this flow's own close. A menu it showed
 // is answered 'closed'; a close the flow did not make itself also marks the running setup as cancelled.
 function setupPaneGone(): void {

@@ -24,7 +24,7 @@ type World = { paneSeat?: boolean; openPanes: Set<string> /* what $.ui.panes() l
   // `$.http.fetch` made (the authorization header is reduced to its first 6 characters).
   chooseUpstream?: boolean; autoContinue?: boolean; deviceAnswerDelay?: number; answers: (string | null)[]; questions: { question: string; header: string; labels: string[]; multiSelect: boolean; fetchedCount: number }[];
   scopes: Record<string, Record<string, unknown>>; files: Record<string, string>; writes: string[]; saved: { key: string; value: unknown }[]; registered: string[]; configValues: Record<string, string>;
-  toolDescriptions: Record<string, string>; httpStatus?: number; httpStatuses?: number[]; httpBody?: string; configSet?: (key: string) => { deny: string } | undefined; switchEnv: (string | undefined)[];
+  toolDescriptions: Record<string, string>; httpStatus?: number; httpStatuses?: number[]; httpBody?: string; configSet?: (key: string, value: string) => { deny: string } | undefined; unloaded?: boolean /* the module that began a flow was replaced by a reload: its own `$` calls fail */; switchEnv: (string | undefined)[];
   models: string[] | null; store: Record<string, unknown>; picker: unknown[]; fetched: { url: string; auth?: string; matchesKey: boolean }[]
   // The session's current model (`/model` runs change it), the `/model` arguments run, the rate-limit windows the last
   // response reported and the clock.
@@ -67,7 +67,10 @@ function world(on: On, config: Record<string, unknown> | null, model: string, sp
     if (w.paneSeat === true) w.openPanes.add(e.id)
     return { value: { isPlaced: w.paneSeat === true } }
   })
-  on('ui.close', async (_$, e) => { w.closed.push(e.id); w.openPanes.delete(e.id); return { value: undefined } })
+  on('ui.close', async (_$, e) => {
+    if (w.unloaded) return { value: undefined } // an unloaded module's close fails silently
+    w.closed.push(e.id); w.openPanes.delete(e.id); return { value: undefined }
+  })
   on('ui.panes', async () => ({ value: [...w.openPanes].map(id => ({ id, title: id, isShown: true, isFocused: true, isPlaced: true })) }))
   on('store.get', async (_$, e) => ({ value: w.store[e.key] }))
   on('store.set', async (_$, e) => { w.store[e.key] = e.value; return { value: undefined } })
@@ -79,12 +82,14 @@ function world(on: On, config: Record<string, unknown> | null, model: string, sp
   on('fs.exists', async (_$, e) => ({ value: e.path in w.files }))
   on('fs.write', async (_$, e) => { w.files[e.path] = e.text; w.writes.push(e.path); return { value: undefined } })
   on('config.list', async () => {
+    if (w.unloaded) throw new Error('environment is unloaded')
     if (w.listDelay) await w.clock.sleep(w.listDelay)
     return { value: [{ key: 'model', label: 'Model', kind: 'choice' as const, value: 'Default', options: ['default', 'sonnet', 'opus', 'haiku', 'best'], provider: { plugin: 'engine', tier: 'core' as const }, isLocked: false }, ...['baseUrl', 'models', 'codexAccounts', 'codexModels', 'fallbackModel', 'workerModel'].map(field => ({ key: 'model-mod.' + field, label: field,
       kind: 'text' as const, value: w.configValues[field] ?? '', provider: { plugin: 'model-mod', tier: 'user' as const }, isLocked: false }))] }
   })
   on('config.set', async (_$, e) => {
-    const refused = w.configSet?.(e.key)
+    if (w.unloaded) throw new Error('environment is unloaded')
+    const refused = w.configSet?.(e.key, e.value)
     if (refused) return refused
     w.saved.push({ key: e.key, value: e.value }); return { value: e.value }
   })
@@ -1273,6 +1278,53 @@ test('setup: closing the pane during "Working…" asks nothing more and writes n
   await choose($, w, 'All (recommended)')
   expect(logged.join('\n')).toContain('2 local models selected')
   expect(w.saved).toEqual([{ key: 'model-mod.baseUrl', value: OPTIONS.baseUrl }, { key: 'model-mod.models', value: '' }])
+})
+
+// A write that changes an option reloads the plugin, and the module that made it can call nothing after that. A setup whose
+// pane is open runs on after its command hook answered, so the plugin loaded by the reload (its session.start) must finish
+// the writes, restore them after a refusal, report once and close the pane. Here the reload is the flag w.unloaded: it is set
+// by the first changing write, every `$` call of the setup flow fails from then on, and the next session.start is the reload.
+test('setup: the plugin loaded by the first write finishes the setup, reports once and closes the pane', { options: OPTIONS }, async ($, on) => {
+  const w = world(on, null, LOCAL, { stdout: '', code: 0 })
+  const lines: string[] = []
+  on('ui.log', async (_$, e) => { if (!w.unloaded) lines.push(e.text); return { value: undefined } }) // an unloaded module's log is dropped
+  w.paneSeat = true; w.models = [LOCAL, 'gpt-other']; w.scopes.user = { enabledPlugins: { 'model-mod@test': true } }
+  const results = () => lines.filter(line => !line.startsWith('Local API')) // the notice of the model list comes before the writes
+  const field = (key: string) => key.slice('model-mod.'.length)
+  const arrange = (refuse?: string) => {
+    let reloaded = false
+    w.configValues = { baseUrl: 'http://old.test', models: LOCAL }; w.saved = []; w.unloaded = false; lines.length = 0; w.closed.length = 0
+    w.configSet = (key, value) => {
+      if (key.endsWith('.' + refuse)) return { deny: 'locked' }
+      if (w.configValues[field(key)] !== value && !reloaded) { reloaded = true; w.unloaded = true }
+      w.configValues[field(key)] = value
+      return undefined
+    }
+  }
+  const setup = async () => {
+    expect(await $.command.run(SETUP)).toEqual({})
+    await choose($, w, 'Compatible API server'); await choose($, w, 'Keep (recommended)'); await choose($, w, 'All (recommended)')
+  }
+  // The endpoint is written, the plugin is replaced, and the model list is written by the plugin that replaced it.
+  arrange(); await setup()
+  expect(w.unloaded).toBe(true)
+  expect(w.saved).toEqual([{ key: 'model-mod.baseUrl', value: OPTIONS.baseUrl }])
+  expect(results()).toEqual([]); expect(w.openPanes.has('model-mod-setup')).toBe(true) // nothing is reported or closed by the unloaded module
+  w.unloaded = false; await $.session.start({ cwd: '/work' } as never); await flush(w)
+  expect(w.saved).toEqual([{ key: 'model-mod.baseUrl', value: OPTIONS.baseUrl }, { key: 'model-mod.models', value: '' }])
+  expect(results()).toHaveLength(1); expect(results()[0]).toContain('2 local models selected')
+  expect(w.closed).toEqual(['model-mod-setup']); expect(w.openPanes.size).toBe(0)
+  // The plan is finished: a later session.start neither reports nor closes again.
+  await $.session.start({ cwd: '/work' } as never); await flush(w)
+  expect(results()).toHaveLength(1); expect(w.closed).toEqual(['model-mod-setup'])
+  // The write the new plugin makes is refused: the first write is restored there, and the person is told. This setup also
+  // shows that the first one can be opened again (setup() answers `{}` only when no setup is open).
+  arrange('models'); await setup()
+  expect(w.unloaded).toBe(true)
+  w.unloaded = false; await $.session.start({ cwd: '/work' } as never); await flush(w)
+  expect(w.configValues).toMatchObject({ baseUrl: 'http://old.test', models: LOCAL })
+  expect(results()).toEqual([expect.stringContaining('setup failed; previous settings restored')])
+  expect(w.closed).toEqual(['model-mod-setup'])
 })
 
 test('setup: the bridge never gets a pane', { options: OPTIONS }, async ($, on) => {

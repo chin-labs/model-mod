@@ -4,6 +4,8 @@ import type { EnvMemo, FallbackMemo, TrackedAgent } from '../types'
 import { MessagesStream } from './sse.ts'
 import { htmlToText } from './text.ts'
 import { beginSetupPane, dismissSetupPane, menuInPane, openPane, registerPane, setupPaneClosed } from './pane.tsx'
+import { commitSettings, resumeCommit } from './commit.ts'
+import type { Committed, Plan } from './commit.ts'
 import { delegate, backgroundCommand, transfer, runStopGate, stopGateSettings, stopGateWarning, noteStopGateWarning } from './delegate.ts'
 import { renderStatus } from './status.ts'
 import type { Group, QuotaBlock, QuotaWindow, Row, StatusView } from './status.ts'
@@ -154,6 +156,11 @@ async function confirmStoredKey($: EngineInterface, baseUrl: string): Promise<bo
   } catch { return false }
 }
 
+// One write of a setup: the option, the value to set, the value to restore and the texts for a refusal, a failure and a
+// failed restore (commit.ts).
+const settingStep = (row: { key: string; value?: unknown }, value: string, texts: { denied: string; failed: string; rollbackFailed: string }) =>
+  ({ key: row.key, value, previous: typeof row.value === 'string' ? row.value : '', ...texts })
+
 async function configurePicker($: EngineInterface, c: { baseUrl: string; key?: string; models: string[]; explicitModels?: boolean; codex?: Map<string, CodexAccount> }, setup: boolean, interactive: boolean, status: string, confirmedHost?: string): Promise<string> {
   if (setup && !c.key) return 'model-mod: apiKey is not configured. Open /plugin → model-mod configure, set the upstream API key there, then run /model-mod:setup.'
   if (setup && !interactive) return 'model-mod setup is interactive. ' + status
@@ -221,30 +228,25 @@ async function configurePicker($: EngineInterface, c: { baseUrl: string; key?: s
     if (setup) await ensureOpen($)
     const updates = [...(setup ? [{ row: urlRow!, value: baseUrl }] : []),
       { row: modelsRow, value: setup ? (all ? '' : selected.join(',')) : (c.explicitModels ? selected.join(',') : '') }]
-    const written: typeof updates = []
-    let failed = false
+    const failure = { denied: 'model-mod: setup failed; previous settings restored.', failed: 'model-mod: setup failed; previous settings restored.',
+      rollbackFailed: 'model-mod: setup failed and rollback failed; restore the previous settings in /plugin.' }
+    const stores = { models: Array.isArray(known) ? known : [], retiredModels: retired }
     try {
       await $.store.set('models', cached.models.filter(id => !c.codex?.has(id)).slice(-MODEL_CACHE_CAP))
       if (setup) await $.store.set('retiredModels', retired.filter(id => !selected.includes(id)))
-      for (const entry of updates) {
-        try {
-          if ('deny' in await $.config.set({ key: entry.row.key, value: entry.value })) { failed = true; break }
-          written.push(entry)
-        } catch { written.push(entry); failed = true; break }
-      }
-    } catch { failed = true }
-    if (failed) {
-      let rollbackFailed = false
-      for (const entry of written.reverse()) {
-        try { if ('deny' in await $.config.set({ key: entry.row.key, value: entry.row.value })) rollbackFailed = true } catch { rollbackFailed = true }
-      }
-      try { await $.store.set('models', known ?? []); await $.store.set('retiredModels', retired) } catch { rollbackFailed = true }
-      return rollbackFailed ? 'model-mod: setup failed and rollback failed; restore the previous settings in /plugin.' : 'model-mod: setup failed; previous settings restored.'
+    } catch {
+      try { await $.store.set('models', stores.models); await $.store.set('retiredModels', stores.retiredModels) } catch { return failure.rollbackFailed }
+      return failure.failed
     }
-    if (!c.explicitModels) addModels(c, selected)
     const text = [`model-mod: ${selected.length} local models selected. /model-mod:model offers these models.`, ...notes].join('\n')
-    $.ui.log(text)
-    return text
+    // The writes reload this plugin; see commit.ts for what a setup with an open pane does about that.
+    const done = await commitSettings($, { steps: updates.map(entry => settingStep(entry.row, entry.value, failure)), undo: { store: stores }, ok: text },
+      setupFlow?.detached === true)
+    if (done.ok) {
+      if (!c.explicitModels) addModels(c, selected)
+      $.ui.log(text)
+    }
+    return done.text
   } catch (err) {
     if (err instanceof Cancelled) return 'model-mod: setup cancelled, nothing changed'
     return 'model-mod: setup could not complete; check the plugin configuration.'
@@ -1424,25 +1426,19 @@ async function setupCodex($: EngineInterface, c?: Config): Promise<string> {
     const accountsRow = row('codexAccounts'), modelsRow = row('codexModels')
     if (!accountsRow || accountsRow.isLocked || !modelsRow || modelsRow.isLocked) return 'model-mod: Codex login: writable config unavailable; nothing changed.'
     const accounts = [...new Set([...(typeof pluginOptions.codexAccounts === 'string' ? pluginOptions.codexAccounts.split(',').map(s => s.trim()).filter(Boolean) : []), account])]
-    const oldModels = typeof modelsRow.value === 'string' ? modelsRow.value : ''
-    let first: Awaited<ReturnType<EngineInterface['config']['set']>>
-    try { first = await $.config.set({ key: modelsRow.key, value: selected.join(',') }) } catch {
-      let rollbackFailed = false
-      try { rollbackFailed = 'deny' in await $.config.set({ key: modelsRow.key, value: oldModels }) } catch { rollbackFailed = true }
-      return rollbackFailed ? 'model-mod: Codex login: model configuration failed and rollback failed; restore the previous setting in /plugin.' : 'model-mod: Codex login: model configuration failed; previous setting restored.'
-    }
-    if ('deny' in first) return 'model-mod: Codex login: model configuration refused; nothing changed.'
-    let refused = false, failed = false
-    try { refused = 'deny' in await $.config.set({ key: accountsRow.key, value: accounts.join(',') }) } catch { failed = true }
-    if (refused || failed) {
-      let rollbackFailed = false
-      if (failed) {
-        try { rollbackFailed = 'deny' in await $.config.set({ key: accountsRow.key, value: accountsRow.value }) } catch { rollbackFailed = true }
-      }
-      try { rollbackFailed = 'deny' in await $.config.set({ key: modelsRow.key, value: oldModels }) || rollbackFailed } catch { rollbackFailed = true }
-      return rollbackFailed ? 'model-mod: Codex login: account configuration failed and rollback failed; restore the previous settings in /plugin.' : 'model-mod: Codex login: account configuration refused; previous settings restored.'
-    }
-    return `model-mod: Codex login (${account}): ${selected.length} models configured; dir=${accountHome}. Parent thread reuse defaults to on; set codexThreadReuse to off for ephemeral threads only.`
+    // The writes reload this plugin; see commit.ts for what a setup with an open pane does about that.
+    const done = await commitSettings($, {
+      steps: [
+        settingStep(modelsRow, selected.join(','), { denied: 'model-mod: Codex login: model configuration refused; nothing changed.',
+          failed: 'model-mod: Codex login: model configuration failed; previous setting restored.',
+          rollbackFailed: 'model-mod: Codex login: model configuration failed and rollback failed; restore the previous setting in /plugin.' }),
+        settingStep(accountsRow, accounts.join(','), { denied: 'model-mod: Codex login: account configuration refused; previous settings restored.',
+          failed: 'model-mod: Codex login: account configuration refused; previous settings restored.',
+          rollbackFailed: 'model-mod: Codex login: account configuration failed and rollback failed; restore the previous settings in /plugin.' }),
+      ],
+      ok: `model-mod: Codex login (${account}): ${selected.length} models configured; dir=${accountHome}. Parent thread reuse defaults to on; set codexThreadReuse to off for ephemeral threads only.`,
+    }, setupFlow?.detached === true)
+    return done.text
   } catch (err) {
     if (err instanceof Cancelled) return 'model-mod: setup cancelled, nothing changed'
     return 'model-mod: Codex login: setup failed; check Python and Codex installation.'
@@ -1559,44 +1555,40 @@ function codexQuota(r: CodexReading): QuotaBlock {
   return block
 }
 
-async function removeSettings($: EngineInterface, changes: Record<string, string>, removed: string[]): Promise<string | undefined> {
+// Clears the options in `changes`. `ok` is the text of a success (known before the writes: the writes reload this plugin, see
+// commit.ts); `after` runs once they are made.
+async function removeSettings($: EngineInterface, changes: Record<string, string>, removed: string[], ok: string, after?: Plan['after']): Promise<Committed> {
+  const refused = (text: string): Committed => ({ text: 'model-mod: ' + text, ok: false })
   const rows = await $.config.list()
   const entries = Object.entries(changes).map(([field, value]) => ({ field, value, row: rows.find(r => r.key.endsWith('.' + field) && r.provider.plugin.split('@')[0] === $.plugin.name.split('@')[0]) }))
-  if (entries.some(e => !e.row || e.row.isLocked)) return 'writable plugin config unavailable; nothing changed'
+  if (entries.some(e => !e.row || e.row.isLocked)) return refused('writable plugin config unavailable; nothing changed')
   const oldRetired = await retiredModels($)
   const oldCache = await $.store.get('models')
   const custom = await $.env.get('ANTHROPIC_CUSTOM_MODEL_OPTION')
   const clearCustom = typeof custom === 'string' && removed.includes(custom)
   const kept = Array.isArray(oldCache) ? oldCache.filter(id => typeof id !== 'string' || !removed.includes(id)) : []
   const retired = [...new Set([...oldRetired, ...removed])]
-  if (retired.length > MODEL_CACHE_CAP) return 'model ownership cache is full; nothing changed'
+  if (retired.length > MODEL_CACHE_CAP) return refused('model ownership cache is full; nothing changed')
   try {
     await $.store.set('retiredModels', retired)
     await $.store.set('models', kept)
     if (clearCustom && (await $.env.set('ANTHROPIC_CUSTOM_MODEL_OPTION', undefined))?.deny) throw new Error('environment update refused')
   } catch {
-    try { await $.store.set('retiredModels', oldRetired); await $.store.set('models', oldCache ?? []); if (clearCustom && (await $.env.set('ANTHROPIC_CUSTOM_MODEL_OPTION', custom))?.deny) throw new Error('environment rollback refused') } catch { return 'model cache update failed and rollback failed' }
-    return 'model cache could not be updated; previous values restored'
+    try { await $.store.set('retiredModels', oldRetired); await $.store.set('models', oldCache ?? []); if (clearCustom && (await $.env.set('ANTHROPIC_CUSTOM_MODEL_OPTION', custom))?.deny) throw new Error('environment rollback refused') } catch { return refused('model cache update failed and rollback failed') }
+    return refused('model cache could not be updated; previous values restored')
   }
-  const written: typeof entries = []
-  let failed = false
-  for (const entry of entries) {
-    try {
-      if ('deny' in await $.config.set({ key: entry.row!.key, value: entry.value })) { failed = true; break }
-      written.push(entry)
-    } catch { written.push(entry); failed = true; break }
+  const failure = { denied: 'model-mod: configuration failed; previous settings restored', failed: 'model-mod: configuration failed; previous settings restored',
+    rollbackFailed: 'model-mod: configuration failed and rollback failed; restore the previous settings in /plugin' }
+  const done = await commitSettings($, {
+    steps: entries.map(entry => settingStep(entry.row!, entry.value, failure)),
+    undo: { store: { retiredModels: oldRetired, models: Array.isArray(oldCache) ? oldCache : [] }, ...(clearCustom ? { customModelOption: custom } : {}) },
+    ok, ...(after ? { after } : {}),
+  }, setupFlow?.detached === true)
+  if (done.ok) {
+    pluginOptions = { ...pluginOptions, ...changes }
+    config = undefined; loaded = false; loading = undefined
   }
-  if (failed) {
-    let rollbackFailed = false
-    for (const entry of written.reverse()) {
-      try { if ('deny' in await $.config.set({ key: entry.row!.key, value: entry.row!.value })) rollbackFailed = true } catch { rollbackFailed = true }
-    }
-    try { await $.store.set('retiredModels', oldRetired); await $.store.set('models', oldCache ?? []); if (clearCustom && (await $.env.set('ANTHROPIC_CUSTOM_MODEL_OPTION', custom))?.deny) throw new Error('environment rollback refused') } catch { rollbackFailed = true }
-    return rollbackFailed ? 'configuration failed and rollback failed; restore the previous settings in /plugin' : 'configuration failed; previous settings restored'
-  }
-  pluginOptions = { ...pluginOptions, ...changes }
-  config = undefined; loaded = false; loading = undefined
-  return undefined
+  return done
 }
 
 async function manageUpstreams($: EngineInterface, c: Config): Promise<string> {
@@ -1622,10 +1614,8 @@ async function manageUpstreams($: EngineInterface, c: Config): Promise<string> {
     const cleared = ['fallbackModel', 'workerModel'].filter(field => removed.includes(String(pluginOptions[field] ?? '')))
     for (const field of cleared) changes[field] = ''
     await ensureOpen($)
-    const error = await removeSettings($, changes, removed)
-    if (error) return 'model-mod: ' + error
     const file = await $.env.get('MODEL_MOD_CONFIG')
-    return `model-mod: API upstream removed and disabled. The key remains in the client's secure storage; model-mod cannot clear it. When readding it, setup confirms the host before sending the stored key.${cleared.length ? ' Cleared: ' + cleared.join(', ') + '.' : ''}${file ? ' A configuration file is also configured; edit it separately if needed.' : ''}`
+    return (await removeSettings($, changes, removed, `model-mod: API upstream removed and disabled. The key remains in the client's secure storage; model-mod cannot clear it. When readding it, setup confirms the host before sending the stored key.${cleared.length ? ' Cleared: ' + cleared.join(', ') + '.' : ''}${file ? ' A configuration file is also configured; edit it separately if needed.' : ''}`)).text
   }
   const item = chosen.item
   const action = await pick($, `Manage Codex account ${item.account}?`, ['Log out', 'Remove', 'Back'], { header: 'Upstreams', initial: 'Back' })
@@ -1661,13 +1651,9 @@ async function manageUpstreams($: EngineInterface, c: Config): Promise<string> {
   const cleared = ['fallbackModel', 'workerModel'].filter(field => removed.includes(String(pluginOptions[field] ?? '')))
   for (const field of cleared) changes[field] = ''
   await ensureOpen($)
-  const error = await removeSettings($, changes, removed)
-  if (error) return 'model-mod: ' + error
-  let note = logoutFailed ? ' Logout failed; directory deletion was attempted.' : ''
-  if (deleteDir) {
-    try { if ((await $.process.run(pathArgs('remove-home'), { timeoutMs: 60_000 })).exitCode !== 0) note += ' Directory deletion failed.' } catch { note += ' Directory deletion failed.' }
-  }
-  return `model-mod: Codex account ${item.account} removed.${cleared.length ? ' Cleared: ' + cleared.join(', ') + '.' : ''}${note}`
+  const note = logoutFailed ? ' Logout failed; directory deletion was attempted.' : ''
+  return (await removeSettings($, changes, removed, `model-mod: Codex account ${item.account} removed.${cleared.length ? ' Cleared: ' + cleared.join(', ') + '.' : ''}${note}`,
+    deleteDir ? { argv: pathArgs('remove-home'), timeoutMs: 60_000, failed: ' Directory deletion failed.' } : undefined)).text
 }
 
 // The effort and model of the newest main-loop turn (turn.step carries the effort; nothing else exposes it). A reload
@@ -1688,7 +1674,7 @@ async function statusReport($: EngineInterface, e: { presentation?: { columns?: 
   let search: Awaited<ReturnType<typeof codexWebSearchState>> = 'on'
   let readings: CodexReading[] = []
   if (accounts.length) {
-    try { $.ui.toast('Reading Codex quota…', { timeoutMs: 3000 }) } catch { /* no toast here */ }
+    try { void $.ui.toast('Reading Codex quota…', { timeoutMs: 3000 }).catch(() => {}) } catch { /* no toast here */ }
     search = await codexWebSearchState($, c)
     readings = await Promise.all(accounts.map(item => readCodexAccount($, c, item)))
   }
@@ -1859,6 +1845,8 @@ export const register: Register = (on, options) => {
   })
 
   on('session.start', async ($, e, next) => {
+    // A setup whose writes reloaded this plugin is finished here: see commit.ts.
+    await resumeCommit($, text => commandText({ text }).text)
     const c = await load($)
     if (c) {
       let imageRegistered = false
