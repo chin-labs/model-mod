@@ -58,7 +58,7 @@ Send a short message after selecting a model. An upstream failure ends the turn 
 
 | Command | What it does |
 |---|---|
-| `/model-mod:setup` | Configure an upstream and select models, or manage configured upstreams. In the terminal the fixed menus open in one pane; Esc or cancelling leaves the configuration unchanged. |
+| `/model-mod:setup` | Configure an upstream and select models, or manage configured upstreams. In the terminal the fixed menus open in one pane; Esc or cancelling leaves the configuration unchanged; an in-progress logout runs to completion. |
 | `/model-mod:model` | List your models and switch to the one you pick (↑↓ to move, Enter to select, Esc to close). On a short terminal, Remote Control or mobile, a paged menu is used instead. |
 | `/model-mod:refresh` | Reload prompts and check Codex login status, CLI version and quota. If a schema-refresh command is configured, run it to refresh tool schemas (Codex status is not displayed in that branch); otherwise display Codex status and refresh the API model list when an API key is configured. Changed options need `/reload-plugins`. |
 | `/model-mod:status` | Show Codex quota per account (usage bars with reset times), the current model path and grouped diagnostics: activation, model count, tool setup and settings. Loopback hostnames are shown in the `host` row; any other host appears there as `remote`. Warns when plain HTTP sends the API key unencrypted to a non-loopback host. |
