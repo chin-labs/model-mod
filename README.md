@@ -51,6 +51,8 @@ Send a short message after selecting a model. An upstream failure ends the turn 
 - Your models alongside subscription models, switched per session with `/model-mod:model`.
 - Streaming, tool calls, Skills, MCP servers, subagents and Workflow agents.
 - Codex login uses native web search (`codexWebSearch`) and image generation on POSIX; the API path uses the mod’s search, fetch and image-generation tools. Web fetch and tool search are also available to Codex.
+- Delegate through your logged-in Codex CLI with `/model-mod:review` (native, `--adversarial`, `--gate`), `/model-mod:rescue`, background jobs (`/model-mod:jobs`, `/model-mod:result`, `/model-mod:cancel`) and `/model-mod:transfer`; see [delegation and data flow](docs/FEATURES.md#delegation-and-data-flow).
+- With `codexThreadReuse` on, eligible Codex login requests fork an ephemeral thread from a short-lived parent; small-sample tests on one Mac observed improved cache reuse, which is not guaranteed. See [features](docs/FEATURES.md) and [privacy and cleanup](docs/LIMITATIONS.md#parent-thread-privacy-and-cleanup).
 - Automatic retry of transient upstream errors with bounded `Retry-After` handling, and Claude Code's five effort levels.
 - Compaction through your selected model and optional `fallbackModel` switching at subscription or Codex login rate limits; accounts are not rotated automatically, and API upstream models have no official rate-limit switching.
 
