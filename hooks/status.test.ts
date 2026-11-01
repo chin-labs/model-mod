@@ -55,6 +55,13 @@ test('status: exhausted and limited accounts are marked in text with the reason'
   expect(text.find(l => l.includes('Codex main'))).toMatch(/^\[OK\] /)
 })
 
+test('status: upstream allowed but full window warns that requests may fail', () => {
+  const view: StatusView = { ...VIEW, quota: [{ title: 'Codex test', windows: [{ label: 'weekly', used: 100, resetsAt: null }], allowedButFull: true }] }
+  const text = renderStatus(view, { columns: 100, ascii: true, now: NOW })
+  expect(text).toContain('upstream still reports usage allowed; a window is full, so requests may fail')
+  expect(text).toContain('[LIMIT] Codex test')
+})
+
 test('status: a failed account shows only the fixed text and its reason, and the others stay', () => {
   const text = render(80)
   const flaky = lines(text).findIndex(l => l.includes('Codex flaky'))

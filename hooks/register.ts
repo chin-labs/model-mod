@@ -1562,6 +1562,7 @@ function codexQuota(r: CodexReading): QuotaBlock {
   else if (r.problems.length) block.failed = r.problems.join('; ')
   else if (!windows.length) block.failed = 'the account reported no rate-limit windows'
   if (r.reached || r.ordinaryUsageAllowed === false) block.limit = r.reached ? r.reached.replace(/_/g, ' ') : ''
+  if (r.ordinaryUsageAllowed === true && !r.reached && [r.primary, r.secondary].some(w => typeof w?.remainingPercent === 'number' && Number.isFinite(w.remainingPercent) && w.remainingPercent <= 0)) block.allowedButFull = true
   return block
 }
 
@@ -1747,7 +1748,7 @@ async function statusReport($: EngineInterface, e: { presentation?: { columns?: 
       { label: 'codex', value: r.codex ?? 'unavailable', warn: r.tooOld },
       { label: 'python', value: r.python ?? 'unavailable' },
       { label: 'dir', value: r.item.directory },
-      ...(r.ordinaryUsageAllowed === undefined ? [] : [{ label: 'ordinary usage', value: r.ordinaryUsageAllowed ? 'allowed' : 'not allowed', warn: !r.ordinaryUsageAllowed }])] })
+      ...(r.ordinaryUsageAllowed === undefined ? [] : [{ label: 'ordinary usage', value: codexQuota(r).allowedButFull ? 'allowed by upstream, but a window is full (requests may fail)' : r.ordinaryUsageAllowed ? 'allowed' : 'not allowed', warn: !r.ordinaryUsageAllowed || codexQuota(r).allowedButFull }])] })
   }
   const note = (invalid: boolean | undefined, fallback: string) => invalid ? ` (invalid setting; using ${fallback})` : ''
   const keep = c.codexKeepReasoning ?? 'on', reuse = c.codexThreadReuse ?? 'on'

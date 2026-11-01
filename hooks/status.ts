@@ -19,6 +19,7 @@ export type QuotaBlock = {
   credits?: string
   // Set when the account may not be used now: the reason from rateLimitReachedType, or '' when there is none.
   limit?: string
+  allowedButFull?: boolean
   // Why the numbers could not be read; the block then shows a fixed "無法取得" line.
   failed?: string
   // An upstream that reports no quota (an API server).
@@ -159,6 +160,9 @@ function quotaLines(blocks: QuotaBlock[], o: RenderOptions, width: number): stri
     }
     if (block.limit !== undefined) {
       wrap(block.limit ? `limit reached: ${block.limit}` : 'ordinary usage is not allowed now', width - MARGIN).forEach((text, i) => lines.push(margin(i === 0 ? 'limit' : undefined) + text))
+    }
+    if (block.allowedButFull) {
+      wrap('upstream still reports usage allowed; a window is full, so requests may fail', width - MARGIN).forEach((text, i) => lines.push(margin(i === 0 ? 'limit' : undefined) + text))
     }
     if (block.credits) lines.push(margin(undefined) + padEnd('credits', labelWidth) + ' ' + clean(block.credits))
     if (block.failed !== undefined) {
