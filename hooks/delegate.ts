@@ -147,6 +147,8 @@ export async function delegate($: EngineInterface, kind: 'review' | 'rescue', ar
     if (options.gate) {
       const verdict = readGate(reply.text ?? '')
       if (verdict.verdict === 'pass' && verdict.fingerprint && sessionId) gatePasses.set(sessionId, verdict.fingerprint)
+      // A passing review settles the warning the Stop gate kept for the changes that were not reviewed.
+      if (verdict.verdict === 'pass') gateWarning = undefined
       return { text: formatOutput(selected, model, gateDisplay(verdict)) }
     }
     return { text: formatOutput(selected, model, reply.text ?? 'Delegation failed.', options.write) }
@@ -256,8 +258,12 @@ export async function runStopGate($: EngineInterface, e: StopEvent, next: () => 
       retainLock = true
       void operation.finally(() => gateRunning.delete(e.session_id)).catch(() => undefined)
     }
-    if (result !== 'skip' && result.verdict === 'pass') gateWarning = undefined
-    if (result === 'skip' || result.verdict === 'pass') return downstream
+    // Nothing is left to review: a pass, a tree without changes, changes that a review already passed, or a directory the gate
+    // does not apply to. The newest result is the one the warning speaks for, so the older warning goes.
+    if (result === 'skip' || result.verdict === 'pass') {
+      gateWarning = undefined
+      return downstream
+    }
     if (result.verdict === 'block' && (gateBlocks.get(e.session_id) ?? 0) < settings.blocks) {
       gateBlocks.set(e.session_id, (gateBlocks.get(e.session_id) ?? 0) + 1)
       gateNotified.delete(e.session_id)

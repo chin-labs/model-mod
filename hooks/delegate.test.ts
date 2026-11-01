@@ -1,6 +1,6 @@
 import { test, expect } from 'claude-code/testing'
 import type { EngineInterface } from 'claude-code'
-import { delegate, formatOutput, parseDelegate, backgroundCommand, pollJob, transfer, automaticGate, gateBlockReason, runStopGate, stopGateSettings } from './delegate.ts'
+import { delegate, formatOutput, parseDelegate, backgroundCommand, pollJob, transfer, automaticGate, gateBlockReason, runStopGate, stopGateSettings, stopGateWarning } from './delegate.ts'
 
 test('delegate parser handles quotes, separator, repeats and unknown flags', () => {
   expect(parseDelegate('review', `--base 'feature/test' --adversarial -- "focus text" 'and more'`)).toEqual({ base: 'feature/test', adversarial: true, text: `"focus text" 'and more'` })
@@ -110,6 +110,40 @@ test('stop gate enforces its limit, warns on unknown and protects reentry', asyn
   expect(observed).toBe(before)
   await gate($, { ...e, session_id: 'unknown' }, next, opts, async () => { throw new Error('timeout') }, signal)
   expect(warnings.length).toBe(3)
+})
+
+// /model-mod:status lists the warning the Stop gate keeps: it must go once the gate has nothing left to review, however it got there.
+test('stop gate warning is dropped once nothing is left to review', async () => {
+  const fingerprint = 'e'.repeat(64)
+  let snapshot: Record<string, unknown> = { changed: true, fingerprint }
+  let verdict = 'unknown'
+  const reply = () => JSON.stringify({ text: verdict === 'unknown' ? 'not JSON' : JSON.stringify({ verdict, needsHuman: false, fingerprint, findings: [] }) })
+  const $ = { plugin: { root: '/plugin' }, session: { id: async () => 'S', model: async () => 'test/chat', cwd: async () => '/repo' },
+    clock: { after: () => ({ cancel: () => {} }) }, ui: { status: () => {}, toast: async () => {} },
+    process: {
+      run: async (_argv: unknown, opts: { stdin: string }) => JSON.parse(opts.stdin).kind === 'snapshot' ? { exitCode: 0, stdout: JSON.stringify(snapshot) } : { exitCode: 0, stdout: reply() },
+      spawn: () => ({ async *[Symbol.asyncIterator]() { yield { stream: 'stdout', text: reply() } } }),
+    } } as unknown as EngineInterface
+  const c = { codex: new Map([['test/chat', { account: 'test', model: 'chat', directory: '/accounts/test' }]]), accountsDir: '/accounts' }
+  const opts = { codexStopGate: 'on' }, next = async () => ({}), signal = new AbortController().signal
+  const stop = (session: string) => runStopGate($, { session_id: session, cwd: '/repo', stop_hook_active: false }, next, opts, async () => c, signal)
+  const warn = async (session: string) => {
+    snapshot = { changed: true, fingerprint }; verdict = 'unknown'
+    await stop(session)
+    expect(stopGateWarning()).toContain('not passed or not verified')
+  }
+  await warn('T')
+  snapshot = { changed: false, fingerprint }; await stop('T')       // the tree is clean
+  expect(stopGateWarning()).toBeUndefined()
+  await warn('S')
+  verdict = 'pass'; await delegate($, 'review', '--gate', c, signal) // /model-mod:review --gate passes
+  expect(stopGateWarning()).toBeUndefined()
+  await warn('T')
+  snapshot = { changed: true, fingerprint }; await stop('S')         // the changes were reviewed already
+  expect(stopGateWarning()).toBeUndefined()
+  await warn('T')
+  snapshot = { skip: true }; await stop('U')                         // the gate does not apply here
+  expect(stopGateWarning()).toBeUndefined()
 })
 
 test('unavailable gate and ambiguous account warn without claiming a pass', async () => {
