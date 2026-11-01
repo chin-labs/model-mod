@@ -240,11 +240,12 @@ async function configurePicker($: EngineInterface, c: { baseUrl: string; key?: s
     }
     const text = [`model-mod: ${selected.length} local models selected. /model-mod:model offers these models.`, ...notes].join('\n')
     // The writes reload this plugin; see commit.ts for what a setup with an open pane does about that.
-    const done = await commitSettings($, { steps: updates.map(entry => settingStep(entry.row, entry.value, failure)), undo: { store: stores }, ok: text },
-      setupFlow?.detached === true)
+    const detached = setupFlow?.detached === true
+    const done = await commitSettings($, { steps: updates.map(entry => settingStep(entry.row, entry.value, failure)), undo: { store: stores }, ok: text }, detached)
     if (done.ok) {
       if (!c.explicitModels) addModels(c, selected)
-      $.ui.log(text)
+      // A flow with an open pane puts the returned text into the transcript itself when it ends; logging it here too would print it twice.
+      if (!detached) $.ui.log(text)
     }
     return done.text
   } catch (err) {
@@ -2266,7 +2267,8 @@ export const register: Register = (on, options) => {
       setupFlow = flow
       beginSetupPane()
       admin($, e, 'setup').catch(() => ({ text: 'model-mod: setup cancelled, nothing changed' })).then(async reply => {
-        await dismissSetupPane($)
+        // A flow that gave its plan to the plugin a write reloaded answers no text: that plugin reports it and closes the pane.
+        if (!flow.detached || reply.text) await dismissSetupPane($)
         if (setupFlow === flow) setupFlow = undefined
         if (!flow.detached) resolve(commandText(reply))
         else if (reply.text) void Promise.resolve($.ui.log(commandText(reply).text)).catch(() => {})

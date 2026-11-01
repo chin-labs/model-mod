@@ -23,7 +23,8 @@ export type SetupMenu = { busy: true } | { question: string; options: string[]; 
 
 // The write phase of a setup, kept so that the plugin loaded by a reload (every changed option reloads it) can finish what
 // the module that began it cannot: see commit.ts. `previous` is what a step restores; the three texts are the answer when it
-// is refused, when it fails and when its restore fails too. `runner`: the module carrying it out ('inline': the only one).
+// is refused, when it fails and when its restore fails too. `runner`: the one module carrying it out ('inline': the only one);
+// unset while the plan is released for a write that reloads the plugin, until the reloaded plugin takes it up.
 export type SetupTail = {
   at: number
   runner?: string

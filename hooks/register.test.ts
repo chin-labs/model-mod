@@ -24,7 +24,10 @@ type World = { paneSeat?: boolean; openPanes: Set<string> /* what $.ui.panes() l
   // `$.http.fetch` made (the authorization header is reduced to its first 6 characters).
   chooseUpstream?: boolean; autoContinue?: boolean; deviceAnswerDelay?: number; answers: (string | null)[]; questions: { question: string; header: string; labels: string[]; multiSelect: boolean; fetchedCount: number }[];
   scopes: Record<string, Record<string, unknown>>; files: Record<string, string>; writes: string[]; saved: { key: string; value: unknown }[]; registered: string[]; configValues: Record<string, string>;
-  toolDescriptions: Record<string, string>; httpStatus?: number; httpStatuses?: number[]; httpBody?: string; configSet?: (key: string, value: string) => { deny: string } | undefined; unloaded?: boolean /* the module that began a flow was replaced by a reload: its own `$` calls fail */; switchEnv: (string | undefined)[];
+  toolDescriptions: Record<string, string>; httpStatus?: number; httpStatuses?: number[]; httpBody?: string; configSet?: (key: string, value: string) => { deny: string } | undefined; unloaded?: boolean /* the module that began a flow was replaced by a reload: its own `$` calls fail */;
+  // What a write that changes an option does (the plugin is reloaded): 'alive' starts the plugin's session.start and the module that wrote stays usable (a hook of it is
+  // still running), 'dead' unloads it (the test then calls session.start itself), unset changes nothing. `starts`: the session.start runs of 'alive'.
+  onList?: () => void; onSet?: () => void /* run at the start of config.list / config.set; one may throw */; reload?: 'alive' | 'dead' | 'none'; restart?: () => Promise<unknown>; starts: Promise<unknown>[]; switchEnv: (string | undefined)[];
   models: string[] | null; store: Record<string, unknown>; picker: unknown[]; fetched: { url: string; auth?: string; matchesKey: boolean }[]
   // The session's current model (`/model` runs change it), the `/model` arguments run, the rate-limit windows the last
   // response reported and the clock.
@@ -47,7 +50,7 @@ const statusRow = (text: string, label: string) => new RegExp(`^\\s*(?:\\[!\\]\\
 
 function world(on: On, config: Record<string, unknown> | null, model: string, spawn: SpawnReply | SpawnReply[],
   run?: RunReply | ((argv: readonly string[], stdin?: string) => RunReply), env: Record<string, string> = {}): World {
-  const w: World = { openPanes: new Set(), opened: [], closed: [], system: 'Linux', killed: 0, spawned: [], ran: [], ranEnv: [], reached: [], envSet: [], messagesRead: 0, toolListCalls: 0, failEnvSets: 0,
+  const w: World = { starts: [], openPanes: new Set(), opened: [], closed: [], system: 'Linux', killed: 0, spawned: [], ran: [], ranEnv: [], reached: [], envSet: [], messagesRead: 0, toolListCalls: 0, failEnvSets: 0,
     switchEnv: [], toolDescriptions: {}, answers: ['Keep (recommended)', 'All (recommended)'], questions: [], scopes: {}, files: {}, writes: [], saved: [], registered: [], configValues: {}, models: null, store: {}, picker: [], fetched: [], current: model, agents: [], modelRuns: [], limits: [], clock: undefined as never }
   // The test engine has no plugin.root; supply prompt files explicitly instead of built-in text.
   for (const name of ['compact', 'title', 'subagent-note', 'worker']) w.files[PROMPTS_DIR + '/' + name + '.md'] = 'TEST ' + name + ' prompt\n'
@@ -83,16 +86,28 @@ function world(on: On, config: Record<string, unknown> | null, model: string, sp
   on('fs.write', async (_$, e) => { w.files[e.path] = e.text; w.writes.push(e.path); return { value: undefined } })
   on('config.list', async () => {
     if (w.unloaded) throw new Error('environment is unloaded')
+    w.onList?.()
     if (w.listDelay) await w.clock.sleep(w.listDelay)
     return { value: [{ key: 'model', label: 'Model', kind: 'choice' as const, value: 'Default', options: ['default', 'sonnet', 'opus', 'haiku', 'best'], provider: { plugin: 'engine', tier: 'core' as const }, isLocked: false }, ...['baseUrl', 'models', 'codexAccounts', 'codexModels', 'fallbackModel', 'workerModel'].map(field => ({ key: 'model-mod.' + field, label: field,
       kind: 'text' as const, value: w.configValues[field] ?? '', provider: { plugin: 'model-mod', tier: 'user' as const }, isLocked: false }))] }
   })
   on('config.set', async (_$, e) => {
     if (w.unloaded) throw new Error('environment is unloaded')
+    w.onSet?.()
     const refused = w.configSet?.(e.key, e.value)
     if (refused) return refused
-    w.saved.push({ key: e.key, value: e.value }); return { value: e.value }
+    w.saved.push({ key: e.key, value: e.value })
+    const field = e.key.slice(e.key.indexOf('.') + 1)
+    // With w.reload the write is kept in the settings; one that changes an option reloads the plugin and w.reload says how the
+    // module that wrote is left. 'none': the write is kept and nothing is reloaded.
+    if (w.reload && (w.configValues[field] ?? '') !== e.value) {
+      w.configValues[field] = e.value
+      if (w.reload === 'dead') w.unloaded = true
+      else if (w.reload === 'alive' && w.restart) w.starts.push(w.restart())
+    }
+    return { value: e.value }
   })
+
   on('tool.call', { tool: 'AskUserQuestion' }, async (_$, e) => {
     const q = e.questions[0]!
     if (q.question.startsWith('Choose an upstream.') && !w.chooseUpstream) return { result: { questions: e.questions, answers: { [q.question]: 'Compatible API server' } } }
@@ -165,6 +180,9 @@ function world(on: On, config: Record<string, unknown> | null, model: string, sp
   return w
 }
 
+
+// The plugin is reloaded by a write that changes an option: see World.reload. `$.session.start` stands for the new plugin.
+function reloads(w: World, $: Engine, mode: 'alive' | 'dead' | 'none'): void { w.reload = mode; w.restart = () => $.session.start({ cwd: '/work' } as never) }
 
 // Drives a streaming step to its end: the chunks it yielded and the result it returned.
 async function drain<C extends { kind: string }, R>(stream: AsyncGenerator<C, R>): Promise<{ chunks: C[]; result: R }> {
@@ -1179,7 +1197,7 @@ test('setup: a fixed menu asked as a dialog takes only a listed option; text typ
 test('setup: the fixed menus open in a pane; the command answers at once and the result goes to the transcript', { options: OPTIONS }, async ($, on) => {
   const w = world(on, null, LOCAL, { stdout: '', code: 0 })
   const logged = transcript(on)
-  w.paneSeat = true
+  w.paneSeat = true; reloads(w, $, 'alive'); w.configValues = { models: LOCAL } // both writes change an option
   w.models = [LOCAL, 'gpt-other']; w.scopes.user = { enabledPlugins: { 'model-mod@test': true } }
   expect(await $.command.run(SETUP)).toEqual({})
   expect(w.questions).toEqual([])
@@ -1208,7 +1226,7 @@ test('setup: the fixed menus open in a pane; the command answers at once and the
 test('setup: a pane that is too small hands the menu to a dialog, and the setup finishes there', { options: OPTIONS }, async ($, on) => {
   const w = world(on, null, LOCAL, { stdout: '', code: 0 })
   const logged = transcript(on)
-  w.paneSeat = true; w.models = [LOCAL]; w.scopes.user = { enabledPlugins: { 'model-mod@test': true } }
+  w.paneSeat = true; reloads(w, $, 'alive'); w.models = [LOCAL]; w.scopes.user = { enabledPlugins: { 'model-mod@test': true } }
   w.answers = ['Keep (recommended)', 'All (recommended)']
   // Nothing beneath the plugin draws: this hook stands for the engine's own drawing of a pane the plugin leaves.
   on('ui.render', ($, e) => h($.ui.resolve(e).Text, {}, 'engine') as never)
@@ -1271,7 +1289,7 @@ test('setup: closing the pane during "Working…" asks nothing more and writes n
   expect(logged.join('\n')).toContain('setup cancelled, nothing changed')
   expect(w.questions).toEqual([]); expect(w.saved).toEqual([]); expect(w.store).toEqual({})
   // A setup started afterwards runs in full: the closed pane is forgotten.
-  w.listDelay = 0; logged.length = 0
+  w.listDelay = 0; reloads(w, $, 'alive'); w.configValues = { models: LOCAL }; logged.length = 0
   expect(await $.command.run(SETUP)).toEqual({})
   await choose($, w, 'Compatible API server')
   await choose($, w, 'Keep (recommended)')
@@ -1310,7 +1328,9 @@ test('setup: the plugin loaded by the first write finishes the setup, reports on
   expect(w.unloaded).toBe(true)
   expect(w.saved).toEqual([{ key: 'model-mod.baseUrl', value: OPTIONS.baseUrl }])
   expect(results()).toEqual([]); expect(w.openPanes.has('model-mod-setup')).toBe(true) // nothing is reported or closed by the unloaded module
-  w.unloaded = false; await $.session.start({ cwd: '/work' } as never); await flush(w)
+  // The engine of this test world does not say why a call failed, so the module that began the setup cannot tell an unload from
+  // another failure: it polls for the plan to be taken up (6 s of mock clock at most) and then finds the plan gone.
+  w.unloaded = false; await $.session.start({ cwd: '/work' } as never); await flush(w); await w.clock.advance(6500)
   expect(w.saved).toEqual([{ key: 'model-mod.baseUrl', value: OPTIONS.baseUrl }, { key: 'model-mod.models', value: '' }])
   expect(results()).toHaveLength(1); expect(results()[0]).toContain('2 local models selected')
   expect(w.closed).toEqual(['model-mod-setup']); expect(w.openPanes.size).toBe(0)
@@ -1321,10 +1341,74 @@ test('setup: the plugin loaded by the first write finishes the setup, reports on
   // shows that the first one can be opened again (setup() answers `{}` only when no setup is open).
   arrange('models'); await setup()
   expect(w.unloaded).toBe(true)
-  w.unloaded = false; await $.session.start({ cwd: '/work' } as never); await flush(w)
+  w.unloaded = false; await $.session.start({ cwd: '/work' } as never); await flush(w); await w.clock.advance(6500)
   expect(w.configValues).toMatchObject({ baseUrl: 'http://old.test', models: LOCAL })
   expect(results()).toEqual([expect.stringContaining('setup failed; previous settings restored')])
   expect(w.closed).toEqual(['model-mod-setup'])
+})
+
+// A write that changes nothing the plugin reloads for brings no new module. The module that began the setup waits for one,
+// then takes the plan back and finishes it, once. A session.start that comes meanwhile (any other new session) takes the plan
+// instead, and the module that began it lets go.
+for (const takenOver of [true, false]) {
+  test(`setup (pane): a write that reloads nothing is finished by ${takenOver ? 'a session.start that took the plan up' : 'the module that began it taking the plan back'}`, { options: OPTIONS }, async ($, on) => {
+    const w = world(on, null, LOCAL, { stdout: '', code: 0 })
+    const logged = transcript(on)
+    w.paneSeat = true; reloads(w, $, 'none'); w.models = [LOCAL, 'gpt-other']; w.scopes.user = { enabledPlugins: { 'model-mod@test': true } }
+    w.configValues = { models: LOCAL }
+    expect(await $.command.run(SETUP)).toEqual({})
+    await choose($, w, 'Compatible API server'); await choose($, w, 'Keep (recommended)'); await choose($, w, 'All (recommended)')
+    expect(w.saved).toEqual([{ key: 'model-mod.baseUrl', value: OPTIONS.baseUrl }]) // the first changing write; the plan waits for a reload
+    expect(logged.filter(line => !line.startsWith('Local API'))).toEqual([])
+    if (takenOver) await $.session.start({ cwd: '/work' } as never)
+    for (let i = 0; i < 70; i++) await w.clock.advance(250) // each write that waits in vain for a reload takes up to 6 s
+    await flush(w)
+    expect(logged.filter(line => !line.startsWith('Local API'))).toEqual([expect.stringContaining('2 local models selected')])
+    expect(w.saved).toEqual([{ key: 'model-mod.baseUrl', value: OPTIONS.baseUrl }, { key: 'model-mod.models', value: '' }])
+    expect(w.closed).toEqual(['model-mod-setup']); expect(w.openPanes.size).toBe(0)
+    expect(await $.command.run(SETUP)).toEqual({})
+  })
+}
+
+// The first changing write is refused: nothing was reloaded, the module that began the setup takes the plan back, restores
+// and reports once. Another write of the same plan that fails while it still holds the plan does the same.
+test('setup (pane): a refused first write is reported once by the module that began the setup', { options: OPTIONS }, async ($, on) => {
+  const w = world(on, null, LOCAL, { stdout: '', code: 0 })
+  const logged = transcript(on)
+  w.paneSeat = true; reloads(w, $, 'alive'); w.models = [LOCAL, 'gpt-other']; w.scopes.user = { enabledPlugins: { 'model-mod@test': true } }
+  w.configSet = key => key.endsWith('.baseUrl') ? { deny: 'locked' } : undefined
+  expect(await $.command.run(SETUP)).toEqual({})
+  await choose($, w, 'Compatible API server'); await choose($, w, 'Keep (recommended)'); await choose($, w, 'All (recommended)')
+  await flush(w)
+  expect(logged.filter(line => !line.startsWith('Local API'))).toEqual([expect.stringContaining('setup failed; previous settings restored')])
+  expect(w.saved).toEqual([]); expect(w.closed).toEqual(['model-mod-setup']); expect(w.openPanes.size).toBe(0)
+  expect(await $.command.run(SETUP)).toEqual({})
+})
+
+// A `$` call that fails while the module is still loaded is a failure of the setup, not a hand-over to a plugin that does
+// not exist: the person is told and the pane is closed. (The call that fails is the settings read before the first step.)
+test('setup (pane): a failure that is not an unload ends the setup with a text instead of leaving the pane open', { options: OPTIONS }, async ($, on) => {
+  const w = world(on, null, LOCAL, { stdout: '', code: 0 })
+  const logged = transcript(on)
+  w.paneSeat = true; reloads(w, $, 'alive'); w.models = [LOCAL, 'gpt-other']; w.scopes.user = { enabledPlugins: { 'model-mod@test': true } }
+  w.configValues = { models: LOCAL }
+  let lists = 0, atFirstSet = -1, failAt = Infinity
+  w.onList = () => { if (++lists === failAt) throw new Error('boom') }
+  w.onSet = () => { if (atFirstSet < 0) atFirstSet = lists }
+  const run = async () => {
+    expect(await $.command.run(SETUP)).toEqual({})
+    await choose($, w, 'Compatible API server'); await choose($, w, 'Keep (recommended)'); await choose($, w, 'All (recommended)')
+    await flush(w)
+  }
+  await run() // learns how many settings reads come before the first write
+  expect(logged.filter(line => !line.startsWith('Local API'))).toEqual([expect.stringContaining('2 local models selected')])
+  lists = 0; failAt = atFirstSet; logged.length = 0; w.saved = []; w.closed.length = 0; w.configValues = { models: LOCAL }
+  await run()
+  expect(w.saved).toEqual([])
+  expect(logged.filter(line => !line.startsWith('Local API'))).toEqual([expect.stringContaining('setup could not complete')])
+  expect(w.closed).toEqual(['model-mod-setup']); expect(w.openPanes.size).toBe(0)
+  failAt = Infinity
+  expect(await $.command.run(SETUP)).toEqual({})
 })
 
 test('setup: the bridge never gets a pane', { options: OPTIONS }, async ($, on) => {
@@ -2020,6 +2104,48 @@ test('manage: removing a Codex account preserves the other account and refuses r
   expect(w.reached).not.toContain('turn.step')
   expect(w.store.retiredModels).toContain(CODEX_MODEL)
 })
+
+// A reload does not always unload the module that made the write: a hook of it still running (a background agent's turn)
+// keeps it loaded, and it can call everything while the plugin the reload loaded carries the same plan on. Each step, the
+// follow-up and the report of a plan are done by one of them only, and the settings end where one executor would leave them.
+const MANAGE_CODEX = ['Manage configured upstreams', 'Codex main; dir=/fake-home/.config/model-mod/accounts/main; login=ok; models=1', 'Remove', 'Delete directory', 'Confirm deletion']
+for (const mode of ['alive', 'dead'] as const) {
+  test(`setup (pane): removing the last Codex account with its directory is done once; the module that began it is ${mode === 'alive' ? 'still loaded' : 'unloaded'}`, { options: CODEX_OPTIONS }, async ($, on) => {
+    let deletions = 0
+    // A second deletion of the same directory fails, as the helper's does once the directory is gone.
+    const w = world(on, null, CODEX_MODEL, { stdout: '', code: 0 }, argv => argv.includes('remove-home') && deletions++ > 0 ? { exitCode: 70, stdout: '' } : { exitCode: 0, stdout: '{}' })
+    const logged = transcript(on)
+    w.paneSeat = true; w.configValues = { codexAccounts: 'main', codexModels: 'gpt-6.1-terra' }
+    if (mode === 'alive') reloads(w, $, 'alive')
+    else {
+      // The first write that changes an option unloads the module that made it; the plugin loaded by the reload (session.start below) is whole.
+      let unloaded = false
+      w.configSet = (key, value) => {
+        const field = key.slice('model-mod.'.length)
+        if ((w.configValues[field] ?? '') !== value && !unloaded) { unloaded = true; w.unloaded = true }
+        w.configValues[field] = value
+        return undefined
+      }
+    }
+    expect(await $.command.run(SETUP)).toEqual({})
+    for (const label of MANAGE_CODEX) await choose($, w, label)
+    if (mode === 'dead') {
+      expect(w.unloaded).toBe(true)
+      expect(logged).toEqual([]); expect(w.openPanes.has('model-mod-setup')).toBe(true) // the unloaded module reports and closes nothing
+      w.unloaded = false; await $.session.start({ cwd: '/work' } as never); await flush(w)
+    }
+    await w.clock.advance(6500); await flush(w)
+    const results = logged.filter(line => line.includes('Codex account main removed'))
+    expect(results).toHaveLength(1); expect(logged.join('\n')).not.toContain('Directory deletion failed')
+    expect(deletions).toBe(1)
+    expect(w.saved.filter(save => save.key === 'model-mod.codexAccounts')).toEqual([{ key: 'model-mod.codexAccounts', value: '' }])
+    expect(w.saved.filter(save => save.key === 'model-mod.codexModels')).toEqual([{ key: 'model-mod.codexModels', value: '' }])
+    expect(w.closed).toEqual(['model-mod-setup']); expect(w.openPanes.size).toBe(0)
+    // The pane is closed and the plan is gone: the next setup opens again.
+    w.unloaded = false
+    expect(await $.command.run(SETUP)).toEqual({})
+  })
+}
 
 test('manage: an API cannot silently take over a removed Codex model', { options: { ...CODEX_OPTIONS, ...OPTIONS, models: CODEX_MODEL } }, async ($, on) => {
   const w = world(on, null, CODEX_MODEL, { stdout: '', code: 0 }, () => ({ exitCode: 0, stdout: '{}' }))
