@@ -612,6 +612,21 @@ test('a half-applied environment is completed and restored when the subscription
 const KEY = 'sk-test-0123456789abcdef'
 const OPTIONS = { baseUrl: 'http://127.0.0.1:9999', apiKey: KEY, promptsDir: PROMPTS_DIR }
 
+test('doctor: rejected API key is explained without exposing it', { options: OPTIONS }, async ($, on) => {
+  const w = world(on, null, LOCAL, { stdout: '', code: 0 })
+  w.httpStatus = 401
+  const result = await $.command.run({ command: 'model-mod:doctor', args: '', origin: { kind: 'composer' } } as never)
+  expect(result.text).toContain('API key was rejected')
+  expect(result.text).not.toContain(KEY)
+})
+
+test('doctor: healthy API reports no problems', { options: OPTIONS }, async ($, on) => {
+  const w = world(on, null, LOCAL, { stdout: '', code: 0 })
+  w.models = [LOCAL]
+  const result = await $.command.run({ command: 'model-mod:doctor', args: '', origin: { kind: 'composer' } } as never)
+  expect(result.text).toContain('no problems found')
+})
+
 test('options: the key never enters an argument vector, models come from the upstream and the store keeps them', { options: OPTIONS }, async ($, on) => {
   const w = world(on, null, LOCAL, { stdout: SSE_OK, code: 0 }, { exitCode: 22, stdout: '' })
   w.models = [LOCAL, 'gpt-image-2', 'claude-sonnet-5-5']

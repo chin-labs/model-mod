@@ -7,7 +7,8 @@
 After `/model-mod:setup`:
 
 1. Run `/model-mod:status`. When the mod is active it prints a report whose first line is `model-mod <version>: picker=active` (followed by `; N warnings` when there are warnings), then QUOTA, CURRENT PATH and DIAGNOSTICS. Under DIAGNOSTICS, the Picker group shows `picker active` and `models`, the number of models offered, and with an API upstream also `host` and `config`; a Codex login adds one group per account. `model-mod: inactive; …` means there is no usable upstream configuration (see [Symptoms](#symptoms)). If the reply is a text saying that the plugin hooks are not loaded, the plugin is not active in this session: run `/reload-plugins` or restart Claude Code.
-2. Run `/model-mod:model`, pick one of your models and send a short message. The answer comes from your upstream. If the upstream is down or rejects the key, the turn ends with an error message; it is never retried on your subscription.
+2. If something is wrong, run `/model-mod:doctor`. It sends no prompt and uses no Codex quota or model tokens. It checks the API models list for key-configured upstreams and each Codex account's login and quota; it does not check header-file upstreams or prove a chat request will succeed.
+3. Run `/model-mod:model`, pick one of your models and send a short message. The answer comes from your upstream. If the upstream is down or rejects the key, the turn ends with an error message; it is never retried on your subscription.
 
 ## Symptoms
 
@@ -20,6 +21,11 @@ After `/model-mod:setup`:
 | The setup pane says `Keyboard not captured` | The pane does not hold the keyboard | Press Ctrl+X, then Tab. |
 | `setup is already open; finish or close it first.` | A setup pane from an earlier `/model-mod:setup` is still open | Finish it, or press Esc in the pane. |
 | Model-list error during setup | Network, authentication or server problem | Check the upstream and key. Setting `models` explicitly lets you proceed without discovery. |
+| Doctor reports refused, DNS, timeout or TLS | The API URL or network is unreachable | Check the address, network and TLS certificate. |
+| Doctor reports 401 or 403 | The API key was rejected | Check the key in plugin settings. |
+| Doctor reports 404 | The API base URL may have an extra or missing `/v1` | Set the base URL without `/v1`. |
+| Doctor reports 429 or a 5xx error | The API is rate limited or has a server error | Wait and try again. |
+| Doctor reports an invalid or empty models list | The server may not be OpenAI-compatible | Check the upstream server and its models endpoint. |
 | `model is not in the allowlist` | The ID is outside `models` | Choose an allowed ID or update the list. |
 | Errors after selecting a model | Model unavailable, upstream down or key rejected | Fix the upstream, model or key, then `/model-mod:refresh`. There is no subscription fallback. |
 | Effort suffix rejected | The upstream does not understand `model(level)` | Set the advanced option `effortMode` to `none`. |

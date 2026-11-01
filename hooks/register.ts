@@ -8,6 +8,8 @@ import { commitSettings, resumeCommit } from './commit.ts'
 import type { Committed, Plan } from './commit.ts'
 import { delegate, backgroundCommand, transfer, runStopGate, stopGateSettings, stopGateWarning, noteStopGateWarning } from './delegate.ts'
 import { renderStatus } from './status.ts'
+import { classifyModel, networkCategory, renderDoctor } from './doctor.ts'
+import type { Check, ModelResult } from './doctor.ts'
 import type { Group, QuotaBlock, QuotaWindow, Row, StatusView } from './status.ts'
 
 // Read legacy rows only as an extra ownership source; this mod never writes them.
@@ -30,24 +32,24 @@ function endpoint(value: string): string {
   return url.origin + url.pathname.replace(/\/+$/, '')
 }
 
-type ModelList = { ids: string[]; chat: string[] } | { error: string; unsupported?: boolean }
+type ModelList = { ids: string[]; chat: string[] } | { error: string; unsupported?: boolean; diagnosis: ModelResult }
 async function modelList($: EngineInterface, baseUrl: string, key: string): Promise<ModelList> {
   try {
     const reply = await Promise.race([
       $.http.fetch(baseUrl + '/v1/models', { headers: { authorization: 'Bearer ' + key } }),
       $.clock.sleep(8000).then(() => undefined),
     ])
-    if (!reply) return { error: 'timeout' }
-    if (!reply.ok) return { error: `HTTP ${reply.status}`, unsupported: [404, 405, 501].includes(reply.status) }
+    if (!reply) return { error: 'timeout', diagnosis: { category: 'timeout' } }
+    if (!reply.ok) return { error: `HTTP ${reply.status}`, unsupported: [404, 405, 501].includes(reply.status), diagnosis: { category: 'http', status: reply.status } }
     let body: unknown
-    try { body = JSON.parse(reply.text) } catch { return { error: 'body is not a model list', unsupported: true } }
+    try { body = JSON.parse(reply.text) } catch { return { error: 'body is not a model list', unsupported: true, diagnosis: { category: 'not-json' } } }
     const data = (body as { data?: unknown } | null)?.data
     if (!Array.isArray(data) || !data.every(row => row && typeof row === 'object' && typeof row.id === 'string')) {
-      return { error: 'body is not a model list', unsupported: true }
+      return { error: 'body is not a model list', unsupported: true, diagnosis: { category: 'not-json' } }
     }
     const ids = [...new Set(data.map(row => row.id as string).filter(id => (MODEL_ID.test(id) || OFFICIAL_ALIAS.test(id)) && !/claude|anthropic/i.test(id)))]
     return { ids, chat: ids.filter(id => !NOT_CHAT.test(id)) }
-  } catch { return { error: 'unreachable' } }
+  } catch (error) { return { error: 'unreachable', diagnosis: { category: networkCategory(error) } } }
 }
 
 class Cancelled extends Error {}
@@ -1468,7 +1470,7 @@ async function codexWebSearchState($: EngineInterface, c: Config): Promise<'on' 
 // answer stays undefined; `problems` are fixed phrases (never helper output) for the account that could not be read.
 type CodexReading = {
   item: CodexAccount
-  python?: string; codex?: string; tooOld: boolean
+  python?: string; codex?: string; tooOld: boolean; checkExit?: number; pythonMissing?: boolean
   login: 'ok' | 'missing' | 'unavailable'
   primary?: CodexWindow | null; secondary?: CodexWindow | null; limitsRead: boolean
   ordinaryUsageAllowed?: boolean; reached?: string
@@ -1482,6 +1484,7 @@ async function readCodexAccount($: EngineInterface, c: Config, item: CodexAccoun
     (async () => {
       try {
         const result = await helperRun($, c, 'check', item.directory, 15_000)
+        reading.checkExit = result.exitCode
         const check = JSON.parse(result.stdout) as { pythonVersion?: unknown; codexVersion?: unknown; versionStatus?: unknown; loggedIn?: unknown; warnings?: unknown }
         if (typeof check.pythonVersion === 'string' && /^\d+\.\d+\.\d+/.test(check.pythonVersion)) reading.python = check.pythonVersion
         if (typeof check.codexVersion === 'string') reading.codex = /\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?/.exec(check.codexVersion)?.[0]
@@ -1492,7 +1495,11 @@ async function readCodexAccount($: EngineInterface, c: Config, item: CodexAccoun
           if (typeof warning === 'string' && /^Codex login: inspect account home file (AGENTS\.md|AGENTS\.override\.md|config\.toml|\.mcp\.json|mcp\.json) for instructions or MCP settings$/.test(warning)) reading.warnings.push(warning)
         }
         if (reading.login === 'unavailable' && !reading.tooOld) reading.problems.push(`login check failed (exit ${result.exitCode})`)
-      } catch { reading.problems.push('login check did not complete') }
+      } catch (error) {
+        const e = error as { code?: unknown; message?: unknown } | null
+        if (e?.code === 'ENOENT' || (typeof e?.message === 'string' && /\bENOENT\b/.test(e.message))) reading.pythonMissing = true
+        reading.problems.push('login check did not complete')
+      }
     })(),
     (async () => {
       try {
@@ -1768,7 +1775,50 @@ async function statusReport($: EngineInterface, e: { presentation?: { columns?: 
   return scrub(c, renderStatus(view, { columns: typeof columns === 'number' ? columns : 80, ascii: noColor, now: Math.floor(await $.clock.now() / 1000) }), false)
 }
 
-async function admin($: EngineInterface, e: { origin: { kind: string }; presentation?: { columns?: number } }, arg: 'setup' | 'status' | 'refresh') {
+async function doctorReport($: EngineInterface, c: Config | null, columns?: number): Promise<string> {
+  const checks: Check[] = []
+  if (!c) {
+    checks.push({ mark: '!', what: 'Plugin configuration', cause: 'The picker is inactive.', next: await configHint($) })
+    return renderDoctor(checks, columns)
+  }
+  checks.push({ mark: 'OK', what: 'Plugin active and configuration loaded' })
+  if (c.apiInvalid) checks.push({ mark: '!', what: 'API configuration', cause: 'The API key is invalid.', next: 'Configure a valid key in plugin settings.' })
+  if (c.key) {
+    const url = new URL(c.baseUrl)
+    const host = loopbackHost(url.hostname) ? url.hostname : 'remote'
+    const result = await modelList($, c.baseUrl, c.key)
+    checks.push(classifyModel('error' in result ? result.diagnosis : result.ids.length ? { category: 'ok' } : { category: 'not-json' }, host))
+  } else if (c.headerFile) {
+    if (!await $.fs.exists(c.headerFile)) checks.push({ mark: '!', what: 'API header file', cause: 'The configured header file was not found.', next: 'Check the headerFile path.' })
+    checks.push({ mark: '--', what: 'header-file upstream: not checked by doctor', next: 'use /model-mod:status and a chat request' })
+  }
+  const invalid = invalidCodexFields(pluginOptions)
+  if (invalid.length) checks.push({ mark: '!', what: 'Codex settings', cause: `Invalid ${invalid.join(', ')}.`, next: 'Correct these fields in plugin settings.' })
+  for (const [name, bad] of [['codexWebSearch', c.codexWebSearchInvalid], ['codexKeepReasoning', c.codexKeepReasoningInvalid], ['codexThreadReuse', c.codexThreadReuseInvalid], ['codexServiceTier', c.codexServiceTierInvalid], ['Codex Stop gate', stopGateSettings(pluginOptions).invalid]] as const) {
+    if (bad) checks.push({ mark: '!', what: name, cause: 'This setting is invalid; the default is in use.', next: 'Correct the setting in plugin settings.' })
+  }
+  for (const name of ['workerModel', 'fallbackModel'] as const) {
+    if (typeof pluginOptions[name] === 'string' && String(pluginOptions[name]).trim() && !c[name]) checks.push({ mark: '!', what: name, cause: 'The configured model was not accepted.', next: 'Choose a model in the allowlist or a full Codex model ID.' })
+  }
+  if (c.codexDirectoryUnavailable?.size) checks.push({ mark: '!', what: 'Codex account directory', cause: 'The account directory could not be determined.', next: 'Configure an absolute codexAccountsDir and reload the plugin.' })
+  const readings = await Promise.all(codexAccountList(c).map(item => readCodexAccount($, c, item)))
+  for (const r of readings) {
+    const what = `Codex ${r.item.account}: login and quota`
+    const quota = codexQuota(r)
+    if (r.pythonMissing) checks.push({ mark: '!', what, cause: 'Python could not be started.', next: 'Install Python 3.9 or newer or check pythonBin.' })
+    else if (r.tooOld) checks.push({ mark: '!', what, cause: 'Codex is too old.', next: 'Upgrade Codex to 0.165.0 or newer.' })
+    else if (r.checkExit === 66) checks.push({ mark: '!', what, cause: 'Codex was not found.', next: 'Install Codex or check codexBin.' })
+    else if (r.login === 'missing') checks.push({ mark: '!', what, cause: 'The account is not logged in or its directory is missing.', next: 'Run /model-mod:setup and check the account directory.' })
+    else if (r.problems.length || r.login !== 'ok' || !r.limitsRead) checks.push({ mark: '!', what, cause: 'The login or quota query failed or timed out.', next: 'Check Python, codexBin and the account directory, then retry.' })
+    else if (quota.allowedButFull) checks.push({ mark: 'LIMIT', what, cause: 'upstream still reports usage allowed; a window is full, so requests may fail', next: 'Wait for the quota reset or use another account.' })
+    else if (quota.limit !== undefined || quota.windows.some(w => w.used !== null && w.used >= 100)) checks.push({ mark: 'LIMIT', what, cause: 'A quota window is full or upstream reports a limit.', next: 'Wait for the quota reset or use another account.' })
+    else if (!quota.windows.length) checks.push({ mark: '!', what, cause: 'The account reported no quota windows.', next: 'Check /model-mod:status and try again later.' })
+    else checks.push({ mark: 'OK', what })
+  }
+  return renderDoctor(checks, columns)
+}
+
+async function admin($: EngineInterface, e: { origin: { kind: string }; presentation?: { columns?: number } }, arg: 'setup' | 'status' | 'refresh' | 'doctor') {
   const c = await load($)
   const invalidCodex = invalidCodexFields(pluginOptions)
   const gateSettings = stopGateSettings(pluginOptions)
@@ -1795,6 +1845,7 @@ async function admin($: EngineInterface, e: { origin: { kind: string }; presenta
       return { text: await configurePicker($, c ?? { baseUrl: typeof pluginOptions.baseUrl === 'string' && pluginOptions.baseUrl.trim() || DEFAULT_BASE_URL, models: [] }, true, interactive, status) }
     } catch { return { text: 'model-mod: setup cancelled, nothing changed' } }
   }
+  if (arg === 'doctor') return { text: await doctorReport($, c, e.presentation?.columns) }
   if (!c) return { text: `model-mod: inactive; picker=inactive; models=0. ${await configHint($)}${arg === 'status' ? codexWarning : ''}` }
   if (arg === 'refresh') {
     c.prompts = await loadPrompts($, c.promptsDir)
@@ -2286,6 +2337,7 @@ export const register: Register = (on, options) => {
     })
   })
   on('command.run', { command: 'model-mod:status' }, ($, e) => admin($, e, 'status').then(commandText))
+  on('command.run', { command: 'model-mod:doctor' }, ($, e) => admin($, e, 'doctor').then(commandText))
   on('command.run', { command: 'model-mod:refresh' }, ($, e) => admin($, e, 'refresh').then(commandText))
   on('command.run', { command: 'model-mod:review' }, async ($, e, next) => delegate($, 'review', e.args, await load($), next.signal))
   on('command.run', { command: 'model-mod:rescue' }, async ($, e, next) => delegate($, 'rescue', e.args, await load($), next.signal, e.origin.kind === 'composer' || e.origin.kind === 'bridge'))

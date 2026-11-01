@@ -64,6 +64,7 @@ Send a short message after selecting a model. An upstream failure ends the turn 
 | `/model-mod:model` | List your models and switch to the one you pick (↑↓ to move, Enter to select, Esc to close). On a short terminal, Remote Control or mobile, a paged menu is used instead. |
 | `/model-mod:refresh` | Reload prompts and check Codex login status, CLI version and quota. If a schema-refresh command is configured, run it to refresh tool schemas (Codex status is not displayed in that branch); otherwise display Codex status and refresh the API model list when an API key is configured. Changed options need `/reload-plugins`. |
 | `/model-mod:status` | Show Codex quota per account (usage bars with reset times), the current model path and grouped diagnostics: activation, model count, tool setup and settings. Loopback hostnames are shown in the `host` row; any other host appears there as `remote`. Warns when plain HTTP sends the API key unencrypted to a non-loopback host. |
+| `/model-mod:doctor` | Diagnose configuration, API models-list connectivity and Codex login and quota without sending a prompt. |
 | `/model-mod:review` | Review changes with Codex; `--gate` requests a structured verdict, `--adversarial` reviews a diff, and `--background` starts a job. |
 | `/model-mod:rescue` | Ask Codex for help; `--write` requests workspace write access and `--background` starts a job. |
 | `/model-mod:jobs` | List or clear background jobs. |

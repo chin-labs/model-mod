@@ -64,6 +64,7 @@ Codex 登入是主要路徑。先安裝 Python 3.9 以上版本與官方 `codex`
 | `/model-mod:model` | 列出你的模型並切換到所選的那個（↑↓ 移動、Enter 選取、Esc 關閉）。終端機太矮、或來自 Remote Control／手機時，改用分頁選單。 |
 | `/model-mod:refresh` | 重新載入提示檔並檢查 Codex 登入狀態、CLI 版本與額度。若已設定 schema 更新命令，則執行該命令更新工具 schema（此分支不顯示 Codex 狀態）；否則顯示 Codex 狀態，並在已設定 API 金鑰時更新 API 模型清單。改過的選項需 `/reload-plugins` 才會生效。 |
 | `/model-mod:status` | 依帳號顯示 Codex 額度（用量條與重置時間）、目前的模型路徑與分組診斷：是否啟用、模型數量、工具與設定。回送位址在 `host` 列顯示主機名，其他主機在該列顯示為 `remote`；明文 HTTP 將 API 金鑰以未加密形式送至非回送主機時會提出警告。 |
+| `/model-mod:doctor` | 不送出提示，檢查設定、API 模型清單連線及 Codex 登入和額度，並提供排解建議。 |
 | `/model-mod:review` | 請 Codex 審查；`--gate` 要求結構化裁定、`--adversarial` 審查 diff，`--background` 啟動背景工作。 |
 | `/model-mod:rescue` | 向 Codex 求助；`--write` 要求工作區寫入權限，`--background` 啟動背景工作。 |
 | `/model-mod:jobs` | 列出或清除背景工作。 |

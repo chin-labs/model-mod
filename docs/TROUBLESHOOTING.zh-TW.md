@@ -7,7 +7,8 @@
 執行 `/model-mod:setup` 之後：
 
 1. 執行 `/model-mod:status`。mod 啟用時會輸出一份報告，第一行是 `model-mod <version>: picker=active`（有警告時後接 `; N warnings`），接著是 QUOTA、CURRENT PATH 與 DIAGNOSTICS。DIAGNOSTICS 的 Picker 群組顯示 `picker active` 與 `models`（提供的模型數），有 API 上游時還有 `host` 與 `config`；設定 Codex 登入後，每個帳號多一個群組。`model-mod: inactive; …` 表示沒有可用的上游設定（見下方[常見症狀](#症狀)）。若回覆是說明插件 hook 未載入的文字，代表插件在此工作階段尚未啟用：執行 `/reload-plugins` 或重新啟動 Claude Code。
-2. 執行 `/model-mod:model`，選一個你的模型並送出一則短訊息。回答來自你的上游。上游停擺或拒絕金鑰時，該回合會以錯誤訊息結束，不會改用訂閱重試。
+2. 若有問題，執行 `/model-mod:doctor`。它不送出提示，也不消耗 Codex 額度或模型 token；它會檢查以金鑰設定的 API 模型清單，以及每個 Codex 帳號的登入與額度。不會檢查 header file 上游，也不能保證聊天請求一定成功。
+3. 執行 `/model-mod:model`，選一個你的模型並送出一則短訊息。回答來自你的上游。上游停擺或拒絕金鑰時，該回合會以錯誤訊息結束，不會改用訂閱重試。
 
 ## 症狀
 
@@ -20,6 +21,11 @@
 | setup pane 顯示 `Keyboard not captured` | pane 沒有取得鍵盤 | 按 Ctrl+X，再按 Tab。 |
 | `setup is already open; finish or close it first.` | 先前 `/model-mod:setup` 的 pane 仍開著 | 完成該次 setup，或在 pane 內按 Esc。 |
 | setup 時出現模型清單錯誤 | 網路、驗證或伺服器問題 | 檢查上游與金鑰。明確設定 `models` 可略過探索繼續進行。 |
+| Doctor 回報連線遭拒、DNS、逾時或 TLS 錯誤 | API 網址或網路無法連線 | 檢查網址、網路和 TLS 憑證。 |
+| Doctor 回報 401 或 403 | API 金鑰遭拒 | 檢查插件設定中的金鑰。 |
+| Doctor 回報 404 | API 基礎網址可能多了或少了 `/v1` | 將基礎網址設為不含 `/v1` 的形式。 |
+| Doctor 回報 429 或 5xx | API 受限流或伺服器發生錯誤 | 稍後再試。 |
+| Doctor 回報模型清單無效或為空 | 伺服器可能不相容 OpenAI | 檢查上游伺服器及其模型端點。 |
 | `model is not in the allowlist` | 該 ID 不在 `models` 內 | 選擇允許的 ID，或更新清單。 |
 | 選了模型後出現錯誤 | 模型不可用、上游停機或金鑰被拒絕 | 修正上游、模型或金鑰，再執行 `/model-mod:refresh`。不會退回訂閱。 |
 | effort 後綴被拒絕 | 上游不認得 `model(level)` | 把進階選項 `effortMode` 設為 `none`。 |
