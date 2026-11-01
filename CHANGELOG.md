@@ -2,6 +2,18 @@
 
 All notable changes to this project are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Every release that changes plugin code or manifest files raises the `version` in `.claude-plugin/plugin.json`; installed clients only pick up a release whose version differs from the one they have.
 
+## 0.2.3 - 2026-11-02
+
+### Added
+- `/model-mod:doctor` checks the setup in plain language and prints what is wrong and the next step: whether the plugin is active, whether the API upstream answers its model list (host shown only if it is a loopback address, never the key), invalid Codex settings, `workerModel`/`fallbackModel` values that are not accepted, and per Codex account the Codex install, login, quota read and full windows. It sends no prompt and uses no quota; an upstream configured with a header file is reported as not checked.
+
+### Changed
+- `workerModel` and `fallbackModel` accept a bare model ID (for example `gpt-6.1-sol`) under Codex login when exactly one Codex account offers it; with several matching accounts the status line lists up to four `<account>/<model>` candidates, and with none it says to use `<account>/<model>`.
+- When a Codex account's quota window is full but upstream still reports ordinary usage as allowed, `/model-mod:status` and the diagnostics say so neutrally ("requests may fail") instead of implying the account is usable.
+
+### Not verified
+- A real Codex login with a bare `workerModel`; the exact error shapes the client engine returns for a missing interpreter or a failed network request (doctor classifies by message text and falls back to a generic row); `/model-mod:doctor` in Remote Control, desktop and VS Code sessions and on Windows.
+
 ## 0.2.2 - 2026-11-01
 
 ### Changed

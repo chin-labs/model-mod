@@ -434,7 +434,7 @@ test('status hides remote hosts, warns about plain HTTP and reports a missing he
   const w = world(on, { ...baseConfig, baseUrl: 'http://upstream.example:9999' }, LOCAL, { stdout: '', code: 0 })
   const status = () => $.command.run({ command: 'model-mod:status', args: '', origin: { kind: 'composer' } } as never)
   const missing = await status()
-  expect(missing.text).toContain('model-mod 0.2.2: picker=active; 2 warnings')
+  expect(missing.text).toContain('model-mod 0.2.3: picker=active; 2 warnings')
   expect(missing.text).toContain('[!] headerFile not found')
   expect(statusRow(missing.text, 'host')).toBe('remote')
   expect(missing.text).not.toContain('upstream.example')
