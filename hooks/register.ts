@@ -264,6 +264,15 @@ const threadSessions = new Map<string, Map<string, CodexAccount>>()
 let config: Config | undefined
 let loaded = false
 let missingToolsHint = false
+let imageRetryAt: number | undefined
+let imageMissingNotified = false
+let imageRegisterError: string | undefined
+
+// Registration errors can contain credentials or paths; expose only a safe error category.
+function imageError(error: unknown): string {
+  if (error instanceof Error && /session.*(not bound|not bind|unbound)/i.test(error.message)) return 'session not bound'
+  return error instanceof Error && error.name === 'TypeError' ? 'TypeError' : 'registration failed'
+}
 // What must survive a hot reload of this plugin lives in the host's session state (contract: ../types/index.d.ts):
 // the model of every agent loop seen in turn.step, so an agent's own compaction can tell a bridge model from a
 // subscription one (`$.session.model()` answers for the main loop only); the conversation of each workflow agent
@@ -654,6 +663,20 @@ async function tools($: EngineInterface, c: Config, model: string, history: read
   if (!captured) return []
   const live = await $.tool.list()
   const enabled = new Set(live.map(tool => tool.name))
+  if ((c.codex?.has(model) || c.imageModel) && !enabled.has(IMAGE_TOOL)) {
+    const now = await $.clock.now()
+    if (imageRetryAt === undefined || now - imageRetryAt >= 60_000) {
+      imageRetryAt = now
+      try {
+        await $.tool.register(IMAGE_SPEC)
+        imageRegisterError = undefined
+      } catch (error) { imageRegisterError = imageError(error).slice(0, 120) }
+      if (!imageMissingNotified) {
+        imageMissingNotified = true
+        $.ui.status(imageRegisterError ? `generate_image could not be registered: ${imageRegisterError}` : 'generate_image was not in the tool list; registered it again. If it keeps disappearing, run /model-mod:doctor.')
+      }
+    }
+  }
   // The built-in WebSearch/WebFetch run a side request that names the session model; for a local model it
   // would go to the subscription endpoint, so the bridge's own two tools replace them.
   // The bridge provides its own tool loading, so the client's built-in ToolSearch is unnecessary.
@@ -1811,6 +1834,14 @@ async function doctorReport($: EngineInterface, c: Config | undefined, columns?:
     }
   }
   if (c.codexDirectoryUnavailable?.size) checks.push({ mark: '!', what: 'Codex account directory', cause: 'The account directory could not be determined.', next: 'Configure an absolute codexAccountsDir and reload the plugin.' })
+  const model = await $.session.model()
+  if (c.codex?.has(model) || c.imageModel) {
+    const listed = (await $.tool.list()).some(tool => tool.name === IMAGE_TOOL)
+    checks.push(listed ? { mark: 'OK', what: 'image tool: listed' } : {
+      mark: '!', what: 'image tool: not listed', cause: imageRegisterError,
+      next: 'Start a new session, or run /model-mod:doctor again after the next prompt.'
+    })
+  }
   const readings = await Promise.all(codexAccountList(c).map(item => readCodexAccount($, c, item)))
   for (const r of readings) {
     const what = `Codex ${r.item.account}: login and quota`
@@ -1926,7 +1957,7 @@ export const register: Register = (on, options) => {
       const registerImage = async () => {
         if ((!c.imageModel && !c.codex?.size) || imageRegistered) return
         imageRegistered = true
-        try { await $.tool.register(IMAGE_SPEC) } catch { /* the bridge works without the image tool */ }
+        try { await $.tool.register(IMAGE_SPEC); imageRegisterError = undefined } catch (error) { imageRegisterError = imageError(error).slice(0, 120) }
       }
       // Models the upstream serves now; a failure keeps the cached and configured ones.
       if (c.source === 'options') {

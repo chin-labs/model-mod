@@ -24,7 +24,7 @@ type World = { paneSeat?: boolean; openPanes: Set<string> /* what $.ui.panes() l
   // `$.http.fetch` made (the authorization header is reduced to its first 6 characters).
   chooseUpstream?: boolean; autoContinue?: boolean; deviceAnswerDelay?: number; answers: (string | null)[]; questions: { question: string; header: string; labels: string[]; multiSelect: boolean; fetchedCount: number }[];
   scopes: Record<string, Record<string, unknown>>; files: Record<string, string>; writes: string[]; saved: { key: string; value: unknown }[]; registered: string[]; configValues: Record<string, string>;
-  toolDescriptions: Record<string, string>; httpStatus?: number; httpStatuses?: number[]; httpBody?: string; configSet?: (key: string, value: string) => { deny: string } | undefined; unloaded?: boolean /* the module that began a flow was replaced by a reload: its own `$` calls fail */;
+  toolDescriptions: Record<string, string>; toolRegistrations?: number; httpStatus?: number; httpStatuses?: number[]; httpBody?: string; configSet?: (key: string, value: string) => { deny: string } | undefined; unloaded?: boolean /* the module that began a flow was replaced by a reload: its own `$` calls fail */;
   // What a write that changes an option does (the plugin is reloaded): 'alive' starts the plugin's session.start and the module that wrote stays usable (a hook of it is
   // still running), 'dead' unloads it (the test then calls session.start itself), unset changes nothing. `starts`: the session.start runs of 'alive'.
   onList?: () => void; onSet?: () => void /* run at the start of config.list / config.set; one may throw */; reload?: 'alive' | 'dead' | 'none'; restart?: () => Promise<unknown>; starts: Promise<unknown>[]; switchEnv: (string | undefined)[];
@@ -170,7 +170,7 @@ function world(on: On, config: Record<string, unknown> | null, model: string, sp
   on('session.start', async (_$, e) => ({ cwd: '/work' }))
   on('classic.PostModelSwitch', async () => ({}))
   on('command.register', async (_$, e) => { w.registered.push(e.name); return { value: { command: e.name } } })
-  on('tool.register', async (_$, e) => { w.toolDescriptions[e.name] = e.description; return { value: { tool: e.name } } })
+  on('tool.register', async (_$, e) => { w.toolRegistrations = (w.toolRegistrations ?? 0) + 1; w.toolDescriptions[e.name] = e.description; return { value: { tool: e.name } } })
   on('agent.register', async (_$, e) => { w.agents.push({ name: e.name, model: e.model }); return { value: { agent: 'model-mod:' + e.name } } })
   on('command.run', async (_$, e) => {
     if (e.command === 'model') { w.switchEnv.push(w.envSet.filter(([name]) => name === 'ANTHROPIC_CUSTOM_MODEL_OPTION').at(-1)?.[1]); w.modelRuns.push(e.args); w.current = e.args; return { text: `Set model to ${e.args}` } }
@@ -1938,6 +1938,26 @@ test('Codex login: startup and unsupported behavior failures do not retry', { op
   expect(unauthenticated.result.answer).toContain('not logged in')
   expect(w.spawned.length - prior).toBe(3)
   expect(w.ran.filter(argv => argv.includes('check')).length).toBe(1)
+})
+
+test('Codex login: missing image tool is registered once for the next prompt', { options: CODEX_OPTIONS }, async ($, on) => {
+  const w = world(on, null, CODEX_MODEL, { stdout: SSE_OK, code: 0 })
+  const notes = quotaLine(on)
+  await drain($.turn.step(STEP(CODEX_MODEL)))
+  expect(w.toolDescriptions['generate_image']).toBeTruthy()
+  expect(w.toolRegistrations).toBe(1)
+  await w.clock.advance(1000)
+  await drain($.turn.step(STEP(CODEX_MODEL)))
+  expect(w.toolRegistrations).toBe(1)
+  expect(notes.statuses.filter(text => text?.includes('generate_image')).length).toBe(1)
+})
+
+test('doctor: image tool listing', { options: CODEX_OPTIONS }, async ($, on) => {
+  const w = world(on, null, CODEX_MODEL, { stdout: '', code: 0 })
+  const doctor = async () => (await $.command.run({ command: 'model-mod:doctor', args: '', origin: { kind: 'composer' } } as never)).text ?? ''
+  expect(await doctor()).toContain('[!]  image tool: not listed')
+  w.toolsList = ['mcp__model-mod__generate_image']
+  expect(await doctor()).toContain('[OK]  image tool: listed')
 })
 
 test('Codex login: cancellation closes the helper and excludes API-only web search', { options: { ...CODEX_OPTIONS, imageModel: 'gpt-image-2' } }, async ($, on) => {
