@@ -23,7 +23,7 @@ After `/model-mod:setup`:
 | Model-list error during setup | Network, authentication or server problem | Check the upstream and key. Setting `models` explicitly lets you proceed without discovery. |
 | Doctor reports refused, DNS, timeout or TLS | The API URL or network is unreachable | Check the address, network and TLS certificate. |
 | Doctor reports 401 or 403 | The API key was rejected | Check the key in plugin settings. |
-| Doctor reports 404 | The API base URL may have an extra or missing `/v1` | Set the base URL without `/v1`. |
+| Doctor reports 404 | The API base URL may include `/v1` or a wrong path prefix | Set the base URL without `/v1`. |
 | Doctor reports 429 or a 5xx error | The API is rate limited or has a server error | Wait and try again. |
 | Doctor reports an invalid or empty models list | The server may not be OpenAI-compatible | Check the upstream server and its models endpoint. |
 | `model is not in the allowlist` | The ID is outside `models` | Choose an allowed ID or update the list. |

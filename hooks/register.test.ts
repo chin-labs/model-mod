@@ -620,6 +620,13 @@ test('doctor: rejected API key is explained without exposing it', { options: OPT
   expect(result.text).not.toContain(KEY)
 })
 
+test('doctor: invalid key without another upstream is explained', { options: { ...OPTIONS, apiKey: 'bad key' } }, async ($, on) => {
+  world(on, null, LOCAL, { stdout: '', code: 0 })
+  const text = (await $.command.run({ command: 'model-mod:doctor', args: '', origin: { kind: 'composer' } } as never)).text
+  expect(text).toContain('The apiKey option holds characters that cannot be used.')
+  expect(text).toContain('Re-enter the key in plugin settings.')
+})
+
 test('doctor: healthy API reports no problems', { options: OPTIONS }, async ($, on) => {
   const w = world(on, null, LOCAL, { stdout: '', code: 0 })
   w.models = [LOCAL]
@@ -1612,14 +1619,39 @@ test('worker: a bare Codex model matching several accounts is refused', { option
   const w = fbWorld(on); const notes = quotaLine(on)
   await $.session.start({ cwd: '/work' } as never)
   expect(w.agents).toEqual([])
-  expect(notes.statuses).toContain('model-mod: workerModel "gpt-6.1-terra" matches several Codex accounts (main/gpt-6.1-terra, other/gpt-6.1-terra); set the full ID.')
+  expect(notes.statuses.map(s => 'model-mod: ' + s)).toContain('model-mod: workerModel "gpt-6.1-terra" matches several Codex accounts (main/gpt-6.1-terra, other/gpt-6.1-terra); set the full ID.')
+})
+
+test('doctor: ambiguous bare Codex model lists candidates', { options: { ...CODEX_OPTIONS, codexAccounts: 'main,other', workerModel: 'gpt-6.1-terra' } }, async ($, on) => {
+  fbWorld(on); quotaLine(on)
+  const text = (await $.command.run({ command: 'model-mod:doctor', args: '', origin: { kind: 'composer' } } as never)).text
+  expect(text).toContain('matches several Codex accounts')
+  expect(text).toContain('main/gpt-6.1-terra,'); expect(text).toContain('other/gpt-6.1-terra')
+  expect(text).toContain('Use <account>/<model>.')
+})
+
+test('doctor: missing quota usage is a problem', { options: CODEX_OPTIONS }, async ($, on) => {
+  quotaLine(on)
+  world(on, null, CODEX_MODEL, { stdout: '', code: 0 }, argv => argv.includes('rate-limits') ? { exitCode: 0, stdout: JSON.stringify({ primary: { resetsAt: 3600 } }) } : { exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) })
+  const text = (await $.command.run({ command: 'model-mod:doctor', args: '', origin: { kind: 'composer' } } as never)).text
+  expect(text).toContain('A quota window reported no usage figure.')
+  expect(text).toContain('[!]  Codex main')
+})
+
+test('status and doctor: rounded full quota warns while upstream allows usage', { options: CODEX_OPTIONS }, async ($, on) => {
+  quotaLine(on)
+  world(on, null, CODEX_MODEL, { stdout: '', code: 0 }, argv => argv.includes('rate-limits') ? { exitCode: 0, stdout: JSON.stringify({ primary: { remainingPercent: 0.4, resetsAt: 3600 }, ordinaryUsageAllowed: true }) } : { exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) })
+  for (const command of ['model-mod:status', 'model-mod:doctor']) {
+    const text = (await $.command.run({ command, args: '', origin: { kind: 'composer' } } as never)).text
+    expect(text).toContain('upstream still reports usage allowed')
+  }
 })
 
 test('worker: an unknown bare Codex model explains the full ID', { options: { ...CODEX_OPTIONS, workerModel: 'gpt-unknown' } }, async ($, on) => {
   const w = fbWorld(on); const notes = quotaLine(on)
   await $.session.start({ cwd: '/work' } as never)
   expect(w.agents).toEqual([])
-  expect(notes.statuses).toContain('model-mod: workerModel "gpt-unknown" is not one of this mod\'s model IDs; with Codex login use <account>/<model>. That feature is off.')
+  expect(notes.statuses).toContain('workerModel "gpt-unknown" is not one of this mod\'s model IDs; with Codex login use <account>/<model>. That feature is off.')
 })
 
 test('fallback: a bare Codex model resolves to the only account', { options: { ...CODEX_OPTIONS, fallbackModel: 'gpt-6.1-terra' } }, async ($, on) => {
@@ -2227,7 +2259,7 @@ test('manage: deleting the last account requires confirmation and logs out first
   expect(w.saved.some(x => x.key === 'model-mod.workerModel')).toBe(false)
   await $.session.start({ cwd: '/work' } as never)
   expect(w.agents).toEqual([])
-  expect(notes.statuses).toContain('model-mod: workerModel is not a model of this mod (it must be in the allowlist); that feature is off.')
+  expect(notes.statuses).toContain('workerModel is not a model of this mod (it must be in the allowlist); that feature is off.')
   const logout = w.ran.findIndex(argv => argv.includes('logout'))
   const remove = w.ran.findIndex(argv => argv.includes('remove-home'))
   expect(logout >= 0 && remove > logout).toBe(true)

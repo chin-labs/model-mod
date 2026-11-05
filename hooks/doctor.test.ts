@@ -8,10 +8,14 @@ test('doctor: classify network and models-list outcomes', () => {
     expect(classifyModel({ category }, 'remote').next).toContain('address and network')
   }
   for (const status of [401, 403]) expect(classifyModel({ category: 'http', status }, 'remote').cause).toContain('key was rejected')
-  expect(classifyModel({ category: 'http', status: 404 }, 'remote').cause).toContain('/v1')
+  expect(classifyModel({ category: 'http', status: 404 }, 'remote').cause).toBe('The base URL may include /v1 or a wrong path prefix.')
   expect(classifyModel({ category: 'http', status: 429 }, 'remote').cause).toContain('rate limited')
   expect(classifyModel({ category: 'http', status: 503 }, 'remote').cause).toContain('server returned an error')
-  expect(classifyModel({ category: 'not-json' }, 'remote').next).toContain('OpenAI-compatible')
+  expect(classifyModel({ category: 'not-json' }, 'remote').next).toBe('Check that the server offers a /v1/models list, or set models explicitly.')
+  for (const result of [{ category: 'http', status: 404 }, { category: 'http', status: 405 }, { category: 'http', status: 501 }, { category: 'not-json' }] as const) {
+    expect(classifyModel(result, 'remote', true).mark).toBe('--')
+    expect(classifyModel(result, 'remote').mark).toBe('!')
+  }
   expect(classifyModel({ category: 'ok' }, 'remote').mark).toBe('OK')
 })
 

@@ -571,23 +571,24 @@ async function loadNow($: EngineInterface) {
     // The models the mod switches the session to when the subscription's limit is reached (`fallbackModel`) and runs the
     // `local-worker` agent type on (`workerModel`, else the fallback model). Options only; off when empty. Each must be
     // one of this mod's own models: inside the allowlist when there is one, never a Claude ID.
+    const warnModel = (text: string) => $.ui.status(text.replace(/^model-mod: /, ''))
     const usable = (name: string): string | undefined => {
       const id = fromOptions && typeof candidate[name] === 'string' ? candidate[name] : ''
       if (id === '') return undefined
       if (!built.explicitModels && (built.key !== undefined || built.headerFile !== undefined)) addModels(built, [id])
       if (MODEL_ID.test(id) && built.models.includes(id)) return id
       if (MODEL_ID.test(id) && !id.includes('/') && built.codex?.size) {
-        const matches = [...built.codex.keys()].filter(model => model.endsWith('/' + id) && built.models.includes(model))
+        const matches = codexMatches(built, id)
         if (matches.length === 1) return matches[0]
         if (matches.length > 1) {
           const list = matches.slice(0, 4).join(', ') + (matches.length > 4 ? ', …' : '')
-          $.ui.status(`model-mod: ${name} "${id}" matches several Codex accounts (${list}); set the full ID.`)
+          warnModel(`model-mod: ${name} "${id}" matches several Codex accounts (${list}); set the full ID.`)
         } else {
-          $.ui.status(`model-mod: ${name} "${id}" is not one of this mod's model IDs; with Codex login use <account>/<model>. That feature is off.`)
+          warnModel(`model-mod: ${name} "${id}" is not one of this mod's model IDs; with Codex login use <account>/<model>. That feature is off.`)
         }
         return undefined
       }
-      $.ui.status(`model-mod: ${name} is not a model of this mod (it must be in the allowlist); that feature is off.`)
+      warnModel(`model-mod: ${name} is not a model of this mod (it must be in the allowlist); that feature is off.`)
       return undefined
     }
     built.fallbackModel = usable('fallbackModel')  // `candidate` was spread into `built`; only a checked value stays
@@ -1569,7 +1570,7 @@ function codexQuota(r: CodexReading): QuotaBlock {
   else if (r.problems.length) block.failed = r.problems.join('; ')
   else if (!windows.length) block.failed = 'the account reported no rate-limit windows'
   if (r.reached || r.ordinaryUsageAllowed === false) block.limit = r.reached ? r.reached.replace(/_/g, ' ') : ''
-  if (r.ordinaryUsageAllowed === true && !r.reached && [r.primary, r.secondary].some(w => typeof w?.remainingPercent === 'number' && Number.isFinite(w.remainingPercent) && w.remainingPercent <= 0)) block.allowedButFull = true
+  if (r.ordinaryUsageAllowed === true && !r.reached && windows.some(w => w.used !== null && w.used >= 100)) block.allowedButFull = true
   return block
 }
 
@@ -1775,10 +1776,14 @@ async function statusReport($: EngineInterface, e: { presentation?: { columns?: 
   return scrub(c, renderStatus(view, { columns: typeof columns === 'number' ? columns : 80, ascii: noColor, now: Math.floor(await $.clock.now() / 1000) }), false)
 }
 
-async function doctorReport($: EngineInterface, c: Config | null, columns?: number): Promise<string> {
+function codexMatches(c: Config, id: string): string[] {
+  return [...(c.codex?.keys() ?? [])].filter(model => model.endsWith('/' + id) && c.models.includes(model))
+}
+
+async function doctorReport($: EngineInterface, c: Config | undefined, columns?: number): Promise<string> {
   const checks: Check[] = []
   if (!c) {
-    checks.push({ mark: '!', what: 'Plugin configuration', cause: 'The picker is inactive.', next: await configHint($) })
+    checks.push(optionsCandidate(pluginOptions) === null ? { mark: '!', what: 'Plugin configuration', cause: 'The apiKey option holds characters that cannot be used.', next: 'Re-enter the key in plugin settings.' } : { mark: '!', what: 'Plugin configuration', cause: 'The picker is inactive.', next: await configHint($) })
     return renderDoctor(checks, columns)
   }
   checks.push({ mark: 'OK', what: 'Plugin active and configuration loaded' })
@@ -1787,7 +1792,7 @@ async function doctorReport($: EngineInterface, c: Config | null, columns?: numb
     const url = new URL(c.baseUrl)
     const host = loopbackHost(url.hostname) ? url.hostname : 'remote'
     const result = await modelList($, c.baseUrl, c.key)
-    checks.push(classifyModel('error' in result ? result.diagnosis : result.ids.length ? { category: 'ok' } : { category: 'not-json' }, host))
+    checks.push(classifyModel('error' in result ? result.diagnosis : result.ids.length ? { category: 'ok' } : { category: 'not-json' }, host, c.explicitModels))
   } else if (c.headerFile) {
     if (!await $.fs.exists(c.headerFile)) checks.push({ mark: '!', what: 'API header file', cause: 'The configured header file was not found.', next: 'Check the headerFile path.' })
     checks.push({ mark: '--', what: 'header-file upstream: not checked by doctor', next: 'use /model-mod:status and a chat request' })
@@ -1798,7 +1803,12 @@ async function doctorReport($: EngineInterface, c: Config | null, columns?: numb
     if (bad) checks.push({ mark: '!', what: name, cause: 'This setting is invalid; the default is in use.', next: 'Correct the setting in plugin settings.' })
   }
   for (const name of ['workerModel', 'fallbackModel'] as const) {
-    if (typeof pluginOptions[name] === 'string' && String(pluginOptions[name]).trim() && !c[name]) checks.push({ mark: '!', what: name, cause: 'The configured model was not accepted.', next: 'Choose a model in the allowlist or a full Codex model ID.' })
+    if (typeof pluginOptions[name] === 'string' && String(pluginOptions[name]).trim() && !c[name]) {
+      const id = String(pluginOptions[name]).trim()
+      const matches = !id.includes('/') ? codexMatches(c, id) : []
+      const list = matches.slice(0, 4).join(', ') + (matches.length > 4 ? ', …' : '')
+      checks.push({ mark: '!', what: name, cause: matches.length > 1 ? `The model matches several Codex accounts: ${list}.` : 'The configured model was not accepted.', next: matches.length > 1 || (!id.includes('/') && c.codex?.size) ? 'Use <account>/<model>.' : 'Choose a model in the allowlist or a full Codex model ID.' })
+    }
   }
   if (c.codexDirectoryUnavailable?.size) checks.push({ mark: '!', what: 'Codex account directory', cause: 'The account directory could not be determined.', next: 'Configure an absolute codexAccountsDir and reload the plugin.' })
   const readings = await Promise.all(codexAccountList(c).map(item => readCodexAccount($, c, item)))
@@ -1807,12 +1817,13 @@ async function doctorReport($: EngineInterface, c: Config | null, columns?: numb
     const quota = codexQuota(r)
     if (r.pythonMissing) checks.push({ mark: '!', what, cause: 'Python could not be started.', next: 'Install Python 3.9 or newer or check pythonBin.' })
     else if (r.tooOld) checks.push({ mark: '!', what, cause: 'Codex is too old.', next: 'Upgrade Codex to 0.165.0 or newer.' })
-    else if (r.checkExit === 66) checks.push({ mark: '!', what, cause: 'Codex was not found.', next: 'Install Codex or check codexBin.' })
+    else if (r.checkExit === 66) checks.push({ mark: '!', what, cause: 'Codex could not be started or did not answer.', next: 'Install Codex or check codexBin.' })
     else if (r.login === 'missing') checks.push({ mark: '!', what, cause: 'The account is not logged in or its directory is missing.', next: 'Run /model-mod:setup and check the account directory.' })
     else if (r.problems.length || r.login !== 'ok' || !r.limitsRead) checks.push({ mark: '!', what, cause: 'The login or quota query failed or timed out.', next: 'Check Python, codexBin and the account directory, then retry.' })
     else if (quota.allowedButFull) checks.push({ mark: 'LIMIT', what, cause: 'upstream still reports usage allowed; a window is full, so requests may fail', next: 'Wait for the quota reset or use another account.' })
     else if (quota.limit !== undefined || quota.windows.some(w => w.used !== null && w.used >= 100)) checks.push({ mark: 'LIMIT', what, cause: 'A quota window is full or upstream reports a limit.', next: 'Wait for the quota reset or use another account.' })
     else if (!quota.windows.length) checks.push({ mark: '!', what, cause: 'The account reported no quota windows.', next: 'Check /model-mod:status and try again later.' })
+    else if (quota.windows.some(w => w.used === null)) checks.push({ mark: '!', what, cause: 'A quota window reported no usage figure.', next: 'Check /model-mod:status and try again later.' })
     else checks.push({ mark: 'OK', what })
   }
   return renderDoctor(checks, columns)

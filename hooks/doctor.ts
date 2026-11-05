@@ -15,20 +15,21 @@ export function networkCategory(error: unknown): NetworkCategory {
   return 'unreachable'
 }
 
-export function classifyModel(result: ModelResult, host: string): Check {
+export function classifyModel(result: ModelResult, host: string, explicitModels = false): Check {
   const what = `API models list (${host})`
   if (result.category === 'ok') return { mark: 'OK', what }
+  if (explicitModels && (result.category === 'not-json' || (result.category === 'http' && [404, 405, 501].includes(result.status ?? 0)))) return { mark: '--', what: 'models list not supported by this server; using the models you configured' }
   let cause: string, next: string
   if (result.category === 'http' && (result.status === 401 || result.status === 403)) {
     cause = 'The API key was rejected.'; next = 'Check the API key in plugin settings.'
   } else if (result.category === 'http' && result.status === 404) {
-    cause = 'The base URL may have a missing or extra /v1.'; next = 'Set the base URL without /v1; see the setup documentation.'
+    cause = 'The base URL may include /v1 or a wrong path prefix.'; next = 'Set the base URL without /v1; see the setup documentation.'
   } else if (result.category === 'http' && result.status === 429) {
     cause = 'The API server rate limited the request.'; next = 'Wait and try again.'
   } else if (result.category === 'http' && (result.status ?? 0) >= 500) {
     cause = 'The API server returned an error.'; next = 'Try again later.'
   } else if (result.category === 'not-json') {
-    cause = 'The server did not return a valid, non-empty models list.'; next = 'Check that this is an OpenAI-compatible server.'
+    cause = 'The server did not return a valid, non-empty models list.'; next = 'Check that the server offers a /v1/models list, or set models explicitly.'
   } else if (result.category === 'http') {
     cause = `The API server returned HTTP ${result.status ?? 'error'}.`; next = 'Check the upstream server configuration.'
   } else {
