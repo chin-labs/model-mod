@@ -265,6 +265,65 @@ test('generate_image: the prompt names the path and pipeline refusals reach the 
   expect(outcomes[2]).toContain('Saved image to /work/generated-images/new.png (67 bytes, 1024x1024).')
 })
 
+// What generate_image answers, exactly: a refusal is `{ deny }`, a success `{ result }`. The tests below keep each text and the
+// order of the checks (arguments, then the permission verdict, then anything that runs) from changing unnoticed.
+const IMAGE_CALL = 'mcp__model-mod__generate_image'
+for (const [name, config] of [['no configuration', null], ['no image model', baseConfig]] as const) {
+  test(`generate_image: ${name} is refused and nothing is asked or run`, async ($, on) => {
+    const w = world(on, config, LOCAL, { stdout: '', code: 0 })
+    expect(await $.tool.call({ tool: IMAGE_CALL, prompt: 'red dot' } as never)).toEqual({ deny: 'Image generation is not configured.' })
+    expect(w.questions).toEqual([])
+    expect(w.spawned).toEqual([])
+    expect(w.ran.filter(argv => argv[0] === 'bash')).toEqual([])
+  })
+}
+
+test('generate_image: argument rules, permission verdicts and pipeline results keep their exact text', async ($, on) => {
+  let reply: RunReply = { exitCode: 0, stdout: '67\n' }
+  const bodies: string[] = []
+  const w = world(on, { ...baseConfig, imageModel: 'gpt-image-2' }, LOCAL, { stdout: '', code: 0 }, (argv, stdin) => {
+    if (argv[0] === 'bash') bodies.push(stdin ?? '')
+    return reply
+  })
+  let verdict: { decision: 'allow' | 'ask' | 'deny'; reason?: string } = { decision: 'ask' }
+  on('tool.check', { tool: IMAGE_CALL }, async () => verdict)
+  const call = (input: Record<string, unknown>) => $.tool.call({ tool: IMAGE_CALL, prompt: 'red dot', ...input } as never)
+  const pipelines = () => w.ran.filter(argv => argv[0] === 'bash').length
+
+  // Rejected before the person is asked and before anything runs.
+  const PROMPT = 'prompt must be 1-4000 characters.'
+  const SIZE = 'size or quality is not supported.'
+  const PATH = 'path must be a relative .png path inside the working directory without "." or ".." segments.'
+  const invalid: [Record<string, unknown>, string][] = [
+    [{ prompt: '' }, PROMPT], [{ prompt: '   ' }, PROMPT], [{ prompt: 'x'.repeat(4001) }, PROMPT], [{ prompt: 42 }, PROMPT],
+    [{ size: '2048x2048' }, SIZE], [{ quality: 'ultra' }, SIZE],
+    [{ path: '/abs/x.png' }, PATH], [{ path: 'a//b.png' }, PATH], [{ path: 'x.jpg' }, PATH], [{ path: 'sp ace.png' }, PATH],
+  ]
+  for (const [input, text] of invalid) expect([input, await call(input)]).toEqual([input, { deny: text }])
+  expect(w.questions).toEqual([])
+  expect(pipelines()).toBe(0)
+
+  // The question shows the prompt cut at 200 characters; a refusal, from the person or from the check, ends the call.
+  w.answers = ['No']
+  expect(await call({ prompt: 'a'.repeat(250), path: 'p.png' })).toEqual({ deny: 'The user declined this tool call.' })
+  expect(w.questions.map(q => q.question)).toEqual([`Generate an image and save it to p.png: "${'a'.repeat(200)}"?`])
+  verdict = { decision: 'deny', reason: 'image tools are off' }
+  expect(await call({})).toEqual({ deny: 'image tools are off' })
+  expect(w.questions.length).toBe(1)
+  expect(pipelines()).toBe(0)
+
+  verdict = { decision: 'allow' }
+  reply = { exitCode: 1, stdout: '' }
+  expect(await call({})).toEqual({ deny: 'Image request failed (no output).' })
+  reply = { exitCode: 1, stdout: 'e'.repeat(150) + '\n' }
+  expect(await call({})).toEqual({ deny: `Image request failed (${'e'.repeat(100)}).` })
+  reply = { exitCode: 0, stdout: '67\n' }
+  expect(await call({ prompt: '  red dot  ', size: '1536x1024', quality: 'high', path: 'a/b.png' })).toEqual({
+    result: 'Saved image to /work/a/b.png (67 bytes, 1536x1024). Open it with the Read tool to look at it.' })
+  expect(JSON.parse(bodies.at(-1)!)).toEqual({ model: 'gpt-image-2', prompt: 'red dot', size: '1536x1024', quality: 'high', n: 1 })
+  expect(w.questions.length).toBe(1)
+})
+
 test('a bridge model is answered by the upstream and never reaches the chain', async ($, on) => {
   const w = world(on, baseConfig, LOCAL, { stdout: SSE_OK, code: 0 })
   w.toolsList = ['ToolSearch', 'Read']
@@ -2133,6 +2192,64 @@ test('Codex image generation requests permission and validates PNG before writin
   expect(await call('existing.png')).toContain('Could not save image')
   expect(await call('link/escape.png')).toContain('Could not save image')
   expect(w.spawned.length).toBe(2)
+})
+
+// Every place the Codex branch of generate_image can end, in the order it reaches them: the path check, the helper, the PNG
+// check, the write. `stage` says how far a case gets (a helper is spawned from 'helper' on, a write runs at 'write').
+test('generate_image (Codex login): each helper outcome keeps its exact text and stops where it should', { options: CODEX_OPTIONS }, async ($, on) => {
+  const GOOD = { ok: true, bytes_b64: 'iVBORw0KGgppbWFnZQ==', size: 13 }
+  const CHECK_FAILED = 'Could not check image output path.'
+  const NOT_SAVED = 'Could not save image; check the path and ensure the file does not already exist.'
+  const NOT_PNG = 'Codex returned an invalid PNG or an image exceeding 20 MB.'
+  let check: RunReply, write: RunReply
+  const helper: SpawnReply = { stdout: '', code: 0 }
+  const w = world(on, null, CODEX_MODEL, helper, argv => argv.includes('--check') ? check : argv.includes('--write') ? write : { exitCode: 0, stdout: '{}' })
+  let verdict: { decision: 'allow' | 'ask' } = { decision: 'allow' }
+  on('tool.check', { tool: IMAGE_CALL }, async () => verdict)
+  const call = (input: Record<string, unknown>) => $.tool.call({ tool: IMAGE_CALL, prompt: 'red dot', path: 'case.png', ...input } as never)
+  const writes = () => w.ran.filter(argv => argv.includes('--write')).length
+
+  type Case = { label: string; stage: 'check' | 'helper' | 'write'; check?: RunReply; helper?: unknown; closed?: true; write?: RunReply; expected: { deny: string } | { result: string } }
+  const bytes = (b64?: string) => ({ ok: true, ...(b64 === undefined ? {} : { bytes_b64: b64 }), size: 1 })
+  const cases: Case[] = [
+    { label: 'check exits non-zero', stage: 'check', check: { exitCode: 1, stdout: '' }, expected: { deny: CHECK_FAILED } },
+    { label: 'check refuses without a message', stage: 'check', check: { exitCode: 0, stdout: '{"ok":false}' }, expected: { deny: CHECK_FAILED } },
+    { label: 'check prints no JSON', stage: 'check', check: { exitCode: 0, stdout: 'not json' }, expected: { deny: 'Image request failed (SyntaxError).' } },
+    { label: 'helper refuses with a message', stage: 'helper', helper: { ok: false, message: 'quota used' }, expected: { deny: 'quota used' } },
+    { label: 'helper refuses without a message', stage: 'helper', helper: { ok: false }, expected: { deny: 'Codex image generation failed.' } },
+    { label: 'helper output over the limit', stage: 'helper', helper: 'x'.repeat(28_100_001), closed: true, expected: { deny: 'Image exceeds the 20 MB limit; request a smaller image.' } },
+    { label: 'no image bytes', stage: 'helper', helper: bytes(), expected: { deny: NOT_PNG } },
+    { label: 'not a PNG', stage: 'helper', helper: bytes('YmFk'), expected: { deny: NOT_PNG } },
+    { label: 'a character outside base64', stage: 'helper', helper: bytes('iVBORw0KGgo!'), expected: { deny: NOT_PNG } },
+    { label: 'padding before the end', stage: 'helper', helper: bytes('iVBORw0KGgo=AAAA'), expected: { deny: NOT_PNG } },
+    { label: 'length not a multiple of 4', stage: 'helper', helper: bytes('iVBORw0KGgoAA'), expected: { deny: NOT_PNG } },
+    { label: 'write exits non-zero', stage: 'write', write: { exitCode: 1, stdout: '' }, expected: { deny: NOT_SAVED } },
+    { label: 'write refuses with a message', stage: 'write', write: { exitCode: 0, stdout: '{"ok":false,"message":"disk full"}' }, expected: { deny: 'disk full' } },
+    { label: 'write refuses without a message', stage: 'write', write: { exitCode: 0, stdout: '{"ok":false}' }, expected: { deny: NOT_SAVED } },
+    { label: 'saved', stage: 'write', expected: { result: 'Saved image to /work/case.png (13 bytes). Requested size and quality are not guaranteed. Open it with the Read tool to look at it.' } },
+  ]
+  for (const item of cases) {
+    check = item.check ?? { exitCode: 0, stdout: '{"ok":true}' }
+    write = item.write ?? { exitCode: 0, stdout: '{"ok":true,"size":13}' }
+    helper.stdout = typeof item.helper === 'string' ? item.helper : JSON.stringify(item.helper ?? GOOD)
+    const spawned = w.spawned.length, written = writes(), killed = w.killed
+    const outcome = await call({ size: '1536x1024', quality: 'high' })
+    expect([item.label, outcome]).toEqual([item.label, item.expected])
+    expect([item.label, w.spawned.length - spawned, writes() - written]).toEqual([item.label, item.stage === 'check' ? 0 : 1, item.stage === 'write' ? 1 : 0])
+    // The oversized helper is closed, and only that one.
+    expect([item.label, w.killed - killed]).toEqual([item.label, item.closed ? 1 : 0])
+  }
+  const sent = JSON.parse(w.spawned.at(-1)!.input!) as Record<string, unknown>
+  expect({ prompt: sent.prompt, size: sent.size, quality: sent.quality, account: sent.account, model: sent.model })
+    .toEqual({ prompt: 'red dot', size: '1536x1024', quality: 'high', account: 'main', model: 'gpt-6.1-terra' })
+
+  // The question names OpenAI and the full destination, and shows the prompt cut at 200 characters; a refusal starts no helper.
+  verdict = { decision: 'ask' }
+  w.answers = ['No']
+  const started = w.spawned.length
+  expect(await call({ prompt: 'a'.repeat(250), path: 'p.png' })).toEqual({ deny: 'The user declined this tool call.' })
+  expect(w.questions.map(q => q.question)).toEqual([`Send this prompt to OpenAI to generate an image and save it to /work/p.png: "${'a'.repeat(200)}"?`])
+  expect(w.spawned.length).toBe(started)
 })
 
 test('Codex login: at most four helpers run concurrently', { options: CODEX_OPTIONS }, async ($, on) => {
