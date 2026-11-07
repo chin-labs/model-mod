@@ -684,6 +684,24 @@ def device_login(args):
         proc.stdout.close()
 
 
+def rate_limit_summary(limits):
+    snapshot = limits.get('rateLimits') or {}
+    reached = snapshot.get('rateLimitReachedType')
+    allowed_reached = ('rate_limit_reached', 'workspace_owner_credits_depleted', 'workspace_member_credits_depleted', 'workspace_owner_usage_limit_reached', 'workspace_member_usage_limit_reached')
+    ordinary = limits.get('ordinaryUsageAllowed')
+    result = {'ordinaryUsageAllowed': ordinary if type(ordinary) is bool else None,
+              'rateLimitReachedType': reached if reached in allowed_reached else None}
+    credits = snapshot.get('credits')
+    result['credits'] = {'hasCredits': credits.get('hasCredits') if type(credits.get('hasCredits')) is bool else None, 'unlimited': credits.get('unlimited') if type(credits.get('unlimited')) is bool else None, 'balance': credits.get('balance') if isinstance(credits.get('balance'), str) and re.fullmatch(r'[0-9.]+', credits['balance']) else None} if isinstance(credits, dict) else None
+    for key in ('primary', 'secondary'):
+        window = snapshot.get(key)
+        if isinstance(window, dict):
+            used = window.get('usedPercent')
+            result[key] = {'remainingPercent': 100 - used if type(used) in (int, float) else None, 'resetsAt': window.get('resetsAt') if type(window.get('resetsAt')) is int else None, 'windowDurationMins': window.get('windowDurationMins') if type(window.get('windowDurationMins')) is int else None}
+        else: result[key] = None
+    return result
+
+
 def main():
     if sys.version_info < (3, 9):
         print('model-mod-note:Codex login: Python 3.9 or newer required', file=sys.stderr)
@@ -836,20 +854,7 @@ def main():
                         print(json.dumps({'models': models}), flush=True)
                     elif args.command == 'rate-limits':
                         limits = app.request('account/rateLimits/read', {})
-                        snapshot = limits.get('rateLimits') or {}
-                        reached = snapshot.get('rateLimitReachedType')
-                        allowed_reached = ('rate_limit_reached', 'workspace_owner_credits_depleted', 'workspace_member_credits_depleted', 'workspace_owner_usage_limit_reached', 'workspace_member_usage_limit_reached')
-                        ordinary = limits.get('ordinaryUsageAllowed')
-                        result = {'ordinaryUsageAllowed': ordinary if type(ordinary) is bool else None,
-                                  'rateLimitReachedType': reached if reached in allowed_reached else None}
-                        credits = snapshot.get('credits')
-                        result['credits'] = {'hasCredits': credits.get('hasCredits') if type(credits.get('hasCredits')) is bool else None, 'unlimited': credits.get('unlimited') if type(credits.get('unlimited')) is bool else None, 'balance': credits.get('balance') if isinstance(credits.get('balance'), str) and re.fullmatch(r'[0-9.]+', credits['balance']) else None} if isinstance(credits, dict) else None
-                        for key in ('primary', 'secondary'):
-                            window = snapshot.get(key)
-                            if isinstance(window, dict):
-                                used = window.get('usedPercent')
-                                result[key] = {'remainingPercent': 100 - used if type(used) in (int, float) else None, 'resetsAt': window.get('resetsAt') if type(window.get('resetsAt')) is int else None, 'windowDurationMins': window.get('windowDurationMins') if type(window.get('windowDurationMins')) is int else None}
-                            else: result[key] = None
+                        result = rate_limit_summary(limits)
                         print(json.dumps(result, ensure_ascii=False), flush=True)
                     elif args.command == 'account-info':
                         account = app.request('account/read', {'refreshToken': False}).get('account')
