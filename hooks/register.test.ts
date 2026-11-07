@@ -48,14 +48,8 @@ function quotaLine(on: On): { statuses: (string | undefined)[]; toasts: string[]
 // The value of one row of the status layout ("  [!] webSearch      on").
 const statusRow = (text: string, label: string) => new RegExp(`^\\s*(?:\\[!\\]\\s+)?${label} {2,}(.*)$`, 'm').exec(text)?.[1]
 
-function world(on: On, config: Record<string, unknown> | null, model: string, spawn: SpawnReply | SpawnReply[],
-  run?: RunReply | ((argv: readonly string[], stdin?: string) => RunReply), env: Record<string, string> = {}): World {
-  const w: World = { starts: [], openPanes: new Set(), opened: [], closed: [], system: 'Linux', killed: 0, spawned: [], ran: [], ranEnv: [], reached: [], envSet: [], messagesRead: 0, toolListCalls: 0, failEnvSets: 0,
-    switchEnv: [], toolDescriptions: {}, answers: ['Keep (recommended)', 'All (recommended)'], questions: [], scopes: {}, files: {}, writes: [], saved: [], registered: [], configValues: {}, models: null, store: {}, picker: [], fetched: [], current: model, agents: [], modelRuns: [], limits: [], clock: undefined as never }
-  // The test engine has no plugin.root; supply prompt files explicitly instead of built-in text.
-  for (const name of ['compact', 'title', 'subagent-note', 'worker']) w.files[PROMPTS_DIR + '/' + name + '.md'] = 'TEST ' + name + ' prompt\n'
-  w.clock = mock.clock(on)
-  mock.env(on, { HOME: '/fake-home', CLAUDE_CONFIG_DIR: '/fake-config', ...(config ? { MODEL_MOD_CONFIG: CONFIG_PATH } : {}), ...env })
+// The fixture's handlers, one installer per domain. `world` calls them in the order the handlers must be registered (a later one wraps an earlier one).
+function installHttp(on: On, w: World): void {
   on('http.fetch', async (_$, e) => {
     w.fetched.push({ url: e.url, auth: e.init?.headers?.authorization?.slice(0, 6), matchesKey: e.init?.headers?.authorization?.slice(7) === KEY })
     if (w.fetchDelay) await w.clock.sleep(w.fetchDelay)
@@ -64,6 +58,8 @@ function world(on: On, config: Record<string, unknown> | null, model: string, sp
     if (w.models === null) throw new Error('unreachable')
     return { value: { status: 200, ok: true, headers: {}, text: JSON.stringify({ data: w.models.map(id => ({ id })) }) } }
   })
+}
+function installUi(on: On, w: World): void {
   // A pane is seated only when a test says so (w.paneSeat): otherwise setup asks its menus as dialogs, as in -p or a small terminal.
   on('ui.open', async (_$, e) => {
     w.opened.push(e.id)
@@ -75,15 +71,21 @@ function world(on: On, config: Record<string, unknown> | null, model: string, sp
     w.closed.push(e.id); w.openPanes.delete(e.id); return { value: undefined }
   })
   on('ui.panes', async () => ({ value: [...w.openPanes].map(id => ({ id, title: id, isShown: true, isFocused: true, isPlaced: true })) }))
+}
+function installStore(on: On, w: World): void {
   on('store.get', async (_$, e) => ({ value: w.store[e.key] }))
   on('store.set', async (_$, e) => { w.store[e.key] = e.value; return { value: undefined } })
   on('settings.read', async (_$, e) => {
     if (!e.source) return { value: w.picker.length ? { modelPicker: { options: w.picker } } : {} }
     return { value: w.scopes[e.source] ?? {} }
   })
+}
+function installFiles(on: On, w: World): void {
   on('session.cwd', async () => ({ value: '/work' }))
   on('fs.exists', async (_$, e) => ({ value: e.path in w.files }))
   on('fs.write', async (_$, e) => { w.files[e.path] = e.text; w.writes.push(e.path); return { value: undefined } })
+}
+function installConfig(on: On, w: World): void {
   on('config.list', async () => {
     if (w.unloaded) throw new Error('environment is unloaded')
     w.onList?.()
@@ -107,7 +109,8 @@ function world(on: On, config: Record<string, unknown> | null, model: string, sp
     }
     return { value: e.value }
   })
-
+}
+function installAskUserQuestion(on: On, w: World): void {
   on('tool.call', { tool: 'AskUserQuestion' }, async (_$, e) => {
     const q = e.questions[0]!
     if (q.question.startsWith('Choose an upstream.') && !w.chooseUpstream) return { result: { questions: e.questions, answers: { [q.question]: 'Compatible API server' } } }
@@ -119,12 +122,17 @@ function world(on: On, config: Record<string, unknown> | null, model: string, sp
     if (answer === null || answer === undefined) return { deny: 'dismissed' }
     return { result: { questions: e.questions, answers: { [q.question]: answer } } }
   })
+}
+// The config file and the tools file are read from the test's config; any other path goes down the chain.
+function installFileRead(on: On, w: World, config: Record<string, unknown> | null): void {
   on('fs.read', async (_$, e, next) => {
     if (e.path in w.files) return { value: w.files[e.path]! }
     if (config && e.path === CONFIG_PATH) return { value: JSON.stringify(config) }
     if (e.path === baseConfig.toolsFile) return { value: JSON.stringify({ tools: [] }) }
     return next(e)
   })
+}
+function installSession(on: On, w: World): void {
   on('session.model', async () => ({ value: w.current }))
   on('session.usage', async () => ({ value: { startedAt: 0, context: { window: 1_000_000 }, rateLimits: w.limits, ...w.usage } as never }))
   on('session.messages', async () => {
@@ -142,6 +150,8 @@ function world(on: On, config: Record<string, unknown> | null, model: string, sp
     return { value: undefined }
   })
   on('prompt.compose', async () => ({ sections: [{ id: 'intro', text: 'sys', scope: 'session' as const }] }))
+}
+function installProcesses(on: On, w: World, spawn: SpawnReply | SpawnReply[], run?: RunReply | ((argv: readonly string[], stdin?: string) => RunReply)): void {
   on('process.spawn', async function* (_$, e, next) {
     w.spawned.push({ argv: e.argv, input: e.input, env: e.env })
     const reply = Array.isArray(spawn) ? spawn[Math.min(w.spawned.length - 1, spawn.length - 1)]! : spawn
@@ -160,6 +170,9 @@ function world(on: On, config: Record<string, unknown> | null, model: string, sp
     const reply: RunReply | undefined = e.argv[0] === 'uname' ? { exitCode: 0, stdout: w.system + '\n' } : typeof run === 'function' ? run(e.argv, e.init?.stdin) : run
     return { value: { exitCode: reply?.exitCode ?? 1, stdout: reply?.stdout ?? '', stderr: reply?.stderr ?? '', isStdoutTruncated: reply?.isStdoutTruncated ?? false, isStderrTruncated: false } }
   })
+}
+// Turn and compaction; session.start is registered right after them.
+function installTurn(on: On, w: World): void {
   on('turn.step', async function* (_$, e) {
     w.reached.push('turn.step')
     return { turnId: e.turnId, index: e.index, answer: 'engine', toolUses: [], stopReason: 'end_turn',
@@ -168,6 +181,8 @@ function world(on: On, config: Record<string, unknown> | null, model: string, sp
   on('session.compact', async (_$, e) => { w.reached.push('session.compact'); return { skip: 'engine' } })
   on('turn.complete', async (_$, e) => ({ text: e.answer }))
   on('session.start', async (_$, e) => ({ cwd: '/work' }))
+}
+function installRegistrations(on: On, w: World): void {
   on('classic.PostModelSwitch', async () => ({}))
   on('command.register', async (_$, e) => { w.registered.push(e.name); return { value: { command: e.name } } })
   on('tool.register', async (_$, e) => { w.toolRegistrations = (w.toolRegistrations ?? 0) + 1; w.toolDescriptions[e.name] = e.description; return { value: { tool: e.name } } })
@@ -177,6 +192,27 @@ function world(on: On, config: Record<string, unknown> | null, model: string, sp
     w.reached.push('command.run')
     return { text: 'engine' }
   })
+}
+
+function world(on: On, config: Record<string, unknown> | null, model: string, spawn: SpawnReply | SpawnReply[],
+  run?: RunReply | ((argv: readonly string[], stdin?: string) => RunReply), env: Record<string, string> = {}): World {
+  const w: World = { starts: [], openPanes: new Set(), opened: [], closed: [], system: 'Linux', killed: 0, spawned: [], ran: [], ranEnv: [], reached: [], envSet: [], messagesRead: 0, toolListCalls: 0, failEnvSets: 0,
+    switchEnv: [], toolDescriptions: {}, answers: ['Keep (recommended)', 'All (recommended)'], questions: [], scopes: {}, files: {}, writes: [], saved: [], registered: [], configValues: {}, models: null, store: {}, picker: [], fetched: [], current: model, agents: [], modelRuns: [], limits: [], clock: undefined as never }
+  // The test engine has no plugin.root; supply prompt files explicitly instead of built-in text.
+  for (const name of ['compact', 'title', 'subagent-note', 'worker']) w.files[PROMPTS_DIR + '/' + name + '.md'] = 'TEST ' + name + ' prompt\n'
+  w.clock = mock.clock(on)
+  mock.env(on, { HOME: '/fake-home', CLAUDE_CONFIG_DIR: '/fake-config', ...(config ? { MODEL_MOD_CONFIG: CONFIG_PATH } : {}), ...env })
+  installHttp(on, w)
+  installUi(on, w)
+  installStore(on, w)
+  installFiles(on, w)
+  installConfig(on, w)
+  installAskUserQuestion(on, w)
+  installFileRead(on, w, config)
+  installSession(on, w)
+  installProcesses(on, w, spawn, run)
+  installTurn(on, w)
+  installRegistrations(on, w)
   return w
 }
 
