@@ -1,6 +1,8 @@
 import ast
+import io
 import json
 import os
+import queue
 import signal
 import shutil
 import subprocess
@@ -920,6 +922,46 @@ class DelegateTest(unittest.TestCase):
             bounded = delegate.diff_prompt(('diff_' + 'a' * 32).encode())
         self.assertIn('<diff_' + 'b' * 32 + '>', bounded)
         with self.assertRaisesRegex(delegate.Failure, 'Invalid base ref'): delegate.diff_for(str(self.repo), 'main;touch x')
+
+    def test_jsonrpc_line_and_response_matching(self):
+        stdin = io.StringIO()
+        with patch.object(delegate.subprocess, 'Popen', return_value=Mock(pid=1, stdin=stdin, stdout=io.StringIO(''))):
+            writer_app = delegate.App(dict(self.request), own_group=False)
+        try:
+            self.assertTrue(writer_app.send({'id': 1, 'method': 'm', 'params': {'text': '\u00e9\u2713'}}).wait(2))
+            self.assertEqual(stdin.getvalue(), '{"id": 1, "method": "m", "params": {"text": "\u00e9\u2713"}}\n')
+            for failure in (OSError, ValueError):
+                writer_app.proc.stdin = Mock(write=Mock(side_effect=failure))
+                self.assertTrue(writer_app.send({'id': 2}).wait(2))
+        finally:
+            writer_app.writes.put(None)
+            writer_app.writer.join(2)
+        notice = {'method': 'thread/tokenUsage/updated', 'params': {}}
+        other = {'id': 99, 'result': {}}
+        text_id = {'id': '1', 'result': {}}
+        server = {'id': 1, 'method': 'item/tool/call', 'params': {}}
+        def client(*messages):
+            app = object.__new__(delegate.App)
+            app.counter, app.pending, app.send = 0, [], Mock()
+            app.next = Mock(side_effect=list(messages))
+            return app
+        # Behind the real next() the server request below is refused first; this pins the guard in request().
+        app = client(notice, other, text_id, server, {'id': 1, 'result': {'ok': 1}})
+        self.assertEqual(app.request('m', {'p': 1}), {'ok': 1})
+        app.send.assert_called_once_with({'id': 1, 'method': 'm', 'params': {'p': 1}})
+        self.assertEqual(app.pending, [notice, other, text_id, server])
+        app = client({'id': 1, 'error': {'code': -32601, 'message': 'private'}})
+        with self.assertRaises(delegate.Failure) as caught: app.request('m', {})
+        self.assertEqual(str(caught.exception), 'Codex method unavailable; update Codex CLI.')
+        app = object.__new__(delegate.App)
+        app.counter, app.pending, app.send = 0, [], Mock()
+        app.deadline, app.idle, app.background, app.write, app.turn = time.monotonic() + 10, 5, False, False, None
+        app.queue = queue.Queue()
+        for message in (notice, server, {'id': 1, 'result': {'ok': 1}}): app.queue.put(message)
+        self.assertEqual(app.request('m', {'p': 1}), {'ok': 1})
+        self.assertEqual(app.send.call_args_list, [call({'id': 1, 'method': 'm', 'params': {'p': 1}}),
+                                                  call({'id': 1, 'result': {'contentItems': [], 'success': False}})])
+        self.assertEqual(app.pending, [notice])
 
 
 if __name__ == '__main__': unittest.main()

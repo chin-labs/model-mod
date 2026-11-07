@@ -3,7 +3,7 @@ import base64
 import argparse
 import contextlib
 import io
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import bridge
 import os
@@ -895,6 +895,25 @@ class Contract(unittest.TestCase):
         r = self.run_bridge(mode='forbidden_response')
         self.assertIn('unsupported codex behavior: fileChange', r.stdout)
         self.assertIn('model-mod-http:502', r.stderr)
+
+    def test_jsonrpc_line_and_response_matching(self):
+        app = object.__new__(bridge.App)
+        app.proc = Mock(stdin=io.StringIO())
+        app.send({'id': 1, 'method': 'm', 'params': {'text': '\u00e9\u2713'}})
+        self.assertEqual(app.proc.stdin.getvalue(), '{"id": 1, "method": "m", "params": {"text": "\u00e9\u2713"}}\n')
+        app.proc.stdin = Mock(write=Mock(side_effect=BrokenPipeError))
+        with self.assertRaises(bridge.BridgeError) as caught: app.send({'id': 2})
+        self.assertEqual(str(caught.exception), 'Codex login: incompatible codex app-server protocol (app-server flags or startup)')
+        notice = {'method': 'thread/tokenUsage/updated', 'params': {}}
+        other = {'id': 99, 'result': {}}
+        text_id = {'id': '1', 'result': {}}
+        server = {'id': 1, 'method': 'item/tool/call', 'params': {}}
+        app = object.__new__(bridge.App)
+        app.counter, app.pending, app.send = 0, [], Mock()
+        app.next = Mock(side_effect=[notice, other, text_id, server, {'id': 1, 'result': {'ok': 1}}])
+        self.assertEqual(app.request('m', {'p': 1}), {'ok': 1})
+        app.send.assert_called_once_with({'id': 1, 'method': 'm', 'params': {'p': 1}})
+        self.assertEqual(app.pending, [notice, other, text_id, server])
 
 
 if __name__ == '__main__': unittest.main()
