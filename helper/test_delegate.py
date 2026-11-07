@@ -11,6 +11,7 @@ import unittest
 from unittest.mock import Mock, call, patch
 from pathlib import Path
 
+import bridge
 import delegate
 import image
 
@@ -19,6 +20,29 @@ HELPER = str(Path(__file__).with_name('delegate.py').resolve())
 
 
 class DelegateTest(unittest.TestCase):
+    def test_feature_sets_match_baseline(self):
+        bridge_old = frozenset(('apps', 'multi_agent', 'unified_exec', 'shell_tool', 'view_image',
+                                'image_generation', 'browser_use', 'in_app_browser', 'goals', 'sleep_tool',
+                                'computer_use', 'tool_suggest', 'skill_search', 'plugins', 'remote_plugin',
+                                'hooks', 'guardian_approval', 'incremental_tools', 'browser_annotation_api',
+                                'browser_use_external', 'browser_use_full_cdp_access', 'plugin_sharing',
+                                'skill_mcp_dependency_install'))
+        delegate_old = frozenset(('apps', 'multi_agent', 'image_generation', 'browser_use', 'in_app_browser',
+                                  'goals', 'memories', 'computer_use', 'plugins', 'remote_plugin', 'hooks',
+                                  'guardian_approval', 'incremental_tools', 'browser_annotation_api',
+                                  'browser_use_external', 'browser_use_full_cdp_access', 'plugin_sharing',
+                                  'skill_mcp_dependency_install', 'skill_search', 'tool_suggest', 'sleep_tool'))
+        image_old = frozenset(('apps', 'multi_agent', 'unified_exec', 'shell_tool', 'view_image',
+                               'browser_use', 'in_app_browser', 'goals', 'sleep_tool', 'computer_use',
+                               'tool_suggest', 'skill_search', 'plugins', 'remote_plugin', 'hooks',
+                               'guardian_approval', 'incremental_tools', 'browser_annotation_api',
+                               'browser_use_external', 'browser_use_full_cdp_access', 'plugin_sharing',
+                               'skill_mcp_dependency_install', 'memories'))
+        for actual, expected in ((bridge.FEATURES, bridge_old), (delegate.FEATURES, delegate_old),
+                                 (image.IMAGE_DISABLED, image_old)):
+            self.assertEqual(frozenset(actual), expected)
+            self.assertEqual(len(actual), len(set(actual)))
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix='model-mod-delegate-test-')
         self.root = Path(self.tmp.name).resolve()

@@ -15,12 +15,10 @@ import threading
 import time
 from types import SimpleNamespace
 
-from bridge import account_home, env, note, verify_version
+from bridge import COMMON_FEATURES, account_home, env, note, verify_version
 
-FEATURES = ('apps', 'multi_agent', 'image_generation', 'browser_use', 'in_app_browser', 'goals', 'memories',
-            'computer_use', 'plugins', 'remote_plugin', 'hooks', 'guardian_approval', 'incremental_tools',
-            'browser_annotation_api', 'browser_use_external', 'browser_use_full_cdp_access', 'plugin_sharing',
-            'skill_mcp_dependency_install', 'skill_search', 'tool_suggest', 'sleep_tool')
+DELEGATE_ONLY_FEATURES = ('memories',)
+FEATURES = COMMON_FEATURES + DELEGATE_ONLY_FEATURES
 MAX_DIFF = 200_000
 MAX_OUTPUT = 64_000
 TOTAL_SECONDS = 300

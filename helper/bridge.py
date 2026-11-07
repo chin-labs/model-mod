@@ -40,9 +40,13 @@ ALLOWED_MCP_TOOLS = frozenset(('list_mcp_resources', 'list_mcp_resource_template
 TOOL_INSTRUCTIONS = ('Use only the provided function tools. Do not use built-in sleep, wait, collaboration, or subagent tools. '
                      'To wait for background work, end this turn; the client will notify you when it completes.')
 NOT_CHAT = re.compile(r'claude|anthropic|image|auto-review|embed|tts|whisper|moderation', re.I)
-FEATURES = ('apps', 'multi_agent', 'unified_exec', 'shell_tool', 'view_image', 'image_generation', 'browser_use', 'in_app_browser', 'goals',
-            'sleep_tool', 'computer_use', 'tool_suggest', 'skill_search', 'plugins', 'remote_plugin', 'hooks', 'guardian_approval',
-            'incremental_tools', 'browser_annotation_api', 'browser_use_external', 'browser_use_full_cdp_access', 'plugin_sharing', 'skill_mcp_dependency_install')
+COMMON_FEATURES = ('apps', 'multi_agent', 'image_generation', 'browser_use', 'in_app_browser', 'goals',
+                   'sleep_tool', 'computer_use', 'tool_suggest', 'skill_search', 'plugins', 'remote_plugin',
+                   'hooks', 'guardian_approval', 'incremental_tools', 'browser_annotation_api',
+                   'browser_use_external', 'browser_use_full_cdp_access', 'plugin_sharing',
+                   'skill_mcp_dependency_install')
+BRIDGE_ONLY_FEATURES = ('unified_exec', 'shell_tool', 'view_image')
+FEATURES = COMMON_FEATURES + BRIDGE_ONLY_FEATURES
 
 
 class BridgeError(Exception):

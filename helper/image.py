@@ -15,7 +15,9 @@ from delegate import App, Cancelled, Failure, cancel, checked_project_layers
 
 MAX_IMAGE = 20 * 1024 * 1024
 MAX_LINE = (MAX_IMAGE + 2) // 3 * 4 + 65536
-IMAGE_DISABLED = tuple(f for f in FEATURES if f != 'image_generation') + ('memories',)
+IMAGE_ENABLED_FEATURES = ('image_generation',)
+IMAGE_ONLY_DISABLED_FEATURES = ('memories',)
+IMAGE_DISABLED = tuple(f for f in FEATURES if f not in IMAGE_ENABLED_FEATURES) + IMAGE_ONLY_DISABLED_FEATURES
 
 
 def remove_generated(home, path):
