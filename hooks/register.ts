@@ -1910,6 +1910,86 @@ async function admin($: EngineInterface, e: { origin: { kind: string }; presenta
   return { text: await statusReport($, e, c) }
 }
 
+// The generate_image tool call: registered in `register`, which holds the other tool calls too.
+async function imageToolCall($: EngineInterface, e: { tool: string; agentId?: string }, next: { readonly signal: AbortSignal }) {
+  // A refusal reaches the model as an error result; a success is the plain text of the result.
+  const answer = (text: string, isError = false) => isError ? { deny: text } : { result: text }
+  try {
+    const c = await load($)
+    if (!c) return answer('Image generation is not configured.', true)
+    // Only a turn that already runs on a bridge model may use image generation.
+    const model = await bridgeModel($, e, c)
+    if (model === undefined) {
+      return answer('generate_image is only available while a local model is selected. Select a local model to use this tool.', true)
+    }
+    const codex = c.codex?.get(model)
+    if (!codex && !c.imageModel) return answer('Image generation is not configured.', true)
+    if (!codex && c.key === undefined && c.headerFile === undefined) return answer('API server is not configured.', true)
+    const input = e as unknown as Record<string, unknown>
+    const prompt = typeof input.prompt === 'string' ? input.prompt.trim() : ''
+    if (!prompt || prompt.length > 4000) return answer('prompt must be 1-4000 characters.', true)
+    const size = input.size ?? '1024x1024'
+    const quality = input.quality ?? 'medium'
+    if (!['1024x1024', '1536x1024', '1024x1536', 'auto'].includes(String(size)) ||
+        !['low', 'medium', 'high', 'auto'].includes(String(quality))) return answer('size or quality is not supported.', true)
+    const cwd = (await $.session.cwd()).replace(/\/+$/, '') || '/'
+    const given = typeof input.path === 'string' ? input.path : `generated-images/image-${Date.now()}.png`
+    if (!/^[A-Za-z0-9._\/-]{1,200}\.png$/.test(given) || given.startsWith('/') || given.split('/').some(part => part === '.' || part === '..' || part === '')) {
+      return answer('path must be a relative .png path inside the working directory without "." or ".." segments.', true)
+    }
+    const out = `${cwd}/${given}`
+    const refused = await permitted($, e, IMAGE_TOOL, codex
+      ? `Send this prompt to OpenAI to generate an image and save it to ${out}: "${prompt.slice(0, 200)}"?`
+      : `Generate an image and save it to ${given}: "${prompt.slice(0, 200)}"?`, IMAGE_TOOL + (codex ? ":codex" : ":api"))
+    if (refused) return answer(refused, true)
+    if (codex) {
+      if (!c.accountsDir || !$.plugin.root) return answer('Codex account or plugin directory is unavailable.', true)
+      const root = $.plugin.root.replace(/[\\/]+$/, '')
+      const sep = root.includes('\\') && !root.includes('/') ? '\\' : '/'
+      const script = root + sep + 'helper' + sep + 'image.py'
+      const check = await $.process.run([c.pythonBin ?? 'python3', '-E', '-s', script, '--check'],
+        { stdin: JSON.stringify({ cwd, path: given }), timeoutMs: 30_000 })
+      if (check.exitCode !== 0) return answer('Could not check image output path.', true)
+      const checked = JSON.parse(check.stdout) as { ok?: boolean; message?: string }
+      if (!checked.ok) return answer(checked.message ?? 'Could not check image output path.', true)
+      const child = $.process.spawn({ argv: [c.pythonBin ?? 'python3', '-E', '-s', script], cwd,
+        input: JSON.stringify({ prompt, size, quality, cwd, account: codex.account, directory: codex.directory,
+          accountsDir: c.accountsDir, codexBin: c.codexBin ?? 'codex', model: codex.model }) })
+      let stdout = ''
+      const abort = () => { void child.return({ code: null, signal: 'SIGTERM' }).catch(() => {}) }
+      next.signal.addEventListener('abort', abort, { once: true })
+      if (next.signal.aborted) abort()
+      try {
+        for await (const chunk of child) {
+          if (chunk.stream === 'stdout') stdout += chunk.text
+          if (stdout.length > 28_100_000) { abort(); return answer('Image exceeds the 20 MB limit; request a smaller image.', true) }
+        }
+      } finally { next.signal.removeEventListener('abort', abort) }
+      if (next.signal.aborted) return answer('Image generation was cancelled.', true)
+      const reply = JSON.parse(stdout) as { ok?: boolean; bytes_b64?: string; message?: string }
+      if (!reply.ok) return answer(reply.message ?? 'Codex image generation failed.', true)
+      const data = reply.bytes_b64
+      if (typeof data !== 'string' || data.length > Math.ceil(20 * 1024 * 1024 / 3) * 4 ||
+          !/^iVBORw0KGg[o-r]/.test(data) || data.length % 4 !== 0 || /[^A-Za-z0-9+/=]/.test(data) || /=/.test(data.slice(0, -2))) {
+        return answer('Codex returned an invalid PNG or an image exceeding 20 MB.', true)
+      }
+      const write = await $.process.run([c.pythonBin ?? 'python3', '-E', '-s', script, '--write'],
+        { stdin: JSON.stringify({ cwd, path: given, bytes_b64: data }), timeoutMs: 30_000 })
+      if (write.exitCode !== 0) return answer('Could not save image; check the path and ensure the file does not already exist.', true)
+      const saved = JSON.parse(write.stdout) as { ok?: boolean; size?: number; message?: string }
+      if (!saved.ok) return answer(saved.message ?? 'Could not save image; check the path and ensure the file does not already exist.', true)
+      return answer(`Saved image to ${out} (${saved.size} bytes). Requested size and quality are not guaranteed. Open it with the Read tool to look at it.`)
+    }
+    const body = JSON.stringify({ model: c.imageModel, prompt, size, quality, n: 1 })
+    const run = await $.process.run(['bash', '-c', IMAGE_PIPELINE, 'bash', c.headerFile ?? '',
+      c.baseUrl + '/v1/images/generations', out, cwd], { stdin: body, timeoutMs: 300_000, ...(c.key !== undefined ? { env: { MODEL_MOD_KEY: c.key } } : {}) })
+    if (run.exitCode !== 0) return answer(`Image request failed (${run.stdout.trim().slice(0, 100) || 'no output'}).`, true)
+    return answer(`Saved image to ${out} (${run.stdout.trim()} bytes, ${size}). Open it with the Read tool to look at it.`)
+  } catch (err) {
+    return answer(`Image request failed (${err instanceof Error ? err.name : 'error'}).`, true)
+  }
+}
+
 export const register: Register = (on, options) => {
   registerPane(on)
   let transcript: string | undefined
@@ -1976,84 +2056,7 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  on('tool.call', { tool: IMAGE_TOOL }, async ($, e, next) => {
-    // A refusal reaches the model as an error result; a success is the plain text of the result.
-    const answer = (text: string, isError = false) => isError ? { deny: text } : { result: text }
-    try {
-      const c = await load($)
-      if (!c) return answer('Image generation is not configured.', true)
-      // Only a turn that already runs on a bridge model may use image generation.
-      const model = await bridgeModel($, e, c)
-      if (model === undefined) {
-        return answer('generate_image is only available while a local model is selected. Select a local model to use this tool.', true)
-      }
-      const codex = c.codex?.get(model)
-      if (!codex && !c.imageModel) return answer('Image generation is not configured.', true)
-      if (!codex && c.key === undefined && c.headerFile === undefined) return answer('API server is not configured.', true)
-      const input = e as unknown as Record<string, unknown>
-      const prompt = typeof input.prompt === 'string' ? input.prompt.trim() : ''
-      if (!prompt || prompt.length > 4000) return answer('prompt must be 1-4000 characters.', true)
-      const size = input.size ?? '1024x1024'
-      const quality = input.quality ?? 'medium'
-      if (!['1024x1024', '1536x1024', '1024x1536', 'auto'].includes(String(size)) ||
-          !['low', 'medium', 'high', 'auto'].includes(String(quality))) return answer('size or quality is not supported.', true)
-      const cwd = (await $.session.cwd()).replace(/\/+$/, '') || '/'
-      const given = typeof input.path === 'string' ? input.path : `generated-images/image-${Date.now()}.png`
-      if (!/^[A-Za-z0-9._\/-]{1,200}\.png$/.test(given) || given.startsWith('/') || given.split('/').some(part => part === '.' || part === '..' || part === '')) {
-        return answer('path must be a relative .png path inside the working directory without "." or ".." segments.', true)
-      }
-      const out = `${cwd}/${given}`
-      const refused = await permitted($, e, IMAGE_TOOL, codex
-        ? `Send this prompt to OpenAI to generate an image and save it to ${out}: "${prompt.slice(0, 200)}"?`
-        : `Generate an image and save it to ${given}: "${prompt.slice(0, 200)}"?`, IMAGE_TOOL + (codex ? ":codex" : ":api"))
-      if (refused) return answer(refused, true)
-      if (codex) {
-        if (!c.accountsDir || !$.plugin.root) return answer('Codex account or plugin directory is unavailable.', true)
-        const root = $.plugin.root.replace(/[\\/]+$/, '')
-        const sep = root.includes('\\') && !root.includes('/') ? '\\' : '/'
-        const script = root + sep + 'helper' + sep + 'image.py'
-        const check = await $.process.run([c.pythonBin ?? 'python3', '-E', '-s', script, '--check'],
-          { stdin: JSON.stringify({ cwd, path: given }), timeoutMs: 30_000 })
-        if (check.exitCode !== 0) return answer('Could not check image output path.', true)
-        const checked = JSON.parse(check.stdout) as { ok?: boolean; message?: string }
-        if (!checked.ok) return answer(checked.message ?? 'Could not check image output path.', true)
-        const child = $.process.spawn({ argv: [c.pythonBin ?? 'python3', '-E', '-s', script], cwd,
-          input: JSON.stringify({ prompt, size, quality, cwd, account: codex.account, directory: codex.directory,
-            accountsDir: c.accountsDir, codexBin: c.codexBin ?? 'codex', model: codex.model }) })
-        let stdout = ''
-        const abort = () => { void child.return({ code: null, signal: 'SIGTERM' }).catch(() => {}) }
-        next.signal.addEventListener('abort', abort, { once: true })
-        if (next.signal.aborted) abort()
-        try {
-          for await (const chunk of child) {
-            if (chunk.stream === 'stdout') stdout += chunk.text
-            if (stdout.length > 28_100_000) { abort(); return answer('Image exceeds the 20 MB limit; request a smaller image.', true) }
-          }
-        } finally { next.signal.removeEventListener('abort', abort) }
-        if (next.signal.aborted) return answer('Image generation was cancelled.', true)
-        const reply = JSON.parse(stdout) as { ok?: boolean; bytes_b64?: string; message?: string }
-        if (!reply.ok) return answer(reply.message ?? 'Codex image generation failed.', true)
-        const data = reply.bytes_b64
-        if (typeof data !== 'string' || data.length > Math.ceil(20 * 1024 * 1024 / 3) * 4 ||
-            !/^iVBORw0KGg[o-r]/.test(data) || data.length % 4 !== 0 || /[^A-Za-z0-9+/=]/.test(data) || /=/.test(data.slice(0, -2))) {
-          return answer('Codex returned an invalid PNG or an image exceeding 20 MB.', true)
-        }
-        const write = await $.process.run([c.pythonBin ?? 'python3', '-E', '-s', script, '--write'],
-          { stdin: JSON.stringify({ cwd, path: given, bytes_b64: data }), timeoutMs: 30_000 })
-        if (write.exitCode !== 0) return answer('Could not save image; check the path and ensure the file does not already exist.', true)
-        const saved = JSON.parse(write.stdout) as { ok?: boolean; size?: number; message?: string }
-        if (!saved.ok) return answer(saved.message ?? 'Could not save image; check the path and ensure the file does not already exist.', true)
-        return answer(`Saved image to ${out} (${saved.size} bytes). Requested size and quality are not guaranteed. Open it with the Read tool to look at it.`)
-      }
-      const body = JSON.stringify({ model: c.imageModel, prompt, size, quality, n: 1 })
-      const run = await $.process.run(['bash', '-c', IMAGE_PIPELINE, 'bash', c.headerFile ?? '',
-        c.baseUrl + '/v1/images/generations', out, cwd], { stdin: body, timeoutMs: 300_000, ...(c.key !== undefined ? { env: { MODEL_MOD_KEY: c.key } } : {}) })
-      if (run.exitCode !== 0) return answer(`Image request failed (${run.stdout.trim().slice(0, 100) || 'no output'}).`, true)
-      return answer(`Saved image to ${out} (${run.stdout.trim()} bytes, ${size}). Open it with the Read tool to look at it.`)
-    } catch (err) {
-      return answer(`Image request failed (${err instanceof Error ? err.name : 'error'}).`, true)
-    }
-  })
+  on('tool.call', { tool: IMAGE_TOOL }, imageToolCall)
 
   // Looks up schemas the bridge already holds; nothing leaves the machine, so no permission prompt.
   on('tool.check', { tool: TOOL_SEARCH_TOOL }, () => ({ decision: 'allow', reason: 'model-mod tool lookup' }))
