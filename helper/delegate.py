@@ -15,7 +15,7 @@ import threading
 import time
 from types import SimpleNamespace
 
-from bridge import COMMON_FEATURES, account_home, env, note, verify_version
+from bridge import COMMON_FEATURES, account_home, env, is_response, jsonrpc_line, note, verify_version
 
 DELEGATE_ONLY_FEATURES = ('memories',)
 FEATURES = COMMON_FEATURES + DELEGATE_ONLY_FEATURES
@@ -248,7 +248,7 @@ class App:
                 if item is None: return
                 obj, done = item
                 try:
-                    self.proc.stdin.write(json.dumps(obj, ensure_ascii=False) + '\n')
+                    self.proc.stdin.write(jsonrpc_line(obj))
                     self.proc.stdin.flush()
                 except (OSError, ValueError):
                     pass
@@ -323,7 +323,7 @@ class App:
         self.send({'id': ident, 'method': method, 'params': params})
         while True:
             obj = self.next()
-            if obj.get('id') == ident and 'method' not in obj:
+            if is_response(obj, ident):
                 if 'error' in obj:
                     if obj['error'].get('code') == -32601: raise Failure('Codex method unavailable; update Codex CLI.')
                     if obj['error'].get('code') == 429: raise Failure('Codex quota or rate limit reached; check your usage and try again later.')

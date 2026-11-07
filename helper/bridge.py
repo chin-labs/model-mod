@@ -81,6 +81,14 @@ def incompatible(field):
     return BridgeError('Codex login: incompatible codex app-server protocol (' + field + ')', 502, code='protocol')
 
 
+def jsonrpc_line(obj):
+    return json.dumps(obj, ensure_ascii=False) + '\n'
+
+
+def is_response(obj, ident):
+    return obj.get('id') == ident and 'method' not in obj
+
+
 def verify_version(args):
     try:
         result = subprocess.run([args.codex_bin, '--version'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, timeout=10, env=env(args.codex_home))
@@ -246,7 +254,7 @@ class App:
 
     def send(self, obj):
         try:
-            self.proc.stdin.write(json.dumps(obj, ensure_ascii=False) + '\n')
+            self.proc.stdin.write(jsonrpc_line(obj))
             self.proc.stdin.flush()
         except (BrokenPipeError, OSError):
             raise incompatible('app-server flags or startup')
@@ -288,7 +296,7 @@ class App:
         self.send({'id': ident, 'method': method, 'params': params})
         while True:
             obj = self.next()
-            if obj.get('id') == ident and 'method' not in obj:
+            if is_response(obj, ident):
                 if 'error' in obj:
                     status, kind = classify(obj['error'])
                     if invalid_encrypted_content(obj['error']):
