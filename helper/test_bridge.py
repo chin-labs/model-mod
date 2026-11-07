@@ -847,6 +847,76 @@ class Contract(unittest.TestCase):
             self.assertEqual(json.loads(account.stdout), {'loginMethod': 'chatgpt', 'planType': 'plus'})
             self.assertNotIn('private@example.test', account.stdout + account.stderr)
 
+    def test_rate_limit_result_mapping(self):
+        def expected(ordinary=None, reached=None, credits=None, primary=None, secondary=None):
+            return {'ordinaryUsageAllowed': ordinary, 'rateLimitReachedType': reached, 'credits': credits, 'primary': primary, 'secondary': secondary}
+        def win(remaining=None, resets=None, minutes=None): return {'remainingPercent': remaining, 'resetsAt': resets, 'windowDurationMins': minutes}
+        def cred(has=None, unlimited=None, balance=None): return {'hasCredits': has, 'unlimited': unlimited, 'balance': balance}
+        def snap(**fields): return {'rateLimits': fields}
+        reached = ('rate_limit_reached', 'workspace_owner_credits_depleted', 'workspace_member_credits_depleted', 'workspace_owner_usage_limit_reached', 'workspace_member_usage_limit_reached')
+        empty = expected()
+        rows = [
+            ('full', {'ordinaryUsageAllowed': True, 'rateLimits': {
+                'rateLimitReachedType': 'rate_limit_reached', 'credits': {'hasCredits': True, 'unlimited': False, 'balance': '5.25'},
+                'primary': {'usedPercent': 38, 'resetsAt': 123, 'windowDurationMins': 300},
+                'secondary': {'usedPercent': 12.5, 'resetsAt': 456, 'windowDurationMins': 10080}}},
+             expected(True, 'rate_limit_reached', cred(True, False, '5.25'), win(62, 123, 300), win(87.5, 456, 10080))),
+            ('no snapshot', {'ordinaryUsageAllowed': False}, expected(False)),
+            ('empty snapshot', {'rateLimits': {}}, empty),
+            ('null snapshot', {'rateLimits': None}, empty),
+            ('list snapshot', {'rateLimits': []}, empty),
+            ('zero snapshot', {'rateLimits': 0}, empty),
+            ('ordinary int', {'ordinaryUsageAllowed': 1, 'rateLimits': {'rateLimitReachedType': reached[0]}}, expected(None, reached[0])),
+            ('ordinary string', {'ordinaryUsageAllowed': 'yes'}, empty),
+            ('ordinary zero', {'ordinaryUsageAllowed': 0}, empty),
+            ('reached unknown', snap(rateLimitReachedType='weekly'), empty),
+            ('reached number', snap(rateLimitReachedType=7), empty),
+            ('reached list', snap(rateLimitReachedType=[reached[0]]), empty),
+            ('reached dict', snap(rateLimitReachedType={}), empty),
+            ('credits string', snap(credits='x'), empty),
+            ('credits list', snap(credits=[]), empty),
+            ('credits empty', snap(credits={}), expected(credits=cred())),
+            ('credits bad types', snap(credits={'hasCredits': 1, 'unlimited': 'yes', 'balance': 'abc'}), expected(credits=cred())),
+            ('credits flags', snap(credits={'hasCredits': False, 'unlimited': True, 'balance': 5}), expected(credits=cred(False, True))),
+            ('credits balance only', snap(credits={'balance': '5.25'}), expected(credits=cred(balance='5.25'))),
+            ('credits balance empty', snap(credits={'balance': ''}), expected(credits=cred())),
+            ('credits balance exponent', snap(credits={'balance': '1e3'}), expected(credits=cred())),
+            ('credits balance negative', snap(credits={'balance': '-1'}), expected(credits=cred())),
+            ('credits balance trailing newline', snap(credits={'balance': '5\n'}), expected(credits=cred())),
+            ('credits balance float', snap(credits={'balance': 5.25}), expected(credits=cred())),
+            ('windows bool and string', snap(primary={'usedPercent': True, 'resetsAt': True, 'windowDurationMins': True}, secondary={'usedPercent': '5', 'resetsAt': '9', 'windowDurationMins': '9'}),
+             expected(primary=win(), secondary=win())),
+            ('windows float', snap(primary={'usedPercent': 12.5, 'resetsAt': 1.5, 'windowDurationMins': 2.5}, secondary={}), expected(primary=win(87.5), secondary=win())),
+            ('windows zero and over 100', snap(primary={'usedPercent': 0, 'resetsAt': 0, 'windowDurationMins': 0}, secondary={'usedPercent': 150}), expected(primary=win(100, 0, 0), secondary=win(-50))),
+            ('windows not dicts', snap(primary='x', secondary=[]), empty),
+            ('windows null', snap(primary=None, secondary=None), empty),
+            ('windows missing usedPercent', snap(primary={'resetsAt': 5}, secondary={'usedPercent': None, 'windowDurationMins': 60}), expected(primary=win(None, 5), secondary=win(None, None, 60))),
+        ]
+        rows += [('reached ' + name, snap(rateLimitReachedType=name), expected(None, name)) for name in reached]
+        raising = [('result null', None), ('result list', []), ('result number', 5), ('result string', 'x'), ('snapshot string', {'rateLimits': 'x'}),
+                   ('snapshot number', {'rateLimits': 5}), ('snapshot true', {'rateLimits': True}), ('snapshot nonempty list', {'rateLimits': [1]})]
+        with tempfile.TemporaryDirectory() as home:
+            def run(payload):
+                Path(home, 'fake_config.json').write_text(json.dumps({'rate_limits': payload}))
+                return subprocess.run([sys.executable, str(BRIDGE), 'rate-limits', '--codex-home', home, '--codex-bin', str(FAKE)], text=True, capture_output=True, timeout=15)
+            for label, payload, want in rows:
+                with self.subTest(label):
+                    r = run(payload)
+                    self.assertEqual((r.returncode, r.stderr), (0, 'model-mod-http:200\n'))
+                    self.assertEqual(r.stdout, json.dumps(want, ensure_ascii=False) + '\n')
+                    printed = json.loads(r.stdout)
+                    self.assertEqual(printed, want)
+                    self.assertEqual(list(printed), ['ordinaryUsageAllowed', 'rateLimitReachedType', 'credits', 'primary', 'secondary'])
+                    for key in ('primary', 'secondary'):
+                        if printed[key]: self.assertEqual(list(printed[key]), ['remainingPercent', 'resetsAt', 'windowDurationMins'])
+                    if printed['credits']: self.assertEqual(list(printed['credits']), ['hasCredits', 'unlimited', 'balance'])
+            for label, payload in raising:
+                with self.subTest(label):
+                    r = run(payload)
+                    self.assertEqual(r.returncode, 1)
+                    self.assertEqual(r.stderr, 'model-mod-note:Codex login: bridge failure: AttributeError\nmodel-mod-http:500\n')
+                    self.assertEqual(json.loads(r.stdout), {'type': 'error', 'error': {'type': 'api_error', 'message': 'Codex login: bridge failure'}})
+
     def test_check_and_home(self):
         with tempfile.TemporaryDirectory() as home:
             argv = [sys.executable, str(BRIDGE), 'check', '--codex-home', home, '--codex-bin', str(FAKE)]
