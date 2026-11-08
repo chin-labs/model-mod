@@ -2,6 +2,7 @@ import type { EngineInterface, PluginOptions, Register, SessionMessage, TurnStep
 import { update } from 'claude-code'
 import type { EnvMemo, FallbackMemo, TrackedAgent } from '../types'
 import { MessagesStream } from './sse.ts'
+import { buildStepMessages, parseStepStderr, classifyStepFailure } from './step.ts'
 import { htmlToText } from './text.ts'
 import { beginSetupPane, dismissSetupPane, menuInPane, openPane, registerPane, setupPaneClosed } from './pane.tsx'
 import { commitSettings, resumeCommit } from './commit.ts'
@@ -858,7 +859,6 @@ function fetchResponse(stdout: string): { status: number; location?: string; bod
 const RETRY_DELAYS = [2000, 6000, 15000]
 // How long curl may take to print its write-out (status, Retry-After) after an SSE error event, before it is closed.
 const WRITE_OUT_GRACE_MS = 2000
-const RETRYABLE_HTTP_STATUS = [429, 502, 503, 504, 529]
 // The engine's transcript does not keep the signed reasoning a bridge response carries (a mod cannot record a thinking
 // block), so it is remembered here by the first tool call it came with and handed back inside the tool loop.
 // The API and Codex bridge use distinct signatures and never replay one another's data.
@@ -2510,24 +2510,7 @@ export const register: Register = (on, options) => {
         if (!Array.isArray(read)) throw new Error(`messages_unavailable ${JSON.stringify(read).slice(0, 100)}`)
         history = read as unknown as Turn[]
       }
-      const messages = history.map(message => ({ ...message, content: message.content.filter(block => {
-        const type = block.type
-        return !['thinking', 'redacted_thinking', 'server_tool_use'].includes(type) && !type.endsWith('_tool_result')
-      }) })).filter(message => message.content.length > 0)
-      while (messages.length && messages[0]!.role !== 'user') messages.shift()
-      let withThinking: typeof messages | undefined
-      if ((codex ? c.codexKeepReasoning !== 'off' : c.keepThinking !== false) && thinkingStash.size > 0) {
-        let any = false
-        withThinking = messages.map(message => {
-          if (message.role !== 'assistant') return message
-          const ids = message.content.filter(b => b.type === 'tool_use').map(b => String((b as { id?: unknown }).id))
-          const kept = ids.map(id => thinkingStash.get(id)?.filter(b => (codex ? CODEX_SIGNATURE : API_SIGNATURE).test(b.signature))).find(blocks => blocks?.length)
-          if (!kept) return message
-          any = true
-          return { ...message, content: [...kept, ...message.content] }
-        })
-        if (!any) withThinking = undefined
-      }
+      const { messages, withThinking } = buildStepMessages(history, !!codex, codex ? c.codexKeepReasoning !== 'off' : c.keepThinking !== false, thinkingStash)
       if (!messages.length) throw new Error(`messages_unavailable history=${history.length} agent=${String(e.agentId)} count=${e.messageCount}`)
       const offered = await tools($, c, e.model, history)
       // PromptComposeArgs has no agentId: compose the session system for this model.
@@ -2585,15 +2568,7 @@ export const register: Register = (on, options) => {
             if (piece.stream !== 'stdout') {
               const lines = (statusTail + piece.text).split('\n')
               statusTail = lines.pop()!.slice(-4096)
-              for (const line of lines) {
-                if (codex && line.replace(/\r$/, '') === 'model-mod-note:Codex login: reasoning discarded; retrying once') reasoningRebuilt = true
-                const status = /^model-mod-http:(\d{3})\r?$/.exec(line)
-                if (status) httpStatus = Number(status[1])
-                if (line.startsWith('model-mod-retry-after:')) {
-                  const seconds = /^model-mod-retry-after:[ \t]*(\d+)[ \t]*\r?$/.exec(line)
-                  retryAfter = seconds && Number.isSafeInteger(Number(seconds[1])) ? Number(seconds[1]) : undefined
-                }
-              }
+              for (const line of lines) ({ httpStatus, retryAfter, reasoningRebuilt } = parseStepStderr(line, !!codex, { httpStatus, retryAfter, reasoningRebuilt }))
               continue
             }
             if (parser.error) continue
@@ -2610,58 +2585,16 @@ export const register: Register = (on, options) => {
           }
           finished = true
           if (parser.error || exit.code !== 0 || !parser.complete) {
-            const curlError = [6, 7].includes(exit.code ?? 0) ? `could not connect (curl ${exit.code})` :
-              exit.code === 28 ? 'request timed out (curl 28)' : [35, 60, 51, 58, 59].includes(exit.code ?? 0) ? `TLS error (curl ${exit.code})` : 'curl failed'
-            let reason = httpStatus === 429 ? 'upstream rate limited (HTTP 429)' :
-              parser.error || exit.code === 22 ? 'HTTP error' : exit.code !== 0 ? curlError : 'incomplete upstream response'
-            let type: unknown = parser.error?.type
-            if (!parser.error) {
-              try { type = JSON.parse(rawError).error?.type } catch { /* SSE, not JSON */ }
-            }
-            if (['api_error', 'authentication_error', 'permission_error', 'not_found_error',
-              'invalid_request_error', 'rate_limit_error', 'overloaded_error'].includes(type as string)) reason += ` (${type})`
-            let errorCode: string | undefined
-            let errorMessage = ''
-            if (codex) {
-              try {
-                const match = /event: error\r?\n(?:[^\n]*\n)*?data: ([^\n]+)/.exec(rawError)
-                const value = JSON.parse(match ? match[1]! : rawError)
-                errorCode = value.error?.code
-                errorMessage = typeof value.error?.message === 'string' ? value.error.message : ''
-              } catch { /* no structured error */ }
-              const prefix = `Codex login (${codex.account}): `
-              if (errorCode === 'codex_rejected_request') return yield* failure(e, prefix + 'request rejected by Codex; update model-mod or report this', parser.nextIndex)
-              if (errorCode === 'unsupported_item') {
-                const kind = /unsupported codex behavior: ([A-Za-z0-9_-]{1,64})/.exec(errorMessage)?.[1] ?? 'unknown'
-                return yield* failure(e, prefix + `Codex used a built-in tool that model-mod does not support (${kind}); try again, and report it if it keeps happening`, parser.nextIndex)
-              }
-              if (errorCode === 'protocol' || errorCode === 'incompatible_protocol' || exit.code === 65) return yield* failure(e, prefix + 'incompatible app-server protocol; update or check Codex', parser.nextIndex)
-              if (errorCode === 'codex_unavailable' || exit.code === 66) return yield* failure(e, prefix + 'codex unavailable; install Codex or configure codexBin', parser.nextIndex)
-              if (errorCode === 'codex_too_old' || exit.code === 67) return yield* failure(e, prefix + 'codex too old; upgrade to 0.165.0 or newer', parser.nextIndex)
-              if (errorCode === 'codex_not_logged_in' || exit.code === 68) return yield* failure(e, prefix + `not logged in; run ${loginCommand(c, codex)} in your terminal`, parser.nextIndex)
-              if (errorCode === 'invalid_home' || exit.code === 69) return yield* failure(e, prefix + 'account directory missing; run /model-mod:setup', parser.nextIndex)
-              if (exit.code === 78) return yield* failure(e, prefix + 'Python too old; install Python 3.9 or newer', parser.nextIndex)
-              reason = prefix + (httpStatus === 429 ? 'rate limited; check the account quota or try again later' : httpStatus === 504 ? 'app-server timed out; try again in a moment' : 'app-server request failed; check Codex and try again')
-            }
-            const transient = codex
-              ? (errorCode === undefined || errorCode === 'bridge_error' || errorCode === 'timeout') && (RETRYABLE_HTTP_STATUS.includes(httpStatus) || httpStatus >= 500)
-              : parser.error || exit.code === 22
-                ? RETRYABLE_HTTP_STATUS.includes(httpStatus) || ['rate_limit_error', 'overloaded_error', 'api_error'].includes(type as string)
-                : exit.code === 0 || (exit.code !== null && [6, 7, 18, 28, 35, 52, 55, 56].includes(exit.code))
-            // Only an answer that is itself a rate limit or overload carries a meaningful Retry-After; on a 200 whose stream broke it is ignored.
-            if (!RETRYABLE_HTTP_STATUS.includes(httpStatus)) retryAfter = undefined
-            if (!streamed && transient && retryAfter !== undefined && retryAfter > 15) {
-              if (codex && (httpStatus === 429 || type === 'rate_limit_error')) codexLimitFailed.add(codex.directory)
-              return yield* failure(e, `${reason}${httpStatus && httpStatus !== 429 ? ` (HTTP ${httpStatus})` : ''}, retry after ${retryAfter}s`, parser.nextIndex)
-            }
-            if (!codex && !streamed && sendThinking && type === 'invalid_request_error') {
-              // The API did not accept the remembered reasoning (another credential, a changed format): go without it.
+            const decision = classifyStepFailure({ codex: codex ? { account: codex.account } : undefined,
+              error: parser.error, exitCode: exit.code, httpStatus, rawError, retryAfter, streamed, sendThinking, attempt, retryDelays: RETRY_DELAYS })
+            if (decision.kind === 'not-logged-in' && codex) return yield* failure(e, `Codex login (${codex.account}): not logged in; run ${loginCommand(c, codex)} in your terminal`, parser.nextIndex)
+            if (decision.kind === 'thinking') {
               sendThinking = false
               attempt--
               continue
             }
-            if (!streamed && transient && attempt < RETRY_DELAYS.length) {
-              if (codex && attempt === RETRY_DELAYS.length - 1 && !(httpStatus >= 400 && httpStatus < 500)) {
+            if (decision.kind === 'retry') {
+              if (codex && decision.loginRecheck) {
                 release?.()
                 const now = await $.clock.now()
                 if (now - (loginChecks.get(codex.directory) ?? -Infinity) >= 60_000) {
@@ -2672,15 +2605,16 @@ export const register: Register = (on, options) => {
                   } catch { /* the original failure remains */ }
                 }
               }
-              if (!codex) $.ui.status(`model-mod: ${reason}; retrying (${attempt + 1}/${RETRY_DELAYS.length})`)
+              if (decision.status) $.ui.status(decision.status)
               // $.clock.sleep is paid out of the hook's own time budget (about 10 s); a process wait is not.
-              for (let left = Math.max(RETRY_DELAYS[attempt]!, (retryAfter ?? 0) * 1000); left > 0 && !next.signal.aborted; left -= 3000) {
+              for (let left = decision.delay; left > 0 && !next.signal.aborted; left -= 3000) {
                 await $.process.run(['sleep', String(Math.min(left, 3000) / 1000)])
               }
               continue
             }
-            if (codex && (httpStatus === 429 || type === 'rate_limit_error')) codexLimitFailed.add(codex.directory)
-            return yield* failure(e, reason, parser.nextIndex)
+            if (decision.kind === 'not-logged-in') throw new Error('Codex account unavailable')
+            if (codex && decision.limitFailed) codexLimitFailed.add(codex.directory)
+            return yield* failure(e, decision.reason, parser.nextIndex)
           }
           if (codex && reasoningRebuilt) {
             for (const message of messages) for (const block of message.content) {
