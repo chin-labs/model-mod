@@ -377,6 +377,36 @@ test('a bridge model is answered by the upstream and never reaches the chain', a
   expect(JSON.parse(sent.input ?? '{}').tools.map((tool: { name: string }) => tool.name)).toEqual(['Read'])
 })
 
+test('turn history filters blocks and drops leading non-user messages', async ($, on) => {
+  const w = world(on, baseConfig, LOCAL, { stdout: SSE_OK, code: 0 })
+  w.messages = [
+    { role: 'assistant', content: [{ type: 'text', text: 'discard' }] },
+    { role: 'user', content: [{ type: 'thinking' }, { type: 'redacted_thinking' }, { type: 'server_tool_use' }, { type: 'web_tool_result' }, { type: 'text', text: 'keep' }] },
+    { role: 'assistant', content: [{ type: 'thinking' }] },
+  ]
+  await drain($.turn.step(STEP(LOCAL)))
+  expect(JSON.parse(w.spawned[0]!.input!).messages).toEqual([{ role: 'user', content: [{ type: 'text', text: 'keep' }] }])
+})
+
+test('API retries rejected remembered thinking without spending a retry', async ($, on) => {
+  const sse = [
+    ['content_block_start', { index: 0, content_block: { type: 'thinking', thinking: '', signature: 'gAAAAfake' } }],
+    ['content_block_stop', { index: 0 }],
+    ['content_block_start', { index: 1, content_block: { type: 'tool_use', id: 'api-retry', name: 'Read', input: {} } }],
+    ['content_block_stop', { index: 1 }], ['message_delta', { delta: { stop_reason: 'tool_use' } }], ['message_stop', {}],
+  ].map(([event, data]) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`).join('')
+  const w = world(on, baseConfig, LOCAL, [{ stdout: sse, code: 0 },
+    { stdout: '{"error":{"type":"invalid_request_error"}}', stderr: 'model-mod-http:400\n', code: 22 }, { stdout: SSE_OK, code: 0 }])
+  await drain($.turn.step(STEP(LOCAL)))
+  w.messages = [{ role: 'user', content: [{ type: 'text', text: 'hi' }] },
+    { role: 'assistant', content: [{ type: 'tool_use', id: 'api-retry', name: 'Read', input: {} }] }]
+  const result = await drain($.turn.step(STEP(LOCAL)))
+  expect(result.result.answer).toBe('local answer')
+  expect(JSON.parse(w.spawned[1]!.input!).messages[1].content[0].type).toBe('thinking')
+  expect(JSON.parse(w.spawned[2]!.input!).messages[1].content[0].type).toBe('tool_use')
+  expect(w.ran.filter(argv => argv[0] === 'sleep')).toEqual([])
+})
+
 test('an upstream failure ends the turn with an error text and never falls back to the chain', async ($, on) => {
   const body = JSON.stringify({ type: 'error', error: { type: 'authentication_error', message: 'x' } })
   const w = world(on, baseConfig, LOCAL, { stdout: body, code: 22 })
@@ -2044,6 +2074,36 @@ test('Codex login: startup and unsupported behavior failures do not retry', { op
   expect(unauthenticated.result.answer).toContain('not logged in')
   expect(w.spawned.length - prior).toBe(3)
   expect(w.ran.filter(argv => argv.includes('check')).length).toBe(1)
+})
+
+test('Codex protocol and missing home failures preserve their mappings', { options: CODEX_OPTIONS }, async ($, on) => {
+  const reply: SpawnReply = { stdout: '', code: 65 }
+  const w = world(on, null, CODEX_MODEL, reply)
+  for (const [code, expected] of [[65, 'incompatible app-server protocol'], [69, 'account directory missing']] as const) {
+    reply.code = code
+    const before = w.spawned.length
+    const { result } = await drain($.turn.step(STEP(CODEX_MODEL)))
+    expect(result.answer).toContain(expected)
+    expect(w.spawned.length - before).toBe(1)
+  }
+})
+
+test('Codex reasoning discard note clears previously stashed reasoning', { options: CODEX_OPTIONS }, async ($, on) => {
+  const sse = [
+    ['content_block_start', { index: 0, content_block: { type: 'thinking', thinking: '', signature: 'mmcx1:YWJj' } }],
+    ['content_block_stop', { index: 0 }],
+    ['content_block_start', { index: 1, content_block: { type: 'tool_use', id: 'discard-call', name: 'Read', input: {} } }],
+    ['content_block_stop', { index: 1 }], ['message_delta', { delta: { stop_reason: 'tool_use' } }], ['message_stop', {}],
+  ].map(([event, data]) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`).join('')
+  const w = world(on, null, CODEX_MODEL, [{ stdout: sse, code: 0 },
+    { stdout: SSE_OK, stderr: ['model-mod-note:Codex login: reasoning discarded; ', 'retrying once\n'], code: 0 }, { stdout: SSE_OK, code: 0 }])
+  await drain($.turn.step(STEP(CODEX_MODEL)))
+  w.messages = [{ role: 'user', content: [{ type: 'text', text: 'hi' }] },
+    { role: 'assistant', content: [{ type: 'tool_use', id: 'discard-call', name: 'Read', input: {} }] }]
+  await drain($.turn.step(STEP(CODEX_MODEL)))
+  await drain($.turn.step(STEP(CODEX_MODEL)))
+  expect(JSON.parse(w.spawned[1]!.input!).messages[1].content[0].type).toBe('thinking')
+  expect(JSON.parse(w.spawned[2]!.input!).messages[1].content[0].type).toBe('tool_use')
 })
 
 test('Codex login: missing image tool is registered once for the next prompt', { options: CODEX_OPTIONS }, async ($, on) => {
