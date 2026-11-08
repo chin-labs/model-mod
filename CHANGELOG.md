@@ -2,6 +2,22 @@
 
 All notable changes to this project are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Every release that changes plugin code or manifest files raises the `version` in `.claude-plugin/plugin.json`; installed clients only pick up a release whose version differs from the one they have.
 
+## 0.2.4 - 2026-11-08
+
+### Changed
+- `/model-mod:doctor` treats unsupported model lists (404, 405, 501 or non-JSON responses) as informational when models are explicitly configured; its 404 and invalid-list wording is clearer, and the 404 row of the English and Traditional Chinese troubleshooting pages was updated to match.
+- Doctor lists up to four matching `account/model` candidates for ambiguous bare model IDs and suggests `account/model` for unmatched bare IDs with Codex accounts.
+- Doctor reports whether the image tool is listed, missing quota usage figures and unusable `apiKey` characters.
+- Doctor's Codex check says "Codex could not be started or did not answer" where it used to say "Codex was not found".
+- Full-quota wording now follows the rounded usage figure; the `workerModel`/`fallbackModel` warning status lines no longer repeat the `model-mod:` prefix.
+- The app-server feature-disable lists share a common base without changing their effective settings.
+
+### Fixed
+- When a configured `generate_image` tool disappears from the tool list, it is registered again at most once every 60 seconds and one status line is shown; registration failures expose only a short category.
+
+### Not verified
+- `generate_image` re-registration against a real client and a real Codex login (the tests use a stubbed host); the new doctor rows in Remote Control, desktop and VS Code sessions and on Windows.
+
 ## 0.2.3 - 2026-11-02
 
 ### Added
