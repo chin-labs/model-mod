@@ -23,6 +23,10 @@ After `/model-mod:setup`:
 | Model-list error during setup | Network, authentication or server problem | Check the upstream and key. Setting `models` explicitly lets you proceed without discovery. |
 | Doctor reports refused, DNS, timeout or TLS | The API URL or network is unreachable | Check the address, network and TLS certificate. |
 | Doctor reports 401 or 403 | The API key was rejected | Check the key in plugin settings. |
+| Doctor reports `The apiKey option holds characters that cannot be used.` | With a base URL and no valid Codex upstream, a nonempty key is not a string, exceeds 512 characters, or contains characters outside the permitted printable ASCII range (including spaces, double quotes and backslashes) | Re-enter the key in plugin settings. |
+| Doctor reports `A quota window reported no usage figure.` | A quota window has no usage figure | Check `/model-mod:status` and try again later. |
+| Doctor reports `image tool: not listed` | The image tool is not listed | Start a new session, or run `/model-mod:doctor` again after the next prompt. |
+| Doctor shows `[--]` for an unsupported models list | With explicit `models`, a 404, 405, 501 or non-JSON response is informational and does not count as a problem | The configured models are used. |
 | Doctor reports 404 | The API base URL may include `/v1` or a wrong path prefix | Set the base URL without `/v1`. |
 | Doctor reports 429 or a 5xx error | The API is rate limited or has a server error | Wait and try again. |
 | Doctor reports an invalid or empty models list | The server may not be OpenAI-compatible | Check the upstream server and its models endpoint. |

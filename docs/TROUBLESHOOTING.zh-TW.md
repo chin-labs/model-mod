@@ -23,6 +23,10 @@
 | setup 時出現模型清單錯誤 | 網路、驗證或伺服器問題 | 檢查上游與金鑰。明確設定 `models` 可略過探索繼續進行。 |
 | Doctor 回報連線遭拒、DNS、逾時或 TLS 錯誤 | API 網址或網路無法連線 | 檢查網址、網路和 TLS 憑證。 |
 | Doctor 回報 401 或 403 | API 金鑰遭拒 | 檢查插件設定中的金鑰。 |
+| Doctor 回報 `The apiKey option holds characters that cannot be used.` | 已設定基礎網址且沒有有效的 Codex 上游時，非空金鑰不是字串、超過 512 個字元，或包含允許的可列印 ASCII 範圍以外的字元（包括空格、雙引號與反斜線） | 在插件設定中重新輸入金鑰。 |
+| Doctor 回報 `A quota window reported no usage figure.` | 額度視窗沒有使用量數字 | 檢查 `/model-mod:status`，稍後再試。 |
+| Doctor 回報 `image tool: not listed` | 圖片工具未列出 | 開啟新的工作階段，或在下一個提示之後再次執行 `/model-mod:doctor`。 |
+| Doctor 對不支援的模型清單顯示 `[--]` | 明確設定 `models` 時，404、405、501 或非 JSON 回應僅供參考，不計為問題 | 使用已設定的模型。 |
 | Doctor 回報 404 | API 基礎網址可能包含 `/v1` 或錯誤的路徑前綴 | 將基礎網址設為不含 `/v1` 的形式。 |
 | Doctor 回報 429 或 5xx | API 受限流或伺服器發生錯誤 | 稍後再試。 |
 | Doctor 回報模型清單無效或為空 | 伺服器可能不相容 OpenAI | 檢查上游伺服器及其模型端點。 |
