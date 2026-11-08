@@ -1834,14 +1834,16 @@ async function doctorReport($: EngineInterface, c: Config | undefined, columns?:
     }
   }
   if (c.codexDirectoryUnavailable?.size) checks.push({ mark: '!', what: 'Codex account directory', cause: 'The account directory could not be determined.', next: 'Configure an absolute codexAccountsDir and reload the plugin.' })
-  const model = await $.session.model()
-  if (c.codex?.has(model) || c.imageModel) {
-    const listed = (await $.tool.list()).some(tool => tool.name === IMAGE_TOOL)
-    checks.push(listed ? { mark: 'OK', what: 'image tool: listed' } : {
-      mark: '!', what: 'image tool: not listed', cause: imageRegisterError,
-      next: 'Start a new session, or run /model-mod:doctor again after the next prompt.'
-    })
-  }
+  try {
+    const model = await $.session.model()
+    if (c.codex?.has(model) || c.imageModel) {
+      const listed = (await $.tool.list()).some(tool => tool.name === IMAGE_TOOL)
+      checks.push(listed ? { mark: 'OK', what: 'image tool: listed' } : {
+        mark: '!', what: 'image tool: not listed', cause: imageRegisterError,
+        next: 'Start a new session, or run /model-mod:doctor again after the next prompt.'
+      })
+    }
+  } catch { /* Tool availability is optional; continue the report. */ }
   const readings = await Promise.all(codexAccountList(c).map(item => readCodexAccount($, c, item)))
   for (const r of readings) {
     const what = `Codex ${r.item.account}: login and quota`

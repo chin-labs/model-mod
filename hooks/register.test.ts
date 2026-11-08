@@ -713,6 +713,9 @@ test('doctor: rejected API key is explained without exposing it', { options: OPT
   const result = await $.command.run({ command: 'model-mod:doctor', args: '', origin: { kind: 'composer' } } as never)
   expect(result.text).toContain('API key was rejected')
   expect(result.text).not.toContain(KEY)
+  w.httpStatus = 404
+  const missing = await $.command.run({ command: 'model-mod:doctor', args: '', origin: { kind: 'composer' } } as never)
+  expect(missing.text).toContain('[!]  API models list')
 })
 
 test('doctor: invalid key without another upstream is explained', { options: { ...OPTIONS, apiKey: 'bad key' } }, async ($, on) => {
@@ -720,6 +723,14 @@ test('doctor: invalid key without another upstream is explained', { options: { .
   const text = (await $.command.run({ command: 'model-mod:doctor', args: '', origin: { kind: 'composer' } } as never)).text
   expect(text).toContain('The apiKey option holds characters that cannot be used.')
   expect(text).toContain('Re-enter the key in plugin settings.')
+})
+
+test('doctor: explicit models make an unsupported list informational', { options: { ...OPTIONS, models: LOCAL } }, async ($, on) => {
+  const w = world(on, null, LOCAL, { stdout: '', code: 0 })
+  w.httpStatus = 404
+  const text = (await $.command.run({ command: 'model-mod:doctor', args: '', origin: { kind: 'composer' } } as never)).text
+  expect(text).toContain('[--]  models list not supported by this server; using the models you')
+  expect(text).toContain('no problems found')
 })
 
 test('doctor: healthy API reports no problems', { options: OPTIONS }, async ($, on) => {
@@ -2053,6 +2064,11 @@ test('doctor: image tool listing', { options: CODEX_OPTIONS }, async ($, on) => 
   expect(await doctor()).toContain('[!]  image tool: not listed')
   w.toolsList = ['mcp__model-mod__generate_image']
   expect(await doctor()).toContain('[OK]  image tool: listed')
+  w.toolListFailsAfter = 0
+  const text = await doctor()
+  expect(text).toContain('Plugin active and configuration loaded')
+  expect(text).toContain('Codex main: login and quota')
+  expect(text).not.toContain('image tool:')
 })
 
 test('Codex login: cancellation closes the helper and excludes API-only web search', { options: { ...CODEX_OPTIONS, imageModel: 'gpt-image-2' } }, async ($, on) => {
