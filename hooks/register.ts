@@ -2,7 +2,7 @@ import type { EngineInterface, PluginOptions, Register, SessionMessage, TurnStep
 import { update } from 'claude-code'
 import type { EnvMemo, FallbackMemo, TrackedAgent } from '../types'
 import { MessagesStream } from './sse.ts'
-import { buildStepMessages, parseStepStderr, classifyStepFailure } from './step.ts'
+import { buildStepMessages, parseStepStderr, classifyStepFailure, API_SIGNATURE, CODEX_SIGNATURE, type Thinking } from './step.ts'
 import { htmlToText } from './text.ts'
 import { beginSetupPane, dismissSetupPane, menuInPane, openPane, registerPane, setupPaneClosed } from './pane.tsx'
 import { commitSettings, resumeCommit } from './commit.ts'
@@ -862,9 +862,6 @@ const WRITE_OUT_GRACE_MS = 2000
 // The engine's transcript does not keep the signed reasoning a bridge response carries (a mod cannot record a thinking
 // block), so it is remembered here by the first tool call it came with and handed back inside the tool loop.
 // The API and Codex bridge use distinct signatures and never replay one another's data.
-const API_SIGNATURE = /^gAAAA/
-const CODEX_SIGNATURE = /^mmcx1:/
-type Thinking = { type: 'thinking'; thinking: string; signature: string }
 const thinkingStash = new Map<string, Thinking[]>()
 function stashThinking(toolId: string | undefined, blocks: Thinking[], codex: boolean): void {
   const usable = blocks.filter(b => (codex ? CODEX_SIGNATURE : API_SIGNATURE).test(b.signature))

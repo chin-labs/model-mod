@@ -1,8 +1,8 @@
 import type { TrackedAgent } from '../types'
 
-type Thinking = { type: 'thinking'; thinking: string; signature: string }
-const API_SIGNATURE = /^gAAAA/
-const CODEX_SIGNATURE = /^mmcx1:/
+export type Thinking = { type: 'thinking'; thinking: string; signature: string }
+export const API_SIGNATURE = /^gAAAA/
+export const CODEX_SIGNATURE = /^mmcx1:/
 
 export function buildStepMessages(history: readonly TrackedAgent['turns'][number][], codex: boolean, keepThinking: boolean, stash: ReadonlyMap<string, Thinking[]>) {
   const messages = history.map(message => ({ ...message, content: message.content.filter(block => {
