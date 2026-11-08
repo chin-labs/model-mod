@@ -396,7 +396,8 @@ test('API retries rejected remembered thinking without spending a retry', async 
     ['content_block_stop', { index: 1 }], ['message_delta', { delta: { stop_reason: 'tool_use' } }], ['message_stop', {}],
   ].map(([event, data]) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`).join('')
   const w = world(on, baseConfig, LOCAL, [{ stdout: sse, code: 0 },
-    { stdout: '{"error":{"type":"invalid_request_error"}}', stderr: 'model-mod-http:400\n', code: 22 }, { stdout: SSE_OK, code: 0 }])
+    { stdout: '{"error":{"type":"invalid_request_error"}}', stderr: 'model-mod-http:400\n', code: 22 },
+    ...Array.from({ length: 3 }, () => ({ stdout: '', stderr: 'model-mod-http:503\n', code: 22 })), { stdout: SSE_OK, code: 0 }])
   await drain($.turn.step(STEP(LOCAL)))
   w.messages = [{ role: 'user', content: [{ type: 'text', text: 'hi' }] },
     { role: 'assistant', content: [{ type: 'tool_use', id: 'api-retry', name: 'Read', input: {} }] }]
@@ -404,7 +405,11 @@ test('API retries rejected remembered thinking without spending a retry', async 
   expect(result.result.answer).toBe('local answer')
   expect(JSON.parse(w.spawned[1]!.input!).messages[1].content[0].type).toBe('thinking')
   expect(JSON.parse(w.spawned[2]!.input!).messages[1].content[0].type).toBe('tool_use')
-  expect(w.ran.filter(argv => argv[0] === 'sleep')).toEqual([])
+  expect(w.spawned.length).toBe(6)
+  expect(w.ran.filter(argv => argv[0] === 'sleep')).toEqual([
+    ['sleep', '2'], ['sleep', '3'], ['sleep', '3'],
+    ['sleep', '3'], ['sleep', '3'], ['sleep', '3'], ['sleep', '3'], ['sleep', '3'],
+  ])
 })
 
 test('an upstream failure ends the turn with an error text and never falls back to the chain', async ($, on) => {
