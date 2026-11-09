@@ -52,6 +52,6 @@ export function renderDoctor(checks: Check[], columns = 80): string {
     }
   }
   const problems = checks.filter(c => c.mark === '!' || c.mark === 'LIMIT').length
-  lines.push(problems ? `${problems} problem${problems === 1 ? '' : 's'}; see docs/TROUBLESHOOTING.md` : 'no problems found')
+  lines.push(problems ? `${problems} problem${problems === 1 ? '' : 's'}; see "Troubleshooting" in the model-mod README` : 'no problems found')
   return '\n' + lines.join('\n')
 }

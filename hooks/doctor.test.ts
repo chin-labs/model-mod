@@ -22,7 +22,7 @@ test('doctor: classify network and models-list outcomes', () => {
 test('doctor: mixed results render within 80 columns without colour', () => {
   const text = renderDoctor([{ mark: 'OK', what: 'Plugin active' }, classifyModel({ category: 'http', status: 401 }, 'remote'), { mark: 'LIMIT', what: 'Codex test', cause: 'A window is full.', next: 'Wait for the reset.' }, { mark: '--', what: 'Not checked', next: 'Check status.' }], 80)
   for (const mark of ['[OK]', '[!]', '[LIMIT]', '[--]']) expect(text).toContain(mark)
-  expect(text).toContain('2 problems'); expect(text).toContain('docs/TROUBLESHOOTING.md')
+  expect(text).toContain('2 problems'); expect(text).toContain('see "Troubleshooting" in the model-mod README')
   expect(text).not.toContain('\x1b')
   expect(Math.max(...text.split('\n').map(cellWidth))).toBeLessThanOrEqual(80)
 })
