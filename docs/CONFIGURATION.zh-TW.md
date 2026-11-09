@@ -126,6 +126,6 @@ claude plugin configure model-mod@model-mod --values-stdin < /path/to/private-co
 
 ## 背景工作儲存與限制
 
-SessionStart hook 會啟動本機 broker。所有 session 關閉後，閒置的 broker 最多仍存活 30 分鐘。最多保留 50 個工作，保留七天；新增第 51 個時會先淘汰最舊的終態紀錄與結果；若沒有終態紀錄則拒絕新增；每個帳號最多兩個執行中、五個排隊中，且最多一個未終態的 write 工作。背景執行總時限為 30 分鐘、無活動時限為五分鐘；前景分別為五分鐘及兩分鐘。使用 `/model-mod:jobs --clear` 可移除目前工作區已終態的工作與結果。
+SessionStart hook 會啟動本機 broker。所有 session 關閉後，閒置的 broker 最多仍存活 30 分鐘。最多保留 50 個工作；新增第 51 個時會先淘汰最舊的終態紀錄與結果；若沒有終態紀錄則拒絕新增；每個帳號最多兩個執行中、五個排隊中，且最多一個未終態的 write 工作。背景執行總時限為 30 分鐘、無活動時限為五分鐘；前景分別為五分鐘及兩分鐘。使用 `/model-mod:jobs --clear` 可立即移除目前工作區已完成的工作與結果。
 
-工作輸出保存在本機 `$XDG_STATE_HOME/model-mod/delegate/v1`；未設定 `XDG_STATE_HOME` 時改用 XDG 預設的 state 目錄（目錄權限 0700、檔案 0600）。結果可能含有你的 prompt 或程式碼片段：遮罩只對長度至少 32 字元的 prompt 或 diff 作精確字串比對，無法識別模型改寫的內容。本機紀錄保留七天；刪除本機紀錄不會刪除 Codex 自己的 thread 或 provider 端紀錄。狀態紀錄本身不儲存 prompt、diff、思考、帳號目錄路徑或環境變數。
+工作輸出保存在本機 `$XDG_STATE_HOME/model-mod/delegate/v1`；未設定 `XDG_STATE_HOME` 時改用 XDG 預設的 state 目錄（目錄權限 0700、檔案 0600）。結果可能含有你的 prompt 或程式碼片段：遮罩只對長度至少 32 字元的 prompt 或 diff 作精確字串比對，無法識別模型改寫的內容。超過七天的已完成紀錄會在背景 broker 下次啟動時移除，broker 執行期間約每小時再清一次，並非定時器；在那之前仍留在磁碟上。刪除本機紀錄不會刪除 Codex 自己的 thread 或 provider 端紀錄。狀態紀錄本身不儲存 prompt、diff、思考、帳號目錄路徑或環境變數。
