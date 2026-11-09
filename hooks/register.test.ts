@@ -2743,7 +2743,9 @@ test('Codex login: unavailable device output falls back to manual login', async 
 
 test('Codex login: setup and status explain unsupported versions', { options: CODEX_OPTIONS }, async ($, on) => {
   let version = '0.164.0'
+  let missing = false
   const w = world(on, null, CODEX_MODEL, { stdout: '', code: 0 }, argv => {
+    if (argv[1] === '--version' && argv[0] !== 'python3' && missing) throw new Error('ENOENT')
     if (argv[1] === '--version') return { exitCode: 0, stdout: argv[0] === 'python3' ? 'Python 3.12.0' : 'codex-cli ' + version }
     if (argv.includes('prepare-home')) return { exitCode: 0, stdout: JSON.stringify({ created: false }) }
     if (argv.includes('check')) return { exitCode: 67, stdout: JSON.stringify({ pythonVersion: '3.12.0', codexVersion: version, versionStatus: 'too_old' }) }
@@ -2756,6 +2758,10 @@ test('Codex login: setup and status explain unsupported versions', { options: CO
     expect((await $.command.run(SETUP)).text).toContain(hint)
     expect((await $.command.run({ ...SETUP, command: 'model-mod:status' })).text).toContain(hint)
   }
+  missing = true
+  w.answers = ['Codex login (recommended)']
+  expect((await $.command.run(SETUP)).text).toContain('codex unavailable; install Codex or configure codexBin.')
+  missing = false
   version = '0.166.0'
   w.answers = ['Codex login (recommended)', 'main']
   expect((await $.command.run(SETUP)).text).toContain(hint)

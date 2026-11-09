@@ -1414,11 +1414,11 @@ async function setupCodex($: EngineInterface, c?: Config): Promise<string> {
     const py = await $.process.run([python, '--version'], { timeoutMs: 15_000 })
     const pv = /Python\s+(\d+)\.(\d+)/.exec(py.stdout + py.stderr)
     if (py.exitCode !== 0 || !pv || Number(pv[1]) < 3 || (Number(pv[1]) === 3 && Number(pv[2]) < 9)) return 'model-mod: Codex login: Python 3.9 or newer required; install Python.'
-    const cv = await $.process.run([bin, '--version'], { timeoutMs: 15_000 })
+    const cv = await $.process.run([bin, '--version'], { timeoutMs: 15_000 }).catch(() => ({ exitCode: 1, stdout: '' }))
     const v = /^codex-cli (\d+)\.(\d+)\.(\d+)(?:-([A-Za-z0-9.-]+))?(?:\+[A-Za-z0-9.-]+)?$/.exec(cv.stdout.trim())
     if (cv.exitCode !== 0 || !v) return 'model-mod: Codex login: codex unavailable; install Codex or configure codexBin.'
     if (Number(v[1]) === 0 && (Number(v[2]) < 165 || (Number(v[2]) === 165 && Number(v[3]) === 0 && v[4]))) return 'model-mod: Codex login: codex too old; upgrade to 0.165.0 or newer'
-    const account = await ask($, 'Choose an account name or enter one under Other.', ['main', 'Cancel'])
+    const account = await ask($, 'Choose a local label for this login (any valid name works; default main), or enter one under Other.', ['main', 'Cancel'])
     if (account === 'Cancel') throw new Cancelled()
     if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(account)) return 'model-mod: Codex login: invalid account name; nothing changed.'
     const home = await $.env.get('HOME'), appdata = await $.env.get('APPDATA')
