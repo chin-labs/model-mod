@@ -709,7 +709,11 @@ def client(method):
             request.pop('accountsDir', None)
             request.pop('directory', None)
             payload = {'request': request}
-        return broker.connect(broker.root_path(), method, payload, timeout=3)
+        try:
+            return broker.connect(broker.root_path(), method, payload, timeout=3)
+        except broker.BrokerUnavailable:
+            broker.ensure()
+            return broker.connect(broker.root_path(), method, payload, timeout=3)
     except OSError:
         limit = 104 if sys.platform == 'darwin' else 108 if sys.platform.startswith('linux') else None
         if limit is not None and len(os.fsencode(broker.paths(broker.root_path())[0])) >= limit:

@@ -57,14 +57,24 @@ def peer_uid(conn):
     return None
 
 
+class BrokerUnavailable(OSError):
+    pass
+
+
 def connect(root, method, payload=None, timeout=1):
     sockpath, tokenpath, _, _ = paths(root)
-    with open(tokenpath, encoding='utf-8') as source: credentials = json.load(source)
+    try:
+        source = open(tokenpath, encoding='utf-8')
+    except FileNotFoundError as exc:
+        raise BrokerUnavailable(*exc.args) from exc
+    with source: credentials = json.load(source)
     request = {'method': method, 'token': credentials['token'], 'generation': credentials['generation']}
     if payload: request.update(payload)
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as conn:
         conn.settimeout(timeout)
-        conn.connect(sockpath)
+        try: conn.connect(sockpath)
+        except (FileNotFoundError, ConnectionRefusedError) as exc:
+            raise BrokerUnavailable(*exc.args) from exc
         conn.sendall(json.dumps(request, ensure_ascii=False).encode('utf-8') + b'\n')
         data = bytearray()
         while not data.endswith(b'\n'):

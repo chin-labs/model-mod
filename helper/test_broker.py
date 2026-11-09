@@ -122,6 +122,31 @@ class BrokerTest(unittest.TestCase):
         self.assertIn('Only one write job', second['error'])
         self.call('cancel', {'id': first['job']['id']})
 
+    def test_client_restarts_stopped_broker(self):
+        self.ensure().communicate(timeout=3)
+        pidpath = broker.paths(self.root)[2]
+        old_pid = int(Path(pidpath).read_text())
+        self.call('shutdown')
+        self.wait_dead(old_pid)
+        self.assertTrue(self.client('list', {})['ok'])
+        new_pid = int(Path(pidpath).read_text())
+        self.assertNotEqual(old_pid, new_pid)
+        self.assertTrue(self.client('list', {})['ok'])
+        self.call('shutdown')
+        self.wait_dead(new_pid)
+        with patch.dict(os.environ, self.env, clear=True), patch.object(broker, 'HELPER', '/nonexistent'):
+            import delegate
+            from io import StringIO
+            with patch('sys.stdin', StringIO('{}')):
+                self.assertEqual(delegate.client('list')['error'],
+                                 'Background broker socket is unavailable; check the broker and start a new session.')
+        with patch.dict(os.environ, self.env, clear=True), patch.object(broker, 'ensure') as ensure:
+            with patch.object(broker.socket, 'socket') as sock, patch('sys.stdin', StringIO('{}')):
+                Path(broker.paths(self.root)[1]).write_text('{"token":"t","generation":"g"}')
+                sock.return_value.__enter__.return_value.recv.side_effect = ConnectionRefusedError()
+                self.assertFalse(delegate.client('list')['ok'])
+                ensure.assert_not_called()
+
     def test_ensure_lock_serializes_launch(self):
         first, second = self.ensure(), self.ensure()
         for proc in (first, second):
