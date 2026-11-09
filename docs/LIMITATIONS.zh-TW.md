@@ -24,8 +24,6 @@ Codex reasoning 保留為實驗性功能：簽章依前綴過濾，快取以第�
 
 `codexThreadReuse` 開啟時，符合條件的請求從短期父 thread 建立 ephemeral fork，並重放完整歷史。一台 Mac 上的小樣本測試觀察到快取重用改善，但不保證命中。`codexThreadReuse` 開啟時，帳號目錄中的父 rollout 含固定合成回合與工具定義（可能含 MCP 工具名稱），不含對話與系統提示；另含依網頁搜尋設定選定的固定 developer instructions。2026 年 11 月 1 日在一台 Mac 檢查帳號目錄內的 rollout、SQLite 與 log 檔，未發現對話、歷史或覆寫的 instructions；這不保證本機一定不留痕跡。內容仍會送到 OpenAI，與關閉此功能時相同。帳號目錄為私密目錄（0700）。每個工作階段的每個父 thread 都多一個短合成回合；切換設定可能建立另一個。登錄只含雜湊、thread ID、時間與數字形式的父 thread 用量，不含對話內容。不同工具清單可各有父 thread；每個工作階段與帳號最多保留四個 active 父 thread，超過時先刪除最久未使用者。閒置六小時的 TTL 由後續請求順手檢查；換父及工作階段結束時也會嘗試 `thread/delete`。這不是精確定時，也不保證刪除：失敗會在該帳號後續請求重試，已移除的帳號無法自動清理。不支援的平台或重用失敗時，bridge 會改用新的 ephemeral thread。將 `codexThreadReuse` 設為 `off` 可只使用 ephemeral thread 並避免存取登錄。
 
-關閉時使用 ephemeral thread，不存取父 thread 登錄。父 rollout 含固定合成回合與工具定義（可能含 MCP 工具名稱），不含對話與系統提示。2026 年 11 月 1 日在一台 Mac 檢查帳號目錄的 rollout、SQLite 與 log 檔，未發現對話、歷史或覆寫的 instructions；這不是保證。內容仍會送到 OpenAI，與關閉時相同。閒置父 thread 的 TTL 為六小時、由請求順手檢查；刪除屬盡力而為，並非精確定時或保證。刪除屬盡力而為，並非精確定時或保證。
-
 ## 已測試版本
 
 Codex 登入與 API 上游已在 **Claude Code 2.1.314** 測試。API 上游也曾在 2.1.299 至 2.1.310 測試；在 2.1.310 檢查了插件載入、單元測試、回合與更新路徑。另在一台 Mac 上以 Claude Code 2.1.316 搭配 Codex 0.166.0 做過手動端到端檢查（見[尚未驗證](#尚未驗證)）。其他版本未測，請勿假設可用。這些檢查使用測試用設定，而非一般的機密選項流程，因此無法說明你的金鑰如何儲存（見[尚未驗證](#尚未驗證)）。

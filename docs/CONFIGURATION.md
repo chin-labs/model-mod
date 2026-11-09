@@ -105,7 +105,7 @@ Instead of `apiKey`, the file names a `headerFile`: a file of HTTP header lines 
 | `effortMode`, `imageModel`, `sideModel`, `keepThinking`, `localTitle`, `localContext`, `toolSearch`, `toolSearchPercent`, `promptsDir` | Same as the options of the same name. The defaults differ in the file: `effortMode` is `none` unless set to `suffix`, `imageModel` has no automatic choice (the API image path is off without it) and `sideModel` has no default. |
 | `contextWindows` | Object mapping a model ID from `models` to its context window in tokens (32000 to 4000000). |
 
-Reload prompts and check Codex login status, CLI version and quota. If a schema-refresh command is configured, run it to refresh tool schemas (Codex status is not displayed in that branch); otherwise display Codex status and refresh the API model list when an API key is configured. Changed options need `/reload-plugins`.
+`/model-mod:refresh` reloads prompts and checks Codex login status, CLI version and quota. If the `refresh` option is set, it runs that command to refresh tool schemas (Codex status is not displayed in that branch); otherwise it displays Codex status and refreshes the API model list when an API key is configured. Changed options need `/reload-plugins`.
 
 `contextWindow`, `fallbackModel`, `fallbackPercent` and `workerModel` are read only from the plugin options.
 
