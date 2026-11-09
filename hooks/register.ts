@@ -13,6 +13,7 @@ import { classifyModel, networkCategory, renderDoctor } from './doctor.ts'
 import type { Check, ModelResult } from './doctor.ts'
 import type { Group, QuotaBlock, QuotaWindow, Row, StatusView } from './status.ts'
 
+const statusText = (text: string) => text.replace(/^model-mod: /, '')
 // Read legacy rows only as an extra ownership source; this mod never writes them.
 const ROW_MARK = 'Local API via model-mod'
 const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:\/-]{0,99}$/
@@ -474,7 +475,7 @@ async function loadNow($: EngineInterface) {
     // The plugin's own options first; an optional configuration file named by MODEL_MOD_CONFIG next.
     const given = optionsCandidate(pluginOptions)
     if (given === null) {
-      $.ui.status('model-mod: the apiKey option holds characters that cannot be used; mod is inert.')
+      $.ui.status('the apiKey option holds characters that cannot be used; mod is inert.')
       return undefined
     }
     const fromOptions = given !== undefined
@@ -496,7 +497,7 @@ async function loadNow($: EngineInterface) {
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash ||
         !/^(\[[0-9a-f:.]+\]|[a-z0-9_]([a-z0-9._-]*[a-z0-9_])?)$/.test(host) ||
         ['anthropic.com', 'claude.ai'].some(d => host === d || host.endsWith(d))) {
-      $.ui.status('model-mod: refused upstream host; mod is inert.')
+      $.ui.status('refused upstream host; mod is inert.')
       return undefined
     }
     const built: Config = { ...candidate, prompts: await loadPrompts($, candidate.promptsDir),
@@ -573,15 +574,15 @@ async function loadNow($: EngineInterface) {
     built.models = built.models.filter(id => !retired.includes(id) || built.codex?.has(id))
     built.excluded ??= new Set()
     for (const id of retired) if (!built.codex?.has(id)) built.excluded.add(id)
-    if (fromOptions && built.codexWebSearchInvalid) $.ui.status('model-mod: invalid codexWebSearch; using on.')
-    if (fromOptions && built.codexKeepReasoningInvalid) $.ui.status('model-mod: invalid codexKeepReasoning; using on.')
-    if (fromOptions && built.codexThreadReuseInvalid) $.ui.status('model-mod: invalid codexThreadReuse; using on.')
-    if (fromOptions && pluginOptions.codexServiceTier !== undefined && !['default', 'priority', ''].includes(String(pluginOptions.codexServiceTier))) $.ui.status('model-mod: invalid codexServiceTier; using default.')
-    if (built.apiInvalid) $.ui.status('model-mod: API server apiKey contains invalid characters; configure a valid key.')
+    if (fromOptions && built.codexWebSearchInvalid) $.ui.status('invalid codexWebSearch; using on.')
+    if (fromOptions && built.codexKeepReasoningInvalid) $.ui.status('invalid codexKeepReasoning; using on.')
+    if (fromOptions && built.codexThreadReuseInvalid) $.ui.status('invalid codexThreadReuse; using on.')
+    if (fromOptions && pluginOptions.codexServiceTier !== undefined && !['default', 'priority', ''].includes(String(pluginOptions.codexServiceTier))) $.ui.status('invalid codexServiceTier; using default.')
+    if (built.apiInvalid) $.ui.status('API server apiKey contains invalid characters; configure a valid key.')
     // The models the mod switches the session to when the subscription's limit is reached (`fallbackModel`) and runs the
     // `local-worker` agent type on (`workerModel`, else the fallback model). Options only; off when empty. Each must be
     // one of this mod's own models: inside the allowlist when there is one, never a Claude ID.
-    const warnModel = (text: string) => $.ui.status(text.replace(/^model-mod: /, ''))
+    const warnModel = (text: string) => $.ui.status(statusText(text))
     const usable = (name: string): string | undefined => {
       const id = fromOptions && typeof candidate[name] === 'string' ? candidate[name] : ''
       if (id === '') return undefined
@@ -627,7 +628,7 @@ async function capturedTools($: EngineInterface, c: Config): Promise<Tool[] | un
     } catch {
       if (!missingToolsHint) {
         missingToolsHint = true
-        $.ui.status('model-mod: no tool schemas; toolsFile could not be read (run /model-mod:refresh if refresh is configured).')
+        $.ui.status('no tool schemas; toolsFile could not be read (run /model-mod:refresh if refresh is configured).')
       }
       return undefined
     }
@@ -2428,7 +2429,7 @@ export const register: Register = (on, options) => {
     try {
       const c = await load($)
       if (c) {
-        const notify = (note: string | undefined) => { if (note !== undefined) { $.ui.status(note); $.ui.toast(note, { timeoutMs: 15_000 }) } }
+        const notify = (note: string | undefined) => { if (note !== undefined) { $.ui.status(statusText(note)); $.ui.toast(note, { timeoutMs: 15_000 }) } }
         if (c.codex?.has(await $.session.model())) $.clock.after(0, () => { void autoFallback($, c).then(notify).catch(() => undefined) })
         else notify(await autoFallback($, c))
       }

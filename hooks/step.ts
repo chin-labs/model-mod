@@ -96,7 +96,7 @@ export function classifyStepFailure(input: StepFailureInput): StepDecision {
   if (!codex && !streamed && sendThinking && type === 'invalid_request_error') return { kind: 'thinking' }
   if (!streamed && transient && attempt < retryDelays.length) {
     return { kind: 'retry', loginRecheck: !!codex && attempt === retryDelays.length - 1 && !(httpStatus >= 400 && httpStatus < 500),
-      ...(!codex ? { status: `model-mod: ${reason}; retrying (${attempt + 1}/${retryDelays.length})` } : {}),
+      ...(!codex ? { status: `${reason}; retrying (${attempt + 1}/${retryDelays.length})` } : {}),
       delay: Math.max(retryDelays[attempt]!, (retryAfter ?? 0) * 1000) }
   }
   return { kind: 'failure', reason, limitFailed }

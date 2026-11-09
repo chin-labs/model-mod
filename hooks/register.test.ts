@@ -440,7 +440,7 @@ test('502/503/504 retry without a known error type and can eventually succeed', 
     ['sleep', '2'], ['sleep', '3'], ['sleep', '3'],
     ['sleep', '3'], ['sleep', '3'], ['sleep', '3'], ['sleep', '3'], ['sleep', '3'],
   ])
-  expect(statuses).toEqual([1, 2, 3].map(n => `model-mod: HTTP error; retrying (${n}/3)`))
+  expect(statuses).toEqual([1, 2, 3].map(n => `HTTP error; retrying (${n}/3)`))
   expect(w.reached).toEqual([])
 })
 
@@ -535,7 +535,7 @@ test('transient SSE errors before output share the same retry budget and status 
   expect(result.answer).toBe('local answer')
   expect(chunks.map(c => c.kind)).toEqual(['text', 'stop'])
   expect(statuses).toEqual(['overloaded_error', 'rate_limit_error', 'api_error']
-    .map((type, i) => `model-mod: HTTP error (${type}); retrying (${i + 1}/3)`))
+    .map((type, i) => `HTTP error (${type}); retrying (${i + 1}/3)`))
   expect(w.reached).toEqual([])
 })
 
@@ -1962,6 +1962,7 @@ test('Codex fallback: unknown reset warns only once and does not switch', { opti
   await $.turn.complete(END); await w.clock.advance(1)
   expect(w.modelRuns).toEqual([])
   expect(notes.filter(text => text.includes('reset time is unknown')).length).toBe(1)
+  expect(notes.every(text => !text.startsWith('model-mod: '))).toBe(true)
 })
 
 test('Codex fallback: a slow quota read does not block turn completion', { options: { ...OPTIONS, ...CODEX_OPTIONS, fallbackModel: 'gpt-fb' } }, async ($, on) => {
