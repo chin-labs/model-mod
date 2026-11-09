@@ -8,11 +8,11 @@
 
 [English](README.md)
 
-model-mod 是供 Claude Code 使用的插件（mod），讓你把自己的 Codex 登入或 Messages 相容 API 模型放在內建模型旁邊。兩種上游可同時設定。用 `/model-mod:model` 選你的模型，該工作階段就改走你的上游；用 `/model` 回到訂閱模型。訂閱模型、`ANTHROPIC_BASE_URL` 與 Remote Control 維持 Claude Code 原本的連線。
+model-mod 是供 Claude Code 使用的插件（mod），讓你把自己的 Codex 登入或 Messages 相容 API 模型放在內建模型旁邊。兩種上游可同時設定。用 `/model-mod:model` 選模型後，Claude Code 會將它儲存為所有專案中新工作階段的預設模型，持續把對話送到你的 Codex 登入或你自己的 API，直到你執行 `/model sonnet`（或選擇其他訂閱模型）。訂閱模型、`ANTHROPIC_BASE_URL` 與 Remote Control 維持 Claude Code 原本的連線。
 
 ## 需求
 
-- 支援 mod 的 Claude Code：Codex 登入與 API 上游已在 **Claude Code 2.1.314** 測試；API 上游也曾在 2.1.299 至 2.1.310 測試。另在一台 Mac 上以 2.1.316 搭配 Codex 0.166.0 做過手動端到端檢查。其他版本未測。
+- Claude Code 必須載入插件 hooks；安裝後可檢查 `/model-mod:status` 是否有回應。
 - Codex 登入：Python 3.9 以上版本及已安裝的 `codex` CLI（最低支援版本 0.165.0；更舊版本會被拒絕）。Codex context 視窗取自帳號模型目錄（套用有效比例），讀不到時退回 128,000 token；`contextWindow` 可覆寫。或使用你自己已啟動的 Messages 相容 API 與其金鑰；CLIProxyAPI 是曾測試過的一例 API 上游，model-mod 不會安裝或啟動該伺服器。
 - `curl` 與 `bash`；網頁擷取與圖片生成另需[設定說明](docs/CONFIGURATION.zh-TW.md#系統工具)列出的系統工具。
 
@@ -25,6 +25,8 @@ Codex 登入是主要路徑。先安裝 Python 3.9 以上版本與官方 `codex`
 /plugin install model-mod@model-mod
 ```
 
+安裝後可能開啟「Configure model-mod」表單；Codex 登入不需要填寫，按 Esc 跳過即可，API 路徑只需要 `baseUrl` 與 `apiKey`。
+
 若 `/model-mod:setup` 沒反應或提示 hooks 未載入，請先執行 `/reload-plugins`。接著執行：
 
 ```text
@@ -32,7 +34,9 @@ Codex 登入是主要路徑。先安裝 Python 3.9 以上版本與官方 `codex`
 /model-mod:model
 ```
 
-選擇 **Codex login** 與帳號；若系統要求登入，開啟顯示的網址、輸入一次性代碼，再選 **Continue (after logging in)**。選擇模型。setup 會建立帳號目錄並寫入帳號與模型設定；此路徑不需要 `/plugin configure`。代碼約 15 分鐘後失效；手動登入方式見[疑難排解](docs/TROUBLESHOOTING.zh-TW.md)。
+選擇模型後，Claude Code 會將它儲存為所有專案中新工作階段的預設模型，持續把對話送到你的 Codex 登入或你自己的 API，直到執行 `/model sonnet` 或選擇其他訂閱模型。客戶端可能顯示「doesn’t recognize the model, assuming a 200k window」；見[無法辨識模型警告](docs/LIMITATIONS.zh-TW.md#未識別的模型警告)。
+
+選擇 **Codex login** 並為登入選擇本機標籤（預設 `main`；任何有效名稱皆可）；若系統要求登入，開啟顯示的網址、輸入一次性代碼，再選 **Continue (after logging in)**。選擇模型。setup 會建立帳號目錄並寫入帳號與模型設定；此路徑不需要 `/plugin configure`。代碼約 15 分鐘後失效；手動登入方式見[疑難排解](docs/TROUBLESHOOTING.zh-TW.md)。
 
 若已有 [Messages 相容 API 伺服器](docs/CONFIGURATION.zh-TW.md#先準備好你的上游)，也可先用 `/plugin configure model-mod@model-mod` 設定 `baseUrl` 與 `apiKey`，再執行 `/model-mod:setup` 並選 **Compatible API server**。金鑰會當作機密儲存，不必輸入對話。兩種上游可並存。本機 clone 或私密設定檔用法見[其他安裝與設定方式](docs/CONFIGURATION.zh-TW.md#其他安裝與設定方式)。
 
@@ -48,7 +52,7 @@ Codex 登入是主要路徑。先安裝 Python 3.9 以上版本與官方 `codex`
 
 ## 特色
 
-- 你的模型與訂閱模型並存，用 `/model-mod:model` 依工作階段切換。
+- 你的模型與訂閱模型並存；`/model-mod:model` 選擇模型並將它儲存為所有專案中新工作階段的預設模型，持續把對話送到你的 Codex 登入或你自己的 API，直到執行 `/model sonnet` 或選擇其他訂閱模型。
 - 支援串流、工具呼叫、Skills、MCP 伺服器、子代理與 Workflow agent。
 - Codex 登入使用原生網頁搜尋（`codexWebSearch`）及僅支援 POSIX 的圖片生成；API 路徑使用 mod 的搜尋、擷取及圖片生成工具。Codex 也可使用網頁擷取與工具搜尋。
 - 透過你登入的 Codex CLI 使用 `/model-mod:review`（原生、`--adversarial`、`--gate`）、`/model-mod:rescue`、背景工作（`/model-mod:jobs`、`/model-mod:result`、`/model-mod:cancel`）與 `/model-mod:transfer`；見[委派與資料流](docs/FEATURES.zh-TW.md#委派與資料流)。
@@ -62,11 +66,11 @@ Codex 登入是主要路徑。先安裝 Python 3.9 以上版本與官方 `codex`
 |---|---|
 | `/model-mod:setup` | 設定上游並選擇模型，或管理已設定的上游。在終端機中，固定選單會在同一個 pane 開啟；按 Esc 或取消都不會更動設定；已在進行中的登出會執行完畢。 |
 | `/model-mod:model` | 列出你的模型並切換到所選的那個（↑↓ 移動、Enter 選取、Esc 關閉）。終端機太矮、或來自 Remote Control／手機時，改用分頁選單。 |
-| `/model-mod:refresh` | 重新載入提示檔並檢查 Codex 登入狀態、CLI 版本與額度。若已設定 schema 更新命令，則執行該命令更新工具 schema（此分支不顯示 Codex 狀態）；否則顯示 Codex 狀態，並在已設定 API 金鑰時更新 API 模型清單。改過的選項需 `/reload-plugins` 才會生效。 |
+| `/model-mod:refresh` | 更新 Codex 狀態與提示檔；很少需要使用。 |
 | `/model-mod:status` | 依帳號顯示 Codex 額度（用量條與重置時間）、目前的模型路徑與分組診斷：是否啟用、模型數量、工具與設定。回送位址在 `host` 列顯示主機名，其他主機在該列顯示為 `remote`；明文 HTTP 將 API 金鑰以未加密形式送至非回送主機時會提出警告。 |
 | `/model-mod:doctor` | 不送出提示，檢查設定、API 模型清單連線及 Codex 登入和額度，並提供排解建議。 |
 | `/model-mod:review` | 請 Codex 審查；`--gate` 要求結構化裁定、`--adversarial` 審查 diff，`--background` 啟動背景工作。 |
-| `/model-mod:rescue` | 向 Codex 求助；`--write` 要求工作區寫入權限，`--background` 啟動背景工作。 |
+| `/model-mod:rescue -- review the last change` | 向 Codex 求助；`--write` 要求工作區寫入權限，`--background` 啟動背景工作。 |
 | `/model-mod:jobs` | 列出或清除背景工作。 |
 | `/model-mod:result` | 依 ID 讀取工作結果。 |
 | `/model-mod:cancel` | 依 ID 取消工作。 |
@@ -83,6 +87,9 @@ Codex 登入是主要路徑。先安裝 Python 3.9 以上版本與官方 `codex`
 
 ## 限制、隱私與合規
 
+- 它不會取代所有 Claude Code 請求，也不會繞過訂閱額度。
+- 它不支援需要登入的 claude.ai connectors。
+- 路由不會賦予上游模型其他模型的能力或身分。
 - [Windows 驗證清單](docs/WINDOWS.zh-TW.md)說明尚未驗證的平台。
 - [限制說明](docs/LIMITATIONS.zh-TW.md)列出已知差異、尚未驗證的行為及[訂閱側請求](docs/LIMITATIONS.zh-TW.md#訂閱側請求)。
 - 對話、系統指示（含專案指示）、工具定義與結果、圖片會送往你的上游及其背後的供應商。搜尋查詢、擷取網址、圖片提示分別送往對應的目的地。

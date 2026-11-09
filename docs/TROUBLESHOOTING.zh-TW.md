@@ -69,5 +69,9 @@ claude plugin update model-mod@model-mod
 
 ## 解除安裝
 
-1. 先選訂閱模型（例如 `/model sonnet`）。Claude Code 會把互動式的模型選擇存成預設值，否則已儲存的本地預設值會在解除安裝後留下。
-2. 在工作階段中執行 `/plugin uninstall model-mod@model-mod`，或在 shell 執行 `claude plugin uninstall model-mod@model-mod`，然後重新啟動。Claude Code 會保留插件快取。
+1. 執行 `/model-mod:setup` → **Manage configured upstreams**，移除不再需要的上游或帳號。由檔案提供的 API 須編輯其設定檔移除；model-mod 無法清除客戶端安全儲存中的 API 金鑰。
+2. 選擇訂閱模型（例如 `/model sonnet`）；Claude Code 會把互動式選擇存成預設值。
+3. 在工作階段執行 `/plugin uninstall model-mod@model-mod`，或在 shell 執行 `claude plugin uninstall model-mod@model-mod`，然後重新啟動。
+4. 執行 `claude plugin marketplace remove model-mod` 或 `/plugin marketplace remove` 移除 marketplace。
+
+除非手動移除，插件快取、帳號目錄中的 Codex 登入及委派工作日誌都會保留。所有工作階段關閉後，閒置的 broker 會在約 30 分鐘內自行結束。

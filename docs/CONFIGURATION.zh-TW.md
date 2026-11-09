@@ -54,7 +54,7 @@ API 伺服器路徑會把工作階段送往接受 Messages 風格串流請求（
 | `codexAccountsDir` | 絕對目錄；預設 `~/.config/model-mod/accounts`，Windows 為 `%APPDATA%\model-mod\accounts`（未驗證）。每個帳號使用獨立子目錄。 |
 | `codexBin` | 執行檔名稱或絕對路徑；預設 `codex`。 |
 | `pythonBin` | 執行檔名稱或絕對路徑；預設 `python3`。Windows 請設為 `python`（未驗證）。 |
-| `codexThreadReuse` | `on`（預設）或 `off`，不分大小寫；無效值視為 `on` 並顯示於 status。關閉時使用 ephemeral thread，不存取父 thread 登錄。父 rollout 含固定合成回合與工具定義（可能含 MCP 工具名稱），不含對話與系統提示。2026 年 11 月 1 日在一台 Mac 檢查帳號目錄的 rollout、SQLite 與 log 檔，未發現對話、歷史或覆寫的 instructions；這不是保證。內容仍會送到 OpenAI，與關閉時相同。閒置父 thread 的 TTL 為六小時、由請求順手檢查；刪除屬盡力而為，並非精確定時或保證。見[隱私與清理](LIMITATIONS.zh-TW.md#父-thread-隱私與清理)。 |
+| `codexThreadReuse` | `on`（預設）或 `off`，不分大小寫；無效值視為 `on` 並顯示於 status。關閉時使用 ephemeral thread，不存取父 thread 登錄；見[隱私與清理](LIMITATIONS.zh-TW.md#父-thread-隱私與清理)。 |
 | `codexKeepReasoning` | `on`（預設）或 `off`；無效值視為 `on` 並顯示於 status。使用實驗性 API；真實 Codex 重放尚未驗證。thread 重用的 fork 請求不保留 reasoning；若要保留，請將 `codexThreadReuse` 設為 `off`。 |
 | `codexServiceTier` | `default`（預設）或 `priority`；實際服務層級與計費尚未驗證。 |
 | `codexWebSearch` | `on`（預設）或 `off`；無效值視為 `on` 並顯示於 status。工作階段工具清單沒有 WebSearch 時會停用搜尋。 |
@@ -104,6 +104,8 @@ Codex effort 依模型宣告的等級夾值：`max` 取支援的最高等級；�
 | `refresh` | `/model-mod:refresh` 執行來重寫 `toolsFile` 的指令：4 到 64 個字串的陣列，前兩項必須是絕對路徑（程式與其腳本）；不符合者會被忽略。 |
 | `effortMode`、`imageModel`、`sideModel`、`keepThinking`、`localTitle`、`localContext`、`toolSearch`、`toolSearchPercent`、`promptsDir` | 與同名選項相同。檔案中的預設值不同：`effortMode` 除非設為 `suffix` 否則為 `none`，`imageModel` 沒有自動選擇（未設定時 API 圖片路徑關閉），`sideModel` 沒有預設值。 |
 | `contextWindows` | 物件，把 `models` 中的模型 ID 對應到其 context window（token，32000 到 4000000）。 |
+
+重新載入提示檔並檢查 Codex 登入狀態、CLI 版本與額度。若已設定 schema 更新命令，則執行該命令更新工具 schema（此分支不顯示 Codex 狀態）；否則顯示 Codex 狀態，並在已設定 API 金鑰時更新 API 模型清單。改過的選項需 `/reload-plugins` 才會生效。
 
 `contextWindow`、`fallbackModel`、`fallbackPercent` 與 `workerModel` 只從插件選項讀取。
 

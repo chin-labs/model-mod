@@ -6,9 +6,25 @@
 
 CLIProxyAPI 是曾測試過的一例 API 上游；Codex 登入是另一種上游。設定方式見 [README](../README.zh-TW.md)。
 
+## 範圍之外
+
+| 領域 | 界線 |
+|---|---|
+| 全域 API 取代 | model-mod 不更動 `ANTHROPIC_BASE_URL`、不修改客戶端執行檔，也不改寫客戶端的每個請求。 |
+| 訂閱憑證 | mod 既不讀取也不轉送。 |
+| claude.ai 連接器 | 支援標準 MCP 伺服器；需 claude.ai 登入的連接器不支援。 |
+| 模型等價 | 路由不會讓你的上游模型獲得其他模型的能力或身分。 |
+| 繞過用量限制 | 選用的切換只改變下一則訊息使用的模型，不會重置或繞過訂閱限制。 |
+
+Codex 額度用完不輪流換帳號，可設備援模型（不同帳號或上游）。API 上游沒有官方 rateLimits，不適用 Codex fallback 機制。
+
+Codex reasoning 保留為實驗性功能：簽章依前綴過濾，快取以第一個工具呼叫 ID 為鍵，並非完整對話識別；真實 Codex 重放尚未驗證。
+
 ## 父 thread 隱私與清理
 
-`codexThreadReuse` 開啟時，帳號目錄中的父 rollout 含固定合成回合與工具定義（可能含 MCP 工具名稱），不含對話與系統提示；另含依網頁搜尋設定選定的固定 developer instructions。2026 年 11 月 1 日在一台 Mac 檢查帳號目錄內的 rollout、SQLite 與 log 檔，未發現對話、歷史或覆寫的 instructions；這不保證本機一定不留痕跡。內容仍會送到 OpenAI，與關閉此功能時相同。帳號目錄為私密目錄（0700）。每個工作階段的每個父 thread 都多一個短合成回合；切換設定可能建立另一個。登錄只含雜湊、thread ID、時間與數字形式的父 thread 用量，不含對話內容。不同工具清單可各有父 thread；每個工作階段與帳號最多保留四個 active 父 thread，超過時先刪除最久未使用者。閒置六小時的 TTL 由後續請求順手檢查；換父及工作階段結束時也會嘗試 `thread/delete`。這不是精確定時，也不保證刪除：失敗會在該帳號後續請求重試，已移除的帳號無法自動清理。不支援的平台或重用失敗時，bridge 會改用新的 ephemeral thread。將 `codexThreadReuse` 設為 `off` 可只使用 ephemeral thread 並避免存取登錄。
+`codexThreadReuse` 開啟時，符合條件的請求從短期父 thread 建立 ephemeral fork，並重放完整歷史。一台 Mac 上的小樣本測試觀察到快取重用改善，但不保證命中。`codexThreadReuse` 開啟時，帳號目錄中的父 rollout 含固定合成回合與工具定義（可能含 MCP 工具名稱），不含對話與系統提示；另含依網頁搜尋設定選定的固定 developer instructions。2026 年 11 月 1 日在一台 Mac 檢查帳號目錄內的 rollout、SQLite 與 log 檔，未發現對話、歷史或覆寫的 instructions；這不保證本機一定不留痕跡。內容仍會送到 OpenAI，與關閉此功能時相同。帳號目錄為私密目錄（0700）。每個工作階段的每個父 thread 都多一個短合成回合；切換設定可能建立另一個。登錄只含雜湊、thread ID、時間與數字形式的父 thread 用量，不含對話內容。不同工具清單可各有父 thread；每個工作階段與帳號最多保留四個 active 父 thread，超過時先刪除最久未使用者。閒置六小時的 TTL 由後續請求順手檢查；換父及工作階段結束時也會嘗試 `thread/delete`。這不是精確定時，也不保證刪除：失敗會在該帳號後續請求重試，已移除的帳號無法自動清理。不支援的平台或重用失敗時，bridge 會改用新的 ephemeral thread。將 `codexThreadReuse` 設為 `off` 可只使用 ephemeral thread 並避免存取登錄。
+
+關閉時使用 ephemeral thread，不存取父 thread 登錄。父 rollout 含固定合成回合與工具定義（可能含 MCP 工具名稱），不含對話與系統提示。2026 年 11 月 1 日在一台 Mac 檢查帳號目錄的 rollout、SQLite 與 log 檔，未發現對話、歷史或覆寫的 instructions；這不是保證。內容仍會送到 OpenAI，與關閉時相同。閒置父 thread 的 TTL 為六小時、由請求順手檢查；刪除屬盡力而為，並非精確定時或保證。刪除屬盡力而為，並非精確定時或保證。
 
 ## 已測試版本
 
@@ -76,7 +92,7 @@ SDK 與 `-p` 的呼叫端必須檢查結果文字是否以 `model-mod:` 開頭�
 - **Remote Control 與手機。** 只試過簡短的工作階段。長時間連線與從手機選模型未測。
 - **真實的上游 rate limit。** 已測試重試，但未測已耗盡的上游憑證之間的容錯，也未測快取 token 對你額度的影響。
 - **版本與金鑰儲存。** 上述以外的版本、一般機密選項流程搭配 macOS keychain 儲存，以及客戶端升級後金鑰與設定是否保留。
-- **GitHub 託管的 marketplace。** 直接從 GitHub 託管的 marketplace 安裝，尚未端到端測試；若失敗請改用本機 clone。
+- **Marketplace 主機與平台。** 在 macOS 的全新設定檔中，使用 Claude Code 2.1.319 使用 README 所示的 `marketplace add` 命令將此儲存庫新增為 GitHub 託管的 marketplace 並安裝 0.2.4 成功；其他主機與平台尚未測試。
 - **長時間或複雜的工作。** 反覆壓縮的長工作階段、代理內壓縮、長 Workflow、多頁 PDF 與原生 document 區塊、在之後的工作階段延續帶簽章推理的對話，以及跨工作階段延續代理。
 - **Fetch 網路防護。** 位址與重新導向限制已有單元測試；真實的 DNS rebinding 與外部重新導向攻擊尚未端到端測試。
 - **其他側請求。** 見下節末段列出的客戶端請求。
@@ -97,19 +113,6 @@ SDK 與 `-p` 的呼叫端必須檢查結果文字是否以 `model-mod:` 開頭�
 
 檢查時未觸發或結果不確定，請視為未驗證：工具使用摘要、提示建議、離開後摘要、代理進度摘要、記憶擷取／選擇／合成、LLM 型的 prompt 或 agent hook、子代理壓縮、原生 WebSearch、訂閱用量與額度請求、cache touch，以及模型或金鑰驗證。
 
-## 範圍之外
-
-| 領域 | 界線 |
-|---|---|
-| 全域 API 取代 | model-mod 不更動 `ANTHROPIC_BASE_URL`、不修改客戶端執行檔，也不改寫客戶端的每個請求。 |
-| 訂閱憑證 | mod 既不讀取也不轉送。 |
-| claude.ai 連接器 | 支援標準 MCP 伺服器；需 claude.ai 登入的連接器不支援。 |
-| 模型等價 | 路由不會讓你的上游模型獲得其他模型的能力或身分。 |
-| 繞過用量限制 | 選用的切換只改變下一則訊息使用的模型，不會重置或繞過訂閱限制。 |
-
-Codex 額度用完不輪流換帳號，可設備援模型（不同帳號或上游）。API 上游沒有官方 rateLimits，不適用 Codex fallback 機制。
-
-Codex reasoning 保留為實驗性功能：簽章依前綴過濾，快取以第一個工具呼叫 ID 為鍵，並非完整對話識別；真實 Codex 重放尚未驗證。
 
 ## 審查關卡限制
 

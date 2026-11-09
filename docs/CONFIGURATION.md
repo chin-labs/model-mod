@@ -54,7 +54,7 @@ The mod activates with either a valid `apiKey` or a valid combination of `codexA
 | `codexAccountsDir` | Absolute directory; default `~/.config/model-mod/accounts`, or `%APPDATA%\model-mod\accounts` on Windows (unverified). Each account has a separate subdirectory. |
 | `codexBin` | Executable name or absolute path; default `codex`. |
 | `pythonBin` | Executable name or absolute path; default `python3`. On Windows use `python` (unverified). |
-| `codexThreadReuse` | `on` (default) or `off`, case-insensitive; invalid values use `on` and appear in status. Off uses ephemeral threads and does not access the parent registry. The parent rollout contains a fixed synthetic turn and tool definitions (which may include MCP tool names), not conversation messages or system prompts. A November 1, 2026 check of rollout, SQLite and log files in one Mac's account directory found no conversation, history or overridden instructions; this is not a guarantee. Content is still sent to OpenAI as with reuse off. Idle parents have an opportunistic six-hour TTL; deletion is best effort, not precise or guaranteed. See [privacy and cleanup](LIMITATIONS.md#parent-thread-privacy-and-cleanup). |
+| `codexThreadReuse` | `on` (default) or `off`, case-insensitive; invalid values use `on` and appear in status. Off uses ephemeral threads and does not access the parent registry; see [privacy and cleanup](LIMITATIONS.md#parent-thread-privacy-and-cleanup). |
 | `codexKeepReasoning` | `on` (default) or `off`; invalid values use `on` and appear in status. Uses experimental APIs; real Codex replay is unverified. Reasoning is not retained on forked requests with thread reuse; set `codexThreadReuse` to `off` to allow retention. |
 | `codexServiceTier` | `default` (default) or `priority`; actual service tier and billing are unverified. |
 | `codexWebSearch` | `on` (default) or `off`; invalid values use `on` and appear in status. Search is disabled when WebSearch is absent from the session tool list. |
@@ -104,6 +104,8 @@ Instead of `apiKey`, the file names a `headerFile`: a file of HTTP header lines 
 | `refresh` | Command run by `/model-mod:refresh` to rewrite `toolsFile`: an array of 4 to 64 strings whose first two items are absolute paths (the program and its script). Anything else is ignored. |
 | `effortMode`, `imageModel`, `sideModel`, `keepThinking`, `localTitle`, `localContext`, `toolSearch`, `toolSearchPercent`, `promptsDir` | Same as the options of the same name. The defaults differ in the file: `effortMode` is `none` unless set to `suffix`, `imageModel` has no automatic choice (the API image path is off without it) and `sideModel` has no default. |
 | `contextWindows` | Object mapping a model ID from `models` to its context window in tokens (32000 to 4000000). |
+
+Reload prompts and check Codex login status, CLI version and quota. If a schema-refresh command is configured, run it to refresh tool schemas (Codex status is not displayed in that branch); otherwise display Codex status and refresh the API model list when an API key is configured. Changed options need `/reload-plugins`.
 
 `contextWindow`, `fallbackModel`, `fallbackPercent` and `workerModel` are read only from the plugin options.
 

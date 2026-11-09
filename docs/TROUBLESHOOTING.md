@@ -69,5 +69,9 @@ Then restart Claude Code to apply the update. An update arrives only when the re
 
 ## Uninstall
 
-1. Select a subscription model (for example `/model sonnet`). Claude Code saves interactive model choices as its default, so a saved local default would otherwise survive the uninstall.
-2. Run `/plugin uninstall model-mod@model-mod` in a session, or `claude plugin uninstall model-mod@model-mod` in a shell, then restart. Claude Code leaves the plugin cache in place.
+1. Run `/model-mod:setup` → **Manage configured upstreams** and remove upstreams or accounts you no longer want. Remove file-provided APIs by editing their configuration files; model-mod cannot clear stored API keys from the client’s secure storage.
+2. Select a subscription model (for example `/model sonnet`); Claude Code saves interactive model choices as its default.
+3. Run `/plugin uninstall model-mod@model-mod` in a session, or `claude plugin uninstall model-mod@model-mod` in a shell, then restart.
+4. Remove the marketplace with `claude plugin marketplace remove model-mod` or `/plugin marketplace remove`.
+
+Unless removed by hand, the plugin cache, Codex logins under the accounts directory and delegate job logs remain. After all sessions close, an idle broker exits by itself within about 30 minutes.

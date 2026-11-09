@@ -4,9 +4,25 @@
 
 This page lists where your models differ from a subscription model, what has not been verified, and which Claude Code requests can still reach your subscription. It applies to models routed by model-mod; subscription models keep Claude Code's normal route. CLIProxyAPI is one tested API upstream example; Codex login is a separate upstream. See the [README](../README.md) for setup.
 
+## Out of scope
+
+| Area | Boundary |
+|---|---|
+| Global API replacement | model-mod does not change `ANTHROPIC_BASE_URL`, modify the Claude Code binary or rewrite every Claude Code request. |
+| Subscription credentials | The mod neither reads nor forwards them. |
+| claude.ai connectors | Standard MCP servers are supported; connectors that need a claude.ai login are not. |
+| Model equivalence | Routing does not give your upstream model another model's capabilities or identity. |
+| Getting around usage limits | The optional switch only changes which model the next message uses. It does not reset or bypass subscription limits. |
+
+Codex accounts are not rotated when quota is exhausted; configure a fallback model on another account or upstream. API upstreams have no official rateLimits and are not covered by Codex fallback.
+
+Codex reasoning retention is experimental: signatures are filtered by prefix and cached under the first tool-call ID, not a full conversation identity. Real Codex replay is unverified.
+
 ## Parent thread privacy and cleanup
 
-With `codexThreadReuse` on, the parent rollout in the account directory contains a fixed synthetic turn and tool definitions (which may include MCP tool names), but not conversation messages or system prompts. It also contains fixed developer instructions selected by the web-search setting. On November 1, 2026, a check of rollout, SQLite and log files in one Mac's account directory found no conversation, history or overridden instructions; this is not a guarantee that local traces never remain. Content is still sent to OpenAI, as it is with this feature off. The account directory is private (0700). Each session incurs one extra short synthetic turn per parent; switching settings can create another. The registry holds hashes, thread IDs, timestamps and numeric parent usage totals, not conversation content. Different tool lists can have separate parents; at most four active parents are retained per session and account, with least-recently-used parents deleted first. A six-hour idle TTL is checked opportunistically on later requests; replacement and session end also attempt `thread/delete`. This is not a precise timer or a deletion guarantee: failures are retried on later requests to that account, and removed accounts cannot be cleaned automatically. On unsupported platforms or when reuse fails, the bridge uses a new ephemeral thread. Set `codexThreadReuse` to `off` to use only ephemeral threads and avoid the registry.
+With `codexThreadReuse` on, eligible requests fork an ephemeral thread from a short-lived parent and replay the full history. Small-sample tests on one Mac observed improved cache reuse; it is not guaranteed. With `codexThreadReuse` on, the parent rollout in the account directory contains a fixed synthetic turn and tool definitions (which may include MCP tool names), but not conversation messages or system prompts. It also contains fixed developer instructions selected by the web-search setting. On November 1, 2026, a check of rollout, SQLite and log files in one Mac's account directory found no conversation, history or overridden instructions; this is not a guarantee that local traces never remain. Content is still sent to OpenAI, as it is with this feature off. The account directory is private (0700). Each session incurs one extra short synthetic turn per parent; switching settings can create another. The registry holds hashes, thread IDs, timestamps and numeric parent usage totals, not conversation content. Different tool lists can have separate parents; at most four active parents are retained per session and account, with least-recently-used parents deleted first. A six-hour idle TTL is checked opportunistically on later requests; replacement and session end also attempt `thread/delete`. This is not a precise timer or a deletion guarantee: failures are retried on later requests to that account, and removed accounts cannot be cleaned automatically. On unsupported platforms or when reuse fails, the bridge uses a new ephemeral thread. Set `codexThreadReuse` to `off` to use only ephemeral threads and avoid the registry.
+
+Off uses ephemeral threads and does not access the parent registry. The parent rollout contains a fixed synthetic turn and tool definitions (which may include MCP tool names), not conversation messages or system prompts. The parent rollout contains a fixed synthetic turn and tool definitions (possibly MCP tool names), not conversation messages or system prompts. A November 1, 2026 check of rollout, SQLite and log files in one Mac's account directory found no conversation, history or overridden instructions; this is not a guarantee. Content is still sent to OpenAI as with reuse off. Idle parents have an opportunistic six-hour TTL; deletion is best effort, not precise or guaranteed. Deletion is best effort, not a precise timer or a guarantee.
 
 ## Tested versions
 
@@ -74,7 +90,7 @@ These behaviors have not been verified. Do not assume they work.
 - **Remote Control and mobile.** Only short sessions were tried. Long sessions and choosing a model from mobile are untested.
 - **Real upstream rate limits.** Retries were tested, but not failover between exhausted upstream credentials, nor the effect of cached tokens on your quota.
 - **Versions and key storage.** Versions other than those above, the normal secret-option flow with macOS keychain storage, and keeping the key and settings across a Claude Code upgrade.
-- **GitHub-hosted marketplace.** Installing directly from a marketplace hosted on GitHub has not been tested end to end; use a local clone if it fails.
+- **Marketplace hosts and platforms.** Adding the repository as a GitHub-hosted marketplace with the `marketplace add` command shown in the README and installing 0.2.4 worked with Claude Code 2.1.319 on macOS in a fresh profile; other hosts and platforms are untested.
 - **Long or complex work.** Long sessions with repeated compaction, compaction inside agents, long Workflows, multi-page PDFs and native document blocks, continuing a signed-reasoning conversation in a later session, and continuing agents across sessions.
 - **Fetch network defenses.** Address and redirect restrictions are unit-tested; real DNS rebinding and external redirect attacks have not been tested end to end.
 - **Other side requests.** Claude Code requests listed at the end of the next section.
@@ -95,19 +111,6 @@ Claude Code makes some requests on its own, independently of the model you selec
 
 Not triggered or inconclusive when checked, so treat them as unverified: tool-use summaries, prompt suggestions, away summaries, agent progress summaries, memory extraction, selection and synthesis, LLM-based prompt or agent hooks, subagent compaction, native WebSearch, subscription usage and quota requests, cache touch, and model or key validation.
 
-## Out of scope
-
-| Area | Boundary |
-|---|---|
-| Global API replacement | model-mod does not change `ANTHROPIC_BASE_URL`, modify the Claude Code binary or rewrite every Claude Code request. |
-| Subscription credentials | The mod neither reads nor forwards them. |
-| claude.ai connectors | Standard MCP servers are supported; connectors that need a claude.ai login are not. |
-| Model equivalence | Routing does not give your upstream model another model's capabilities or identity. |
-| Getting around usage limits | The optional switch only changes which model the next message uses. It does not reset or bypass subscription limits. |
-
-Codex accounts are not rotated when quota is exhausted; configure a fallback model on another account or upstream. API upstreams have no official rateLimits and are not covered by Codex fallback.
-
-Codex reasoning retention is experimental: signatures are filtered by prefix and cached under the first tool-call ID, not a full conversation identity. Real Codex replay is unverified.
 
 ## Review gate limitations
 
