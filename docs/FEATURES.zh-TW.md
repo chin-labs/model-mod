@@ -6,7 +6,7 @@
 - **內建工具、Skills 與 MCP。** 照常運作。工具輸入 schema 不會轉交，參數由 Claude Code 自行驗證。
 - **子代理與 Workflow。** 在訂閱工作階段中，可用 `model-mod:local-worker` 代理類型把工作交給你的模型（需設定 `workerModel` 或 `fallbackModel`），或讓 Workflow agent 指定 `model: "<你的模型 ID>"`。用你的模型的工作階段仍可委派給訂閱模型，該請求走訂閱。
 - **網頁搜尋與擷取。** API 路徑的 `web_search` 經 API 上游執行；Codex 登入在 `codexWebSearch`（[進階選項](CONFIGURATION.zh-TW.md#進階選項)）開啟且工作階段提供 WebSearch 時使用原生搜尋。`web_fetch` 自行下載公開 HTTP(S) 頁面，每一跳都檢查所有 DNS 回答，拒絕迴路（loopback）、私網、link-local、共享位址空間（CGNAT）、多播、保留與未指定位址，以及主機名稱 localhost 與最後一段為 local 或 internal 的名稱；其他特殊用途範圍不在檢查內（最多五次重新導向）。
-- **圖片生成。** `generate_image` 把 PNG 存到工作目錄，預設在 `generated-images/` 下。在 Git 倉庫內，該檔案是未追蹤的二進位檔，因此審查 gate 會回報 "An untracked file is binary; review was not performed."，Stop gate 的結果為 `unknown`，直到該檔案被刪除或忽略。API 路徑使用 `/v1/images/generations` 與設定的圖片模型；Codex 登入使用內建圖片生成，不需設定 `imageModel`，僅支援 POSIX。Codex 可能先讀取帳號目錄中內建的圖片生成技能檔，因此可能多出一次讀取權限提示。
+- **圖片生成。** `generate_image` 把 PNG 存到工作目錄，預設在 `generated-images/` 下。在 Git 倉庫內，該檔案是未追蹤的二進位檔，因此審查 gate 與 Stop gate 的結果都是 `unknown`（helper 的原因為 "An untracked file is binary; review was not performed."），直到該檔案被刪除或忽略。API 路徑使用 `/v1/images/generations` 與設定的圖片模型；Codex 登入使用內建圖片生成，不需設定 `imageModel`，僅支援 POSIX。Codex 可能先讀取帳號目錄中內建的圖片生成技能檔，因此可能多出一次讀取權限提示。
 - **Codex 父 thread 重用。** 符合條件的請求可重用父 thread；見[隱私與清理](LIMITATIONS.zh-TW.md#父-thread-隱私與清理)。
 - **Codex 推理延續。** 工具迴圈期間可透過實驗性 app-server API 在記憶體保留不透明的 reasoning item；真實 Codex 回合的重放尚未驗證。fork 請求不保留 reasoning；若要保留，請將 `codexThreadReuse`（[進階選項](CONFIGURATION.zh-TW.md#進階選項)）設為 `off`。見[限制說明](LIMITATIONS.zh-TW.md#codex-登入的限制)。
 - **工具搜尋。** `tool_search` 用來找出 schema 被延後載入的 MCP 工具。
