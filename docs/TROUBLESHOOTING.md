@@ -33,9 +33,9 @@ After `/model-mod:setup`:
 | `model is not in the allowlist` | The ID is outside `models` | Choose an allowed ID or update the list. |
 | Errors after selecting a model | Model unavailable, upstream down or key rejected | Fix the upstream, model or key, then `/model-mod:refresh`. There is no subscription fallback. |
 | Effort suffix rejected | The upstream does not understand `model(level)` | Set the advanced option `effortMode` to `none`. |
-| Image tool missing or refused | No local model selected, API image model missing, permission denied, or Codex login, quota or image generation unavailable | Select a configured model and approve the request. API models need `imageModel`; Codex uses its built-in image model. For Codex failures check login, quota and the CLI version. If the image exceeds 20 MiB, request a smaller image; if the output path exists or is outside the working directory, choose another path. |
+| Image tool missing or refused | No local model selected, API image model missing, permission denied, or Codex login, quota or image generation unavailable | Select a configured model and approve the request. API models need `imageModel` (an [advanced option](CONFIGURATION.md#advanced-options)); Codex uses its built-in image model. For Codex failures check login, quota and the CLI version. If the image exceeds 20 MiB, request a smaller image; if the output path exists or is outside the working directory, choose another path. |
 | `web_fetch` refuses a URL | Not HTTP(S), or a private destination | Use a public HTTP(S) URL. |
-| Compacts too early, or long input is rejected | The assumed window differs from the model's real one | Adjust `contextWindow`. |
+| Compacts too early, or long input is rejected | The assumed window differs from the model's real one | Adjust `contextWindow` (an [advanced option](CONFIGURATION.md#advanced-options)). |
 | Actions blocked in auto permission mode although the upstream works | The classifier runs on your subscription and failed | Use default or acceptEdits mode with allow rules. |
 | Claude Code starts on an unusable model after uninstalling | Claude Code saved your last model selection | Run `/model sonnet`, or remove the saved `model` entry from your settings. |
 
@@ -44,9 +44,9 @@ After `/model-mod:setup`:
 | Symptom | What to do |
 |---|---|
 | Not logged in or account directory missing | Run `/model-mod:setup`, select Codex login and follow the device-auth link and code; select Continue after logging in. If setup cannot obtain the link or code, follow its manual terminal commands and rerun setup. Windows uses PowerShell commands instead. |
-| `model is not in the allowlist; configure codexAccountsDir` | The accounts directory could not be determined, so Codex model IDs were excluded. Set an absolute `codexAccountsDir`, or make sure `HOME` or `APPDATA` is available for the default directory; create the account directory and log in if needed. Reload the plugin. |
+| `model is not in the allowlist; configure codexAccountsDir` | The accounts directory could not be determined, so Codex model IDs were excluded. Set an absolute `codexAccountsDir` (an [advanced option](CONFIGURATION.md#advanced-options)), or make sure `HOME` or `APPDATA` is available for the default directory; create the account directory and log in if needed. Reload the plugin. |
 | Codex too old | Upgrade the official CLI to at least 0.165.0, then retry. |
-| Helper cannot start | Install Python 3.9+ and check `pythonBin`; check `codexBin` and `codexAccountsDir` paths. Executables must be command names or absolute paths. |
+| Helper cannot start | Install Python 3.9+ and check `pythonBin` and `codexAccountsDir` (both [advanced options](CONFIGURATION.md#advanced-options)); check the `codexBin` path. Executables must be command names or absolute paths. |
 | `Codex used a built-in tool that model-mod does not support` | The helper stopped the turn on an unsupported item. Check the Codex version and effective settings before retrying. See [limitations](LIMITATIONS.md#codex-login-limitations). |
 | `incompatible app-server protocol; update or check Codex` | Update or check Codex and its effective settings before retrying. |
 | Tool name appears as `bridge_` followed by a hash | Reserved names such as `mcp__...` and names outside Codex's accepted format are mapped to aliases for the Codex call and restored on return. See [limitations](LIMITATIONS.md#codex-login-limitations). |

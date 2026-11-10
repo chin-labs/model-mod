@@ -29,7 +29,7 @@ API 伺服器路徑會把工作階段送往接受 Messages 風格串流請求（
 
 ## 插件選項
 
-下列選項出現在設定對話框（`/plugin configure model-mod@model-mod`）。
+設定對話框（`/plugin configure model-mod@model-mod`）顯示八個選項：下方前五個，以及 Codex 登入選項中的 `codexAccounts`、`codexModels` 與 `codexBin`。其餘選項列在[進階選項](#進階選項)。
 
 有效的 `apiKey` 或有效的 `codexAccounts` 與 `codexModels` 組合，任一即可啟用 mod；兩者可並存。無效的 API 金鑰只停用 API 端，不會停用有效的 Codex 設定。使用 API 路徑且伺服器不在預設位址時，請調整 `baseUrl`。
 
@@ -38,12 +38,8 @@ API 伺服器路徑會把工作階段送往接受 Messages 風格串流請求（
 | `baseUrl` | 你的上游基底網址，不含 `/v1`。僅限 HTTP／HTTPS；含帳密、查詢參數、fragment 的網址，以及 `anthropic.com`、`claude.ai` 主機會被拒絕。 | `http://127.0.0.1:8317` |
 | `apiKey` | API 上游的金鑰（機密）。API 路徑需要此欄位。 | 無 |
 | `models` | 以逗號分隔的模型 ID，mod 只接管這些。空白：上游列出的所有 chat 模型。 | 空白 |
-| `imageModel` | API 路徑的 `generate_image` 圖片模型。空白：`gpt-image-2`，或上游列出的第一個 `gpt-image*`。`none` 關閉 API 圖片路徑；Codex 使用內建圖片模型，不受此設定影響。 | 空白 |
-| `contextWindow` | 對未知視窗大小的模型所假設的輸入 token 數（最小 32000）。明設的值會覆寫 Codex 模型目錄視窗（見[限制](LIMITATIONS.zh-TW.md#codex-登入的限制)）。 | `272000`（API）；目錄有效視窗或 128,000（Codex） |
 | `fallbackModel` | 訂閱或 Codex 登入額度達上限時切換的模型；不會輪流換帳號，同帳號不可作為備援。空白：不自動切換。 | 空白 |
-| `fallbackPercent` | rate-limit 視窗用量達多少比例（50–100）時切換。僅在設定 `fallbackModel` 時有效。 | `100` |
 | `workerModel` | `model-mod:local-worker` 代理類型使用的模型。空白：用 fallback 模型；兩者都空白則不提供 worker 代理類型。 | 空白 |
-| `promptsDir` | 存放自訂 `compact.md`、`title.md`、`subagent-note.md`、`worker.md` 的絕對路徑目錄。空白：使用插件內的 `prompts/`。 | 空白 |
 
 ### Codex 登入選項
 
@@ -51,15 +47,7 @@ API 伺服器路徑會把工作階段送往接受 Messages 風格串流請求（
 |---|---|
 | `codexAccounts` | 以逗號分隔帳號名稱，預設空白。每個名稱 1–32 字元，首字元為 `[a-z0-9]`，其餘使用 `[a-z0-9-]`。 |
 | `codexModels` | 以逗號分隔模型名稱，預設空白。每個名稱 1–64 字元，首字元為 `[A-Za-z0-9]`，其餘使用 `[A-Za-z0-9._-]`；含 `claude` 或 `anthropic` 的名稱不分大小寫均會拒絕。 |
-| `codexAccountsDir` | 絕對目錄；預設 `~/.config/model-mod/accounts`，Windows 為 `%APPDATA%\model-mod\accounts`（未驗證）。每個帳號使用獨立子目錄。 |
 | `codexBin` | 執行檔名稱或絕對路徑；預設 `codex`。 |
-| `pythonBin` | 執行檔名稱或絕對路徑；預設 `python3`。Windows 請設為 `python`（未驗證）。 |
-| `codexThreadReuse` | `on`（預設）或 `off`，不分大小寫；無效值視為 `on` 並顯示於 status。關閉時使用 ephemeral thread，不存取父 thread 登錄；見[隱私與清理](LIMITATIONS.zh-TW.md#父-thread-隱私與清理)。 |
-| `codexKeepReasoning` | `on`（預設）或 `off`；無效值視為 `on` 並顯示於 status。使用實驗性 API；真實 Codex 重放尚未驗證。thread 重用的 fork 請求不保留 reasoning；若要保留，請將 `codexThreadReuse` 設為 `off`。 |
-| `codexServiceTier` | `default`（預設）或 `priority`；實際服務層級與計費尚未驗證。 |
-| `codexWebSearch` | `on`（預設）或 `off`；無效值視為 `on` 並顯示於 status。工作階段工具清單沒有 WebSearch 時會停用搜尋。 |
-| `codexStopGate` | `off`（預設）或 `on`，不分大小寫；無效值視為 `off` 並顯示於 status。開啟後可能在主工作階段回合結束時啟動唯讀 Codex 審查、把 diff 與未追蹤且未被 gitignore 的檔案全文送往 OpenAI 並阻擋結束；被 gitignore 的檔案不會送出。 |
-| `codexStopGateBlocks` | 每個工作階段最多阻擋 `1` 次（預設）或 `2` 次，請寫成數字（加引號的字串會使 hooks 模組載入失敗）；其他無效值視為 `1` 並顯示於 status。達上限後未通過的結果會放行並提示人工審查。 |
 
 Codex effort 依模型宣告的等級夾值：`max` 取支援的最高等級；不支援的明設等級取不高於它的最高支援等級，若沒有較低等級則取最低。絕不送出 `minimal`。未明設時，需要調整會採用模型支援的預設值。
 
@@ -69,10 +57,39 @@ Codex effort 依模型宣告的等級夾值：`max` 取支援的最高等級；�
 
 路徑與命令不得包含 NUL 或換行；單純命令名稱只能包含英文字母、數字、`.`、`_`、`-`。帳號與模型組成 ID `<帳號>/<模型>`，顯示為 `<模型> @ <帳號>`。每個帳號都會搭配每個已設定的模型。API 模型 ID 相同時，Codex 優先。`/model-mod:setup` 會合併並去除重複帳號，但會以選定模型**覆寫整個**適用於所有帳號的 `codexModels` 設定；新增帳號時請重新選取完整所需模型清單。`fallbackModel` 與 `workerModel` 可指向有效的 Codex ID。使用 Codex 登入時，若只有一個已設定帳號擁有該模型，可直接使用模型 ID；若有多個帳號，請指定 `<account>/<model>`。
 
-進階選項不會出現在對話框，請寫在 Claude Code 設定檔 `pluginConfigs` 下該插件的 `options` 物件（鍵為 `model-mod@model-mod`；以 `--plugin-dir` 載入時為 `model-mod@inline`）。API 金鑰仍放在機密欄位。
+### 進階選項
+
+這些選項不會出現在對話框，請寫在 Claude Code 設定檔 `pluginConfigs` 下該插件的 `options` 物件（鍵為 `model-mod@model-mod`；以 `--plugin-dir` 載入時為 `model-mod@inline`），然後重新啟動 Claude Code。寫在那裡的值在插件更新後仍會保留。API 金鑰仍放在機密欄位。
+
+```json
+{
+  "pluginConfigs": {
+    "model-mod@model-mod": {
+      "options": {
+        "contextWindow": 200000,
+        "codexWebSearch": "off"
+      }
+    }
+  }
+}
+```
+
+數字請寫成 JSON 數字。`maxTokens`、`contextWindow`、`fallbackPercent` 與 `codexStopGateBlocks` 寫成加引號的數字（`"80"`）時也會當作該數字讀取；數字選項裡的其他文字會被忽略（`codexStopGateBlocks` 會顯示為無效）。其餘進階選項使用表中所列的文字值。
 
 | 進階選項 | 用途 | 預設值 |
 |---|---|---|
+| `imageModel` | API 路徑的 `generate_image` 圖片模型。空白：`gpt-image-2`，或上游列出的第一個 `gpt-image*`。`none` 關閉 API 圖片路徑；Codex 使用內建圖片模型，不受此設定影響。 | 空白 |
+| `contextWindow` | 對未知視窗大小的模型所假設的輸入 token 數（最小 32000）。明設的值會覆寫 Codex 模型目錄視窗（見[限制](LIMITATIONS.zh-TW.md#codex-登入的限制)）。 | `272000`（API）；目錄有效視窗或 128,000（Codex） |
+| `fallbackPercent` | rate-limit 視窗用量達多少比例（50–100）時切換。僅在設定 `fallbackModel` 時有效。 | `100` |
+| `promptsDir` | 存放自訂 `compact.md`、`title.md`、`subagent-note.md`、`worker.md` 的絕對路徑目錄。空白：使用插件內的 `prompts/`。 | 空白 |
+| `codexAccountsDir` | 絕對目錄；每個帳號使用獨立子目錄。 | `~/.config/model-mod/accounts`，Windows 為 `%APPDATA%\model-mod\accounts`（未驗證） |
+| `pythonBin` | 執行檔名稱或絕對路徑。Windows 請設為 `python`（未驗證）。 | `python3` |
+| `codexThreadReuse` | `on` 或 `off`，不分大小寫；無效值視為 `on` 並顯示於 status。關閉時使用 ephemeral thread，不存取父 thread 登錄；見[隱私與清理](LIMITATIONS.zh-TW.md#父-thread-隱私與清理)。 | `on` |
+| `codexKeepReasoning` | `on` 或 `off`；無效值視為 `on` 並顯示於 status。使用實驗性 API；真實 Codex 重放尚未驗證。thread 重用的 fork 請求不保留 reasoning；若要保留，請將 `codexThreadReuse` 設為 `off`。 | `on` |
+| `codexServiceTier` | `default` 或 `priority`；實際服務層級與計費尚未驗證。 | `default` |
+| `codexWebSearch` | `on` 或 `off`；無效值視為 `on` 並顯示於 status。工作階段工具清單沒有 WebSearch 時會停用搜尋。 | `on` |
+| `codexStopGate` | `off` 或 `on`，不分大小寫；無效值視為 `off` 並顯示於 status。開啟後可能在主工作階段回合結束時啟動唯讀 Codex 審查、把 diff 與未追蹤且未被 gitignore 的檔案全文送往 OpenAI 並阻擋結束；被 gitignore 的檔案不會送出。 | `off` |
+| `codexStopGateBlocks` | 每個工作階段最多阻擋 `1` 次或 `2` 次；其他無效值視為 `1` 並顯示於 status。達上限後未通過的結果會放行並提示人工審查。 | `1` |
 | `maxTokens` | 以 `max_tokens` 送出。 | `32000` |
 | `effortMode` | 僅適用 API 路徑：`suffix` 依目前 effort 等級送出 `model(level)`；`none` 送純模型 ID，適用於拒絕後綴的上游。 | `suffix` |
 | `sideModel` | 選了你的模型時，Claude Code 自己的側請求所用的官方模型。`none` 不設定；環境中已有的值優先。 | `claude-haiku-5-5` |

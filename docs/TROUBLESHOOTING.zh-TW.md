@@ -33,9 +33,9 @@
 | `model is not in the allowlist` | 該 ID 不在 `models` 內 | 選擇允許的 ID，或更新清單。 |
 | 選了模型後出現錯誤 | 模型不可用、上游停機或金鑰被拒絕 | 修正上游、模型或金鑰，再執行 `/model-mod:refresh`。不會退回訂閱。 |
 | effort 後綴被拒絕 | 上游不認得 `model(level)` | 把進階選項 `effortMode` 設為 `none`。 |
-| 圖片工具不存在或被拒絕 | 未選本地模型、API 圖片模型未設定、權限遭拒，或 Codex 登入、額度或圖片功能不可用 | 選擇已設定的模型並允許請求。API 模型需設定 `imageModel`；Codex 使用內建圖片模型。Codex 失敗時請檢查登入、額度與 CLI 版本。圖片超過 20 MiB 時請求較小的圖片；輸出路徑已存在或位於工作目錄外時請換路徑。 |
+| 圖片工具不存在或被拒絕 | 未選本地模型、API 圖片模型未設定、權限遭拒，或 Codex 登入、額度或圖片功能不可用 | 選擇已設定的模型並允許請求。API 模型需設定 `imageModel`（[進階選項](CONFIGURATION.zh-TW.md#進階選項)）；Codex 使用內建圖片模型。Codex 失敗時請檢查登入、額度與 CLI 版本。圖片超過 20 MiB 時請求較小的圖片；輸出路徑已存在或位於工作目錄外時請換路徑。 |
 | `web_fetch` 拒絕某網址 | 不是 HTTP(S)，或目的地是私網 | 改用公開的 HTTP(S) 網址。 |
-| 太早壓縮，或長輸入被拒絕 | 假設的視窗與模型實際視窗不同 | 調整 `contextWindow`。 |
+| 太早壓縮，或長輸入被拒絕 | 假設的視窗與模型實際視窗不同 | 調整 `contextWindow`（[進階選項](CONFIGURATION.zh-TW.md#進階選項)）。 |
 | 上游正常，但 auto 權限模式下動作被擋 | 分類器跑在你的訂閱上且失敗 | 改用 default 或 acceptEdits 模式搭配 allow 規則。 |
 | 解除安裝後 Claude Code 以無法使用的模型啟動 | Claude Code 儲存了你最後一次選的模型 | 執行 `/model sonnet`，或從設定中移除已儲存的 `model` 項目。 |
 
@@ -44,9 +44,9 @@
 | 症狀 | 處理方式 |
 |---|---|
 | 尚未登入或帳號目錄不存在 | 執行 `/model-mod:setup` 並選 Codex login，依顯示的網址與代碼完成裝置驗證，登入後選 Continue。若 setup 無法取得網址或代碼，請依顯示的終端機命令手動登入，再重新執行 setup；Windows 會顯示 PowerShell 命令。 |
-| `model is not in the allowlist; configure codexAccountsDir` | 無法決定帳號目錄，因而排除 Codex 模型 ID。請設定絕對路徑 `codexAccountsDir`，或確認 `HOME` 或 `APPDATA` 可供決定預設目錄；必要時建立帳號目錄並登入，再重新載入插件。 |
+| `model is not in the allowlist; configure codexAccountsDir` | 無法決定帳號目錄，因而排除 Codex 模型 ID。請設定絕對路徑 `codexAccountsDir`（[進階選項](CONFIGURATION.zh-TW.md#進階選項)），或確認 `HOME` 或 `APPDATA` 可供決定預設目錄；必要時建立帳號目錄並登入，再重新載入插件。 |
 | Codex 版本過舊 | 將官方 CLI 升級至至少 0.165.0，再重試。 |
-| helper 無法啟動 | 安裝 Python 3.9 以上版本並檢查 `pythonBin`，也檢查 `codexBin` 與 `codexAccountsDir` 路徑。執行檔須為命令名稱或絕對路徑。 |
+| helper 無法啟動 | 安裝 Python 3.9 以上版本並檢查 `pythonBin` 與 `codexAccountsDir`（都是[進階選項](CONFIGURATION.zh-TW.md#進階選項)），也檢查 `codexBin` 路徑。執行檔須為命令名稱或絕對路徑。 |
 | `Codex used a built-in tool that model-mod does not support` | helper 遇到不支援的項目時會終止回合。重試前請檢查 Codex 版本及有效設定。見[限制說明](LIMITATIONS.zh-TW.md#codex-登入的限制)。 |
 | `incompatible app-server protocol; update or check Codex` | 升級或檢查 Codex 及其有效設定後再重試。 |
 | 工具名稱顯示為 `bridge_` 加雜湊 | `mcp__...` 等保留名稱及不符合 Codex 格式的名稱，在呼叫 Codex 時會轉成別名，回傳時還原。見[限制說明](LIMITATIONS.zh-TW.md#codex-登入的限制)。 |

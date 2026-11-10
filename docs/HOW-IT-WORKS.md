@@ -16,7 +16,7 @@ The hook sends the Messages request body to the helper on stdin. The helper tran
 
 ## Custom prompts
 
-The prompts for compaction, titles, subagents and the worker live in `compact.md`, `title.md`, `subagent-note.md` and `worker.md` in the plugin's `prompts/` directory. Set `promptsDir` to use your own copies (files in the plugin directory are replaced on upgrade). There is no built-in fallback: a missing, empty, unreadable or over-8000-character file counts as unavailable. Without `compact.md`, local compaction is skipped; without `title.md`, the first 50 characters of the prompt become the title; without `worker.md`, there is no worker agent type. `/model-mod:refresh` re-reads the files.
+The prompts for compaction, titles, subagents and the worker live in `compact.md`, `title.md`, `subagent-note.md` and `worker.md` in the plugin's `prompts/` directory. Set `promptsDir` (an [advanced option](CONFIGURATION.md#advanced-options)) to use your own copies (files in the plugin directory are replaced on upgrade). There is no built-in fallback: a missing, empty, unreadable or over-8000-character file counts as unavailable. Without `compact.md`, local compaction is skipped; without `title.md`, the first 50 characters of the prompt become the title; without `worker.md`, there is no worker agent type. `/model-mod:refresh` re-reads the files.
 
 ## Limitations, privacy and compliance
 

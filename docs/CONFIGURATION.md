@@ -29,7 +29,7 @@ For the API-server path, model-mod sends a session to a server that accepts Mess
 
 ## Plugin options
 
-These options appear in the configuration dialog (`/plugin configure model-mod@model-mod`).
+The configuration dialog (`/plugin configure model-mod@model-mod`) shows eight options: the first five below and `codexAccounts`, `codexModels` and `codexBin` under Codex login options. The other options are listed under [Advanced options](#advanced-options).
 
 The mod activates with either a valid `apiKey` or a valid combination of `codexAccounts` and `codexModels`. Both can coexist. An invalid API key disables the API side, not a valid Codex configuration. For the API path, change `baseUrl` if your server does not use the default address.
 
@@ -38,12 +38,8 @@ The mod activates with either a valid `apiKey` or a valid combination of `codexA
 | `baseUrl` | Base URL of your upstream, without `/v1`. HTTP or HTTPS only; URLs with credentials, queries or fragments, and `anthropic.com` or `claude.ai` hosts, are refused. | `http://127.0.0.1:8317` |
 | `apiKey` | Your API upstream's key (secret). Required for the API path. | none |
 | `models` | Comma-separated model IDs the mod answers for. Empty: every chat model the upstream lists. | empty |
-| `imageModel` | API image model for `generate_image`. Empty: `gpt-image-2`, or the first `gpt-image*` the upstream lists. `none` disables the API image path. Codex uses its built-in image model independently of this setting. | empty |
-| `contextWindow` | Input tokens assumed for a model whose window is unknown (minimum 32000). An explicit value overrides the Codex catalog window (see [Limitations](LIMITATIONS.md#codex-login-limitations)). | `272000` (API); catalog effective window or 128,000 (Codex) |
 | `fallbackModel` | Model to switch to when a subscription or Codex login quota is reached; no account rotation, and the same account cannot be the fallback. Empty: off. | empty |
-| `fallbackPercent` | Used share of a rate-limit window (50–100) at which the switch happens. Only read when `fallbackModel` is set. | `100` |
 | `workerModel` | Model for the `model-mod:local-worker` agent type. Empty: the fallback model; if both are empty there is no worker type. | empty |
-| `promptsDir` | Absolute directory with your own `compact.md`, `title.md`, `subagent-note.md` and `worker.md`. Empty: the plugin's `prompts/` directory. | empty |
 
 ### Codex login options
 
@@ -51,15 +47,7 @@ The mod activates with either a valid `apiKey` or a valid combination of `codexA
 |---|---|
 | `codexAccounts` | Comma-separated account names; empty by default. Each is 1–32 characters, starts with `[a-z0-9]`, and otherwise uses `[a-z0-9-]`. |
 | `codexModels` | Comma-separated model names; empty by default. Each is 1–64 characters, starts with `[A-Za-z0-9]`, and otherwise uses `[A-Za-z0-9._-]`; names containing `claude` or `anthropic` are rejected, case-insensitively. |
-| `codexAccountsDir` | Absolute directory; default `~/.config/model-mod/accounts`, or `%APPDATA%\model-mod\accounts` on Windows (unverified). Each account has a separate subdirectory. |
 | `codexBin` | Executable name or absolute path; default `codex`. |
-| `pythonBin` | Executable name or absolute path; default `python3`. On Windows use `python` (unverified). |
-| `codexThreadReuse` | `on` (default) or `off`, case-insensitive; invalid values use `on` and appear in status. Off uses ephemeral threads and does not access the parent registry; see [privacy and cleanup](LIMITATIONS.md#parent-thread-privacy-and-cleanup). |
-| `codexKeepReasoning` | `on` (default) or `off`; invalid values use `on` and appear in status. Uses experimental APIs; real Codex replay is unverified. Reasoning is not retained on forked requests with thread reuse; set `codexThreadReuse` to `off` to allow retention. |
-| `codexServiceTier` | `default` (default) or `priority`; actual service tier and billing are unverified. |
-| `codexWebSearch` | `on` (default) or `off`; invalid values use `on` and appear in status. Search is disabled when WebSearch is absent from the session tool list. |
-| `codexStopGate` | `off` (default) or `on`, case-insensitive; invalid values use `off` and appear in status. On may start a read-only Codex review after a main-session turn, send the diff and full contents of untracked, non-ignored files to OpenAI and block ending. Gitignored files are not sent. |
-| `codexStopGateBlocks` | Maximum blocks per session: `1` (default) or `2`, written as a number (a quoted string stops the hooks module from loading); other invalid values use `1` and appear in status. Once the limit is reached, an unpassed result allows ending with a human-review warning. |
 
 Codex effort is clamped to levels declared by the model: `max` selects the highest supported level; an unsupported explicit level selects the highest supported level at or below it, or the lowest if none is lower. `minimal` is never sent. If no explicit level is given, the supported model default is used when needed.
 
@@ -69,10 +57,39 @@ Native search and openPage run at OpenAI and are not constrained by Claude permi
 
 Paths and commands cannot contain NUL or newline; a command name may contain only letters, digits, `.`, `_` and `-`. An account and a model form ID `<account>/<model>`, displayed as `<model> @ <account>`. Every account is paired with every configured model. When an API model has the same ID, Codex takes precedence. `/model-mod:setup` merges and deduplicates accounts but **replaces the entire** `codexModels` setting with the selected models for all accounts; reselect the complete desired model set when adding an account. `fallbackModel` and `workerModel` may refer to a valid Codex ID. With Codex login, a bare model ID is accepted when exactly one configured account has that model; with several accounts, give `<account>/<model>`.
 
-Advanced options are not shown in the dialog. Set them in the plugin's `options` object under `pluginConfigs` in your Claude Code settings (key `model-mod@model-mod`, or `model-mod@inline` when loaded with `--plugin-dir`). Keep the API key itself in the secret field.
+### Advanced options
+
+These options are not shown in the dialog. Set them in the plugin's `options` object under `pluginConfigs` in your Claude Code settings file (key `model-mod@model-mod`, or `model-mod@inline` when loaded with `--plugin-dir`), then restart Claude Code. A value stored there is kept when the plugin is updated. Keep the API key itself in the secret field.
+
+```json
+{
+  "pluginConfigs": {
+    "model-mod@model-mod": {
+      "options": {
+        "contextWindow": 200000,
+        "codexWebSearch": "off"
+      }
+    }
+  }
+}
+```
+
+Numbers are written as JSON numbers. For `maxTokens`, `contextWindow`, `fallbackPercent` and `codexStopGateBlocks`, a number in quotes (`"80"`) is read as that number too; any other text in a number option is ignored (`codexStopGateBlocks` reports it as invalid). The other advanced options take the text shown.
 
 | Advanced option | What it does | Default |
 |---|---|---|
+| `imageModel` | API image model for `generate_image`. Empty: `gpt-image-2`, or the first `gpt-image*` the upstream lists. `none` disables the API image path. Codex uses its built-in image model independently of this setting. | empty |
+| `contextWindow` | Input tokens assumed for a model whose window is unknown (minimum 32000). An explicit value overrides the Codex catalog window (see [Limitations](LIMITATIONS.md#codex-login-limitations)). | `272000` (API); catalog effective window or 128,000 (Codex) |
+| `fallbackPercent` | Used share of a rate-limit window (50–100) at which the switch happens. Only read when `fallbackModel` is set. | `100` |
+| `promptsDir` | Absolute directory with your own `compact.md`, `title.md`, `subagent-note.md` and `worker.md`. Empty: the plugin's `prompts/` directory. | empty |
+| `codexAccountsDir` | Absolute directory; each account has a separate subdirectory. | `~/.config/model-mod/accounts`, or `%APPDATA%\model-mod\accounts` on Windows (unverified) |
+| `pythonBin` | Executable name or absolute path. On Windows use `python` (unverified). | `python3` |
+| `codexThreadReuse` | `on` or `off`, case-insensitive; invalid values use `on` and appear in status. Off uses ephemeral threads and does not access the parent registry; see [privacy and cleanup](LIMITATIONS.md#parent-thread-privacy-and-cleanup). | `on` |
+| `codexKeepReasoning` | `on` or `off`; invalid values use `on` and appear in status. Uses experimental APIs; real Codex replay is unverified. Reasoning is not retained on forked requests with thread reuse; set `codexThreadReuse` to `off` to allow retention. | `on` |
+| `codexServiceTier` | `default` or `priority`; actual service tier and billing are unverified. | `default` |
+| `codexWebSearch` | `on` or `off`; invalid values use `on` and appear in status. Search is disabled when WebSearch is absent from the session tool list. | `on` |
+| `codexStopGate` | `off` or `on`, case-insensitive; invalid values use `off` and appear in status. On may start a read-only Codex review after a main-session turn, send the diff and full contents of untracked, non-ignored files to OpenAI and block ending. Gitignored files are not sent. | `off` |
+| `codexStopGateBlocks` | Maximum blocks per session: `1` or `2`; other invalid values use `1` and appear in status. Once the limit is reached, an unpassed result allows ending with a human-review warning. | `1` |
 | `maxTokens` | Sent as `max_tokens`. | `32000` |
 | `effortMode` | API path only: `suffix` sends `model(level)` for the effort level in use; `none` sends the plain model ID, for an upstream that rejects the suffix. | `suffix` |
 | `sideModel` | Official model for Claude Code's own side requests while one of your models is selected. `none` leaves it alone; a value already in your environment wins. | `claude-haiku-5-5` |
