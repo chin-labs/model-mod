@@ -461,7 +461,7 @@ class DelegateTest(unittest.TestCase):
         request = dict(self.request, kind='transfer', transcript=str(transcript))
         def mode(name):
             (self.account_dir / 'fake_config.json').write_text(json.dumps({'mode': name, 'log': str(self.log), 'session_path': str(transcript), 'session_cwd': str(self.repo)}))
-        with patch.dict(os.environ, {'HOME': str(self.root)}):
+        with patch.dict(os.environ, {'HOME': str(self.root), 'CLAUDE_CONFIG_DIR': ''}):
             mode('transfer')
             output = delegate.transfer(request)
             self.assertIn('codex resume 12345678-1234-4234-8234-123456789abc', output)
