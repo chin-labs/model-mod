@@ -2456,6 +2456,7 @@ export const register: Register = (on, options) => {
     const codex = c.codex?.get(e.model)
     let parser = new MessagesStream(e.model)
     let spawnFailed = false
+    let retryShown = false
     try {
       const own = await trackedOf($, e.agentId)
       let history: readonly Turn[]
@@ -2562,7 +2563,7 @@ export const register: Register = (on, options) => {
                   } catch { /* the original failure remains */ }
                 }
               }
-              if (decision.status) $.ui.status(decision.status)
+              if (decision.status) { $.ui.status(decision.status); retryShown = true }
               // $.clock.sleep is paid out of the hook's own time budget (about 10 s); a process wait is not.
               for (let left = decision.delay; left > 0 && !next.signal.aborted; left -= 3000) {
                 await $.process.run(['sleep', String(Math.min(left, 3000) / 1000)])
@@ -2599,6 +2600,9 @@ export const register: Register = (on, options) => {
       return yield* failure(e, next.signal.aborted ? 'cancelled' : codex
         ? `Codex login (${codex.account}): ${spawnFailed ? 'helper could not start; install Python 3.9 or newer and check pythonBin' : 'request could not complete; check Codex and try again'}`
         : `local request failed (${why})`, parser.nextIndex)
+    } finally {
+      // The retry line is pinned until it is replaced or cleared; the turn is over, so it must not stay.
+      if (retryShown) $.ui.status(undefined)
     }
   }).catch(async function* ($, e, next) {
     // No engine calls in this handler: re-entry failures deny all $ operations.

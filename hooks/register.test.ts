@@ -440,7 +440,7 @@ test('502/503/504 retry without a known error type and can eventually succeed', 
     ['sleep', '2'], ['sleep', '3'], ['sleep', '3'],
     ['sleep', '3'], ['sleep', '3'], ['sleep', '3'], ['sleep', '3'], ['sleep', '3'],
   ])
-  expect(statuses).toEqual([1, 2, 3].map(n => `HTTP error; retrying (${n}/3)`))
+  expect(statuses).toEqual([...[1, 2, 3].map(n => `HTTP error; retrying (${n}/3)`), undefined]) // the last line is the clear
   expect(w.reached).toEqual([])
 })
 
@@ -534,8 +534,8 @@ test('transient SSE errors before output share the same retry budget and status 
   expect(w.spawned.length).toBe(4)
   expect(result.answer).toBe('local answer')
   expect(chunks.map(c => c.kind)).toEqual(['text', 'stop'])
-  expect(statuses).toEqual(['overloaded_error', 'rate_limit_error', 'api_error']
-    .map((type, i) => `HTTP error (${type}); retrying (${i + 1}/3)`))
+  expect(statuses).toEqual([...['overloaded_error', 'rate_limit_error', 'api_error']
+    .map((type, i) => `HTTP error (${type}); retrying (${i + 1}/3)`), undefined])
   expect(w.reached).toEqual([])
 })
 
