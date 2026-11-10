@@ -121,7 +121,7 @@ Codex effort 依模型宣告的等級夾值：`max` 取支援的最高等級；�
 | `effortMode`、`imageModel`、`sideModel`、`keepThinking`、`localTitle`、`localContext`、`toolSearch`、`toolSearchPercent`、`promptsDir` | 與同名選項相同。檔案中的預設值不同：`effortMode` 除非設為 `suffix` 否則為 `none`，`imageModel` 沒有自動選擇（未設定時 API 圖片路徑關閉），`sideModel` 沒有預設值。 |
 | `contextWindows` | 物件，把 `models` 中的模型 ID 對應到其 context window（token，32000 到 4000000）。 |
 
-提示檔或上游模型清單變更後，請重新啟動 Claude Code 才會生效。使用 `/model-mod:status` 和 `/model-mod:doctor` 查看 Codex 狀態。改過的選項需 `/reload-plugins` 才會生效。
+提示檔變更後，請重新啟動 Claude Code 才會生效。上游模型清單的變更，只有在插件選項未設 `models` 清單時，重新啟動後才會生效：設了 `models` 清單時不套用取得的清單，檔案模式也從不取得清單。使用 `/model-mod:status` 和 `/model-mod:doctor` 查看 Codex 狀態。改過的選項需 `/reload-plugins` 才會生效。
 
 `contextWindow`、`fallbackModel`、`fallbackPercent` 與 `workerModel` 只從插件選項讀取。
 

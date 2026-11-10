@@ -121,7 +121,7 @@ Instead of `apiKey`, the file names a `headerFile`: a file of HTTP header lines 
 | `effortMode`, `imageModel`, `sideModel`, `keepThinking`, `localTitle`, `localContext`, `toolSearch`, `toolSearchPercent`, `promptsDir` | Same as the options of the same name. The defaults differ in the file: `effortMode` is `none` unless set to `suffix`, `imageModel` has no automatic choice (the API image path is off without it) and `sideModel` has no default. |
 | `contextWindows` | Object mapping a model ID from `models` to its context window in tokens (32000 to 4000000). |
 
-Restart Claude Code for changes to prompt files or the upstream model list to take effect. Use `/model-mod:status` and `/model-mod:doctor` to check Codex status. Changed options need `/reload-plugins`.
+Restart Claude Code for changes to prompt files to take effect. Changes to the upstream model list take effect after a restart only when the plugin options have no `models` list: with a `models` list the fetched list is not applied, and file mode never fetches it. Use `/model-mod:status` and `/model-mod:doctor` to check Codex status. Changed options need `/reload-plugins`.
 
 `contextWindow`, `fallbackModel`, `fallbackPercent` and `workerModel` are read only from the plugin options.
 
