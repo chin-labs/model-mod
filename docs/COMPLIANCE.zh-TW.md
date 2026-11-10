@@ -22,7 +22,7 @@ model-mod 是 Claude Code 的插件。這是獨立專案，與 Anthropic 或 Ope
 
 ## 哪些資料會離開你的電腦
 
-API 路徑送往你的模型的請求，會把對話、系統指示、工具定義與結果、圖片送到你的上游及其背後的供應商，但不含客戶端工作階段或使用者身分 metadata，也不含訂閱驗證標頭。Codex 登入路徑的對話內容經你自行登入的官方 `codex app-server` CLI 送往 OpenAI 服務。model-mod 不讀取、複製或轉送 Codex 登入憑證。Codex 圖片提示詞與生成圖片內容會送往 OpenAI。即使 sandbox 唯讀，app-server 仍會自行將圖片寫入 `CODEX_HOME/generated_images`；取得位元組後 model-mod 嘗試不跟隨符號連結刪除該字面路徑，失敗僅記內部 note，不使呼叫失敗。Codex 原生搜尋的查詢文字會送往 OpenAI。原生搜尋與 openPage 在 OpenAI 端執行，不受 Claude 權限的網域規則（allowed／blocked domains）限制；model-mod 不做 `allowed_domains` 的安全宣稱。API 路徑則使用獨立的 mod `web_search` 工具。Web fetch 連線到你指定的網站；API 路徑的圖片生成與搜尋使用你的上游。
+API 路徑送往你的模型的請求，會把對話、系統指示、工具定義與結果、圖片送到你的上游及其背後的供應商。請求不帶訂閱驗證標頭，也沒有獨立的工作階段或使用者 metadata 欄位。對話文字本身可能含有 Claude Code 自行加入的帳號資訊，例如你登入帳號的電子郵件，以及工作目錄與 git 狀態，mod 不會移除；Codex 登入路徑上，同樣的文字會送往 OpenAI。Codex 登入路徑的對話內容經你自行登入的官方 `codex app-server` CLI 送往 OpenAI 服務。model-mod 不讀取、複製或轉送 Codex 登入憑證。Codex 圖片提示詞與生成圖片內容會送往 OpenAI。即使 sandbox 唯讀，app-server 仍會自行將圖片寫入 `CODEX_HOME/generated_images`；取得位元組後 model-mod 嘗試不跟隨符號連結刪除該字面路徑，失敗僅記內部 note，不使呼叫失敗。Codex 原生搜尋的查詢文字會送往 OpenAI。原生搜尋與 openPage 在 OpenAI 端執行，不受 Claude 權限的網域規則（allowed／blocked domains）限制；model-mod 不做 `allowed_domains` 的安全宣稱。API 路徑則使用獨立的 mod `web_search` 工具。Web fetch 連線到你指定的網站；API 路徑的圖片生成與搜尋使用你的上游。
 
 Codex 工具往返期間，插件可能在記憶體保留 OpenAI 回傳的不透明 reasoning item，並隨對話歷史送回 OpenAI。它可能包含加密內容；此功能不會在插件重新載入或重啟後保留它，見[限制說明](LIMITATIONS.zh-TW.md#codex-登入的限制)。
 

@@ -91,7 +91,7 @@ Send a short message after selecting a model. An upstream failure ends the turn 
 - Routing does not give an upstream model another model’s capabilities or identity.
 - [Windows checklist](docs/WINDOWS.md) covers the unverified platform.
 - [Limitations](docs/LIMITATIONS.md) lists known differences, unverified behavior and [subscription side requests](docs/LIMITATIONS.md#subscription-side-requests).
-- Conversations, system instructions (including project instructions), tool definitions and results, and images go to your upstream and any provider behind it. Search queries, fetch URLs and image prompts go to their respective destinations.
+- Conversations (including account details Claude Code adds, such as your email address), system instructions (including project instructions), tool definitions and results, and images go to your upstream and any provider behind it. Search queries, fetch URLs and image prompts go to their respective destinations.
 - Auto permission mode sends the full conversation and project instructions to your subscription for classification, even on your models. Default or acceptEdits mode with allow rules avoids that; other side requests can still use your subscription.
 - The mod uses plugin hooks: it does not modify the Claude Code binary, intercept TLS, read subscription credential files or send subscription credentials to your upstream. Use an upstream you trust; streamed output is not rewritten to mask keys.
 
