@@ -598,7 +598,7 @@ test('a config whose upstream is the subscription API leaves the mod inert', asy
 
 test('compaction of a bridge model is summarised upstream and never reaches the chain, even when that fails', async ($, on) => {
   let sent: { system: string; messages: { content: { text: string }[] }[] } | undefined
-  const failed = world(on, { ...baseConfig, refresh: ['/bin/false', '/bin/false', 'x', 'y'], promptsDir: '/cfg/prompts' }, LOCAL, { stdout: '', code: 0 }, (_argv, stdin) => {
+  const failed = world(on, { ...baseConfig, promptsDir: '/cfg/prompts' }, LOCAL, { stdout: '', code: 0 }, (_argv, stdin) => {
     sent = JSON.parse(stdin!)
     return { exitCode: 22, stdout: '' }
   })
@@ -609,9 +609,8 @@ test('compaction of a bridge model is summarised upstream and never reaches the 
   expect(sent?.system).toBe('CUSTOM COMPACT instructions')
   expect(sent?.messages[0]?.content[0]?.text).toContain(prior)
   expect('skip' in answer && answer.skip).toMatch(/^model-mod:/)
-  failed.files[customPath] = 'changed without refresh'
+  failed.files[customPath] = 'edited after load'
   await $.session.compact({ trigger: 'manual', messages: [] } as never)
-  expect(sent?.system).toBe('CUSTOM COMPACT instructions')
   expect(sent?.system).toBe('CUSTOM COMPACT instructions')
   expect('skip' in answer && answer.skip).toMatch(/^model-mod:/)
   expect(failed.reached).toEqual([])

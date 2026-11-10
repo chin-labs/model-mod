@@ -167,19 +167,16 @@ async function confirmStoredKey($: EngineInterface, baseUrl: string): Promise<bo
 const settingStep = (row: { key: string; value?: unknown }, value: string, texts: { denied: string; failed: string; rollbackFailed: string }) =>
   ({ key: row.key, value, previous: typeof row.value === 'string' ? row.value : '', ...texts })
 
-async function configurePicker($: EngineInterface, c: { baseUrl: string; key?: string; models: string[]; explicitModels?: boolean; codex?: Map<string, CodexAccount> }, setup: boolean, interactive: boolean, status: string, confirmedHost?: string): Promise<string> {
-  if (setup && !c.key) return 'model-mod: apiKey is not configured. Open /plugin → model-mod configure, set the upstream API key there, then run /model-mod:setup.'
-  if (setup && !interactive) return 'model-mod setup is interactive. ' + status
-  if (!c.key) return 'model-mod: no apiKey in the plugin options; picker refresh is unavailable.'
+async function configurePicker($: EngineInterface, c: { baseUrl: string; key?: string; models: string[]; explicitModels?: boolean; codex?: Map<string, CodexAccount> }, interactive: boolean, status: string, confirmedHost?: string): Promise<string> {
+  if (!c.key) return 'model-mod: apiKey is not configured. Open /plugin → model-mod configure, set the upstream API key there, then run /model-mod:setup.'
+  if (!interactive) return 'model-mod setup is interactive. ' + status
   try {
     let baseUrl = c.baseUrl
-    if (setup) {
-      const choice = await pick($, `Keep the API endpoint ${baseUrl}?`, ['Keep (recommended)', 'Change'], { header: 'Endpoint' })
-      if (choice !== 'Keep (recommended)') {
-        const input = await ask($, 'What is the API endpoint URL? Type it under Other.', ['Cancel', 'Keep current endpoint'])
-        if (input === 'Cancel') throw new Cancelled()
-        if (input !== 'Keep current endpoint') baseUrl = input
-      }
+    const choice = await pick($, `Keep the API endpoint ${baseUrl}?`, ['Keep (recommended)', 'Change'], { header: 'Endpoint' })
+    if (choice !== 'Keep (recommended)') {
+      const input = await ask($, 'What is the API endpoint URL? Type it under Other.', ['Cancel', 'Keep current endpoint'])
+      if (input === 'Cancel') throw new Cancelled()
+      if (input !== 'Keep current endpoint') baseUrl = input
     }
     try { baseUrl = endpoint(baseUrl) } catch { return 'model-mod: refused upstream URL; nothing changed.' }
     if (confirmedHost && new URL(baseUrl).hostname !== confirmedHost && !await confirmStoredKey($, baseUrl)) return storedKeyCancelled
@@ -190,7 +187,7 @@ async function configurePicker($: EngineInterface, c: { baseUrl: string; key?: s
       if (skipped.length) notes.push('skipped (collides with an official alias): ' + skipped.join(', '))
       const local = { models: [] as string[] }
       addModels(local, ids)
-      if (setup && local.models.length > MODEL_CACHE_CAP) {
+      if (local.models.length > MODEL_CACHE_CAP) {
         capped = true
         notes.push(`Limited to the first ${MODEL_CACHE_CAP} local model IDs (${local.models.length} listed) to fit the ownership cache; saved as an explicit allowlist.`)
         return local.models.slice(0, MODEL_CACHE_CAP)
@@ -201,7 +198,7 @@ async function configurePicker($: EngineInterface, c: { baseUrl: string; key?: s
     for (let retries = 0;; retries++) {
       const fetched = await modelList($, baseUrl, c.key)
       if ('error' in fetched) {
-        if (!setup || !fetched.unsupported) return `model-mod: model list failed (${fetched.error}); nothing changed.`
+        if (!fetched.unsupported) return `model-mod: model list failed (${fetched.error}); nothing changed.`
         const input = await ask($, `The API does not support a model list (${fetched.error}). Which comma-separated model IDs should be used? Type them under Other.`, ['Cancel', 'Try again'])
         if (input === 'Cancel') throw new Cancelled()
         if (input === 'Try again') {
@@ -213,10 +210,9 @@ async function configurePicker($: EngineInterface, c: { baseUrl: string; key?: s
       } else {
         const ids = offered(fetched.chat)
         if (!ids.length) return ['model-mod: no chat models listed; nothing changed.', ...notes].join('\n')
-        if (setup) {
-          ({ selected, all } = await chooseModels($, ids, notes))
-          if (capped) all = false
-        } else selected = c.explicitModels ? ids.filter(id => c.models.includes(id)) : ids
+        const chosen = await chooseModels($, ids, notes)
+        selected = chosen.selected
+        all = chosen.all && !capped
       }
       break
     }
@@ -225,21 +221,20 @@ async function configurePicker($: EngineInterface, c: { baseUrl: string; key?: s
     const rows = await $.config.list()
     const rowFor = (field: string) => rows.find(row => row.key.endsWith('.' + field) && row.provider.plugin.split('@')[0] === $.plugin.name.split('@')[0])
     const urlRow = rowFor('baseUrl'), modelsRow = rowFor('models')
-    if (!modelsRow || modelsRow.isLocked || (setup && (!urlRow || urlRow.isLocked))) return 'model-mod: writable plugin config rows are unavailable; nothing changed.'
+    if (!modelsRow || modelsRow.isLocked || !urlRow || urlRow.isLocked) return 'model-mod: writable plugin config rows are unavailable; nothing changed.'
     const known = await $.store.get('models')
     const cached = { models: [] as string[] }
     if (Array.isArray(known)) addModels(cached, known.filter(id => typeof id === 'string' && !NOT_CHAT.test(id) && !selected.includes(id)))
     addModels(cached, selected)
     const retired = await retiredModels($)
-    if (setup) await ensureOpen($)
-    const updates = [...(setup ? [{ row: urlRow!, value: baseUrl }] : []),
-      { row: modelsRow, value: setup ? (all ? '' : selected.join(',')) : (c.explicitModels ? selected.join(',') : '') }]
+    await ensureOpen($)
+    const updates = [{ row: urlRow, value: baseUrl }, { row: modelsRow, value: all ? '' : selected.join(',') }]
     const failure = { denied: 'model-mod: setup failed; previous settings restored.', failed: 'model-mod: setup failed; previous settings restored.',
       rollbackFailed: 'model-mod: setup failed and rollback failed; restore the previous settings in /plugin.' }
     const stores = { models: Array.isArray(known) ? known : [], retiredModels: retired }
     try {
       await $.store.set('models', cached.models.filter(id => !c.codex?.has(id)).slice(-MODEL_CACHE_CAP))
-      if (setup) await $.store.set('retiredModels', retired.filter(id => !selected.includes(id)))
+      await $.store.set('retiredModels', retired.filter(id => !selected.includes(id)))
     } catch {
       try { await $.store.set('models', stores.models); await $.store.set('retiredModels', stores.retiredModels) } catch { return failure.rollbackFailed }
       return failure.failed
@@ -1555,23 +1550,6 @@ function codexAccountList(c: Config): CodexAccount[] {
   return [...accounts.values()]
 }
 
-async function codexStatus($: EngineInterface, c: Config): Promise<string[]> {
-  const search = await codexWebSearchState($, c)
-  return Promise.all(codexAccountList(c).map(async item => {
-    const r = await readCodexAccount($, c, item)
-    const show = (name: string, window?: CodexWindow | null) => {
-      const minutes = window?.windowDurationMins
-      const label = minutes === 300 ? '5h' : minutes === 10080 ? 'weekly' : typeof minutes === 'number' && minutes > 0 ? `${minutes}m` : name
-      const pct = typeof window?.remainingPercent === 'number' && Number.isFinite(window.remainingPercent) ? `${window.remainingPercent}% left` : 'unavailable'
-      const reset = typeof window?.resetsAt === 'number' && Number.isFinite(window.resetsAt) ? new Date(window.resetsAt * 1000).toISOString() : 'unavailable'
-      return `${label} ${pct} (resets ${reset})`
-    }
-    const limits = r.limitsRead ? `${show('primary', r.primary)}, ${show('secondary', r.secondary)}` : 'unavailable'
-    const version = (r.codex ?? 'unavailable') + (r.tooOld ? '; codex too old; upgrade to 0.165.0 or newer' : '')
-    return scrub(c, `upstream=Codex login; account=${item.account}; dir=${item.directory}; python=${r.python ?? 'unavailable'}; codex=${version}; login=${r.login}; limits=${limits}; credits=${r.credits ?? 'unavailable'}; plan=${r.plan ?? 'unavailable'}; ordinaryUsageAllowed=${r.ordinaryUsageAllowed === undefined ? 'unavailable' : String(r.ordinaryUsageAllowed)}; webSearch=${search}${c.codexWebSearchInvalid ? ' (invalid setting; using on)' : ''}; keepReasoning=${c.codexKeepReasoning ?? 'on'}${(c.codexKeepReasoning ?? 'on') === 'on' && (c.codexThreadReuse ?? 'on') === 'on' ? ' (not kept on reused threads)' : ''}${c.codexKeepReasoningInvalid ? ' (invalid setting; using on)' : ''}; threadReuse=${c.codexThreadReuse ?? 'on'}${c.codexThreadReuseInvalid ? ' (invalid setting; using on)' : ''}; serviceTier=${c.codexServiceTier ?? 'default'}${c.codexServiceTierInvalid ? ' (invalid setting; using default)' : ''}${r.warnings.map(w => '; warning: ' + w).join('')}`, false)
-  }))
-}
-
 // The quota block of one Codex account. A value the account did not report is left out, never guessed.
 function codexQuota(r: CodexReading): QuotaBlock {
   const window = (name: string, w?: CodexWindow | null): QuotaWindow | undefined => {
@@ -1881,9 +1859,9 @@ async function admin($: EngineInterface, e: { origin: { kind: string }; presenta
         if (!candidate || !candidate.key) return { text: 'model-mod: configure a valid API key in /plugin before setup.' }
         const baseUrl = candidate.baseUrl as string
         if (!await confirmStoredKey($, baseUrl)) return { text: storedKeyCancelled }
-        return { text: await configurePicker($, { baseUrl, key: candidate.key as string, models: [], codex: c?.codex }, true, interactive, status, new URL(baseUrl).hostname) }
+        return { text: await configurePicker($, { baseUrl, key: candidate.key as string, models: [], codex: c?.codex }, interactive, status, new URL(baseUrl).hostname) }
       }
-      return { text: await configurePicker($, c ?? { baseUrl: typeof pluginOptions.baseUrl === 'string' && pluginOptions.baseUrl.trim() || DEFAULT_BASE_URL, models: [] }, true, interactive, status) }
+      return { text: await configurePicker($, c ?? { baseUrl: typeof pluginOptions.baseUrl === 'string' && pluginOptions.baseUrl.trim() || DEFAULT_BASE_URL, models: [] }, interactive, status) }
     } catch { return { text: 'model-mod: setup cancelled, nothing changed' } }
   }
   if (arg === 'doctor') return { text: await doctorReport($, c, e.presentation?.columns) }
