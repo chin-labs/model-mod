@@ -74,7 +74,7 @@ Codex effort 依模型宣告的等級夾值：`max` 取支援的最高等級；�
 }
 ```
 
-數字請寫成 JSON 數字。`maxTokens`、`contextWindow`、`fallbackPercent` 與 `codexStopGateBlocks` 寫成加引號的數字（`"80"`）時也會當作該數字讀取；數字選項裡的其他文字會被忽略（`codexStopGateBlocks` 會顯示為無效）。其餘進階選項使用表中所列的文字值。
+數字請寫成 JSON 數字。`maxTokens`、`contextWindow` 與 `fallbackPercent` 寫成加引號的數字（`"80"`）時也會當作該數字讀取；`codexStopGateBlocks` 也接受 `"1"` 或 `"2"`。數字選項裡的其他文字會被忽略（`codexStopGateBlocks` 會顯示為無效）。其餘進階選項使用表中所列的文字值。
 
 | 進階選項 | 用途 | 預設值 |
 |---|---|---|
@@ -88,7 +88,7 @@ Codex effort 依模型宣告的等級夾值：`max` 取支援的最高等級；�
 | `codexKeepReasoning` | `on` 或 `off`；無效值視為 `on` 並顯示於 status。使用實驗性 API；真實 Codex 重放尚未驗證。thread 重用的 fork 請求不保留 reasoning；若要保留，請將 `codexThreadReuse` 設為 `off`。 | `on` |
 | `codexServiceTier` | `default` 或 `priority`；實際服務層級與計費尚未驗證。 | `default` |
 | `codexWebSearch` | `on` 或 `off`；無效值視為 `on` 並顯示於 status。工作階段工具清單沒有 WebSearch 時會停用搜尋。 | `on` |
-| `codexStopGate` | `off` 或 `on`，不分大小寫；無效值視為 `off` 並顯示於 status。開啟後可能在主工作階段回合結束時啟動唯讀 Codex 審查、把 diff 與未追蹤且未被 gitignore 的檔案全文送往 OpenAI 並阻擋結束；被 gitignore 的檔案不會送出。 | `off` |
+| `codexStopGate` | `off` 或 `on`，不分大小寫；無效值視為 `off` 並顯示於 status。開啟後可能在主工作階段回合結束時啟動唯讀 Codex 審查、把 diff 與未追蹤且未被 gitignore 的檔案全文送往 OpenAI 並阻擋結束；被 `.gitignore` 排除的未追蹤檔案不會送出；已追蹤的檔案即使也符合 `.gitignore`，其變更仍會出現在 diff 中。 | `off` |
 | `codexStopGateBlocks` | 每個工作階段最多阻擋 `1` 次或 `2` 次；其他無效值視為 `1` 並顯示於 status。達上限後未通過的結果會放行並提示人工審查。 | `1` |
 | `maxTokens` | 以 `max_tokens` 送出。 | `32000` |
 | `effortMode` | 僅適用 API 路徑：`suffix` 依目前 effort 等級送出 `model(level)`；`none` 送純模型 ID，適用於拒絕後綴的上游。 | `suffix` |

@@ -74,7 +74,7 @@ These options are not shown in the dialog. Set them in the plugin's `options` ob
 }
 ```
 
-Numbers are written as JSON numbers. For `maxTokens`, `contextWindow`, `fallbackPercent` and `codexStopGateBlocks`, a number in quotes (`"80"`) is read as that number too; any other text in a number option is ignored (`codexStopGateBlocks` reports it as invalid). The other advanced options take the text shown.
+Numbers are written as JSON numbers. For `maxTokens`, `contextWindow` and `fallbackPercent`, a number in quotes (`"80"`) is read as that number too; `codexStopGateBlocks` also accepts `"1"` or `"2"`. Any other text in a number option is ignored (`codexStopGateBlocks` reports it as invalid). The other advanced options take the text shown.
 
 | Advanced option | What it does | Default |
 |---|---|---|
@@ -88,7 +88,7 @@ Numbers are written as JSON numbers. For `maxTokens`, `contextWindow`, `fallback
 | `codexKeepReasoning` | `on` or `off`; invalid values use `on` and appear in status. Uses experimental APIs; real Codex replay is unverified. Reasoning is not retained on forked requests with thread reuse; set `codexThreadReuse` to `off` to allow retention. | `on` |
 | `codexServiceTier` | `default` or `priority`; actual service tier and billing are unverified. | `default` |
 | `codexWebSearch` | `on` or `off`; invalid values use `on` and appear in status. Search is disabled when WebSearch is absent from the session tool list. | `on` |
-| `codexStopGate` | `off` or `on`, case-insensitive; invalid values use `off` and appear in status. On may start a read-only Codex review after a main-session turn, send the diff and full contents of untracked, non-ignored files to OpenAI and block ending. Gitignored files are not sent. | `off` |
+| `codexStopGate` | `off` or `on`, case-insensitive; invalid values use `off` and appear in status. On may start a read-only Codex review after a main-session turn, send the diff and full contents of untracked, non-ignored files to OpenAI and block ending. Untracked files that `.gitignore` matches are not sent; changes to a tracked file are in the diff even if `.gitignore` also matches it. | `off` |
 | `codexStopGateBlocks` | Maximum blocks per session: `1` or `2`; other invalid values use `1` and appear in status. Once the limit is reached, an unpassed result allows ending with a human-review warning. | `1` |
 | `maxTokens` | Sent as `max_tokens`. | `32000` |
 | `effortMode` | API path only: `suffix` sends `model(level)` for the effort level in use; `none` sends the plain model ID, for an upstream that rejects the suffix. | `suffix` |

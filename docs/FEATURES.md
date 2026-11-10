@@ -37,7 +37,7 @@ Job status and results stay locally in the model-mod state directory under `dele
 
 `/model-mod:review --gate [--account NAME] [--model ID] [--effort E] [--base REF]` requests a structured verdict for the scoped changes, including untracked files. The result shows the account, model, snapshot fingerprint and untrusted findings. `unknown` requires human review; a pass applies only to the same session and snapshot. Gate mode does not accept `--adversarial`, `--background` or focus text. Adversarial review excludes untracked files.
 
-The optional Stop gate is off by default. When enabled, a main-session turn may start an additional read-only Codex review, sending the diff and full contents of untracked, non-ignored files to OpenAI and possibly blocking the end of the turn up to the configured session limit. Gitignored files are not sent. Read-only commands can still run. After the limit or an unknown result the session may end without a verified pass; review it manually.
+The optional Stop gate is off by default. When enabled, a main-session turn may start an additional read-only Codex review, sending the diff and full contents of untracked, non-ignored files to OpenAI and possibly blocking the end of the turn up to the configured session limit. Untracked files that `.gitignore` matches are not sent; changes to a tracked file are in the diff even if `.gitignore` also matches it. Read-only commands can still run. After the limit or an unknown result the session may end without a verified pass; review it manually.
 
 ## Background Codex delegation
 
