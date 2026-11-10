@@ -5,8 +5,8 @@
 - **串流與工具。** 文字與工具呼叫皆為串流。尚未收到任何輸出前，HTTP 429、502、503、504、529 與其他暫時性錯誤會在 2、6、15 秒後重試（最多三次）。整數 `Retry-After` 為 0–15 秒時，下一次等待至少採用該值；超過 15 秒則立即以 HTTP 狀態與要求的等待秒數結束回合。無效值與 HTTP 日期一律忽略。輸出開始後串流中斷，該回合直接結束，不會重播。
 - **內建工具、Skills 與 MCP。** 照常運作。工具輸入 schema 不會轉交，參數由 Claude Code 自行驗證。
 - **子代理與 Workflow。** 在訂閱工作階段中，可用 `model-mod:local-worker` 代理類型把工作交給你的模型（需設定 `workerModel` 或 `fallbackModel`），或讓 Workflow agent 指定 `model: "<你的模型 ID>"`。用你的模型的工作階段仍可委派給訂閱模型，該請求走訂閱。
-- **網頁搜尋與擷取。** API 路徑的 `web_search` 經 API 上游執行；Codex 登入在 `codexWebSearch`（[進階選項](CONFIGURATION.zh-TW.md#進階選項)）開啟且工作階段提供 WebSearch 時使用原生搜尋。`web_fetch` 自行下載公開 HTTP(S) 頁面，每一跳都檢查所有 DNS 回答，拒絕私網與特殊用途位址（最多五次重新導向）。
-- **圖片生成。** `generate_image` 把 PNG 存到工作目錄。API 路徑使用 `/v1/images/generations` 與設定的圖片模型；Codex 登入使用內建圖片生成，不需設定 `imageModel`，僅支援 POSIX。Codex 可能先讀取帳號目錄中內建的圖片生成技能檔，因此可能多出一次讀取權限提示。
+- **網頁搜尋與擷取。** API 路徑的 `web_search` 經 API 上游執行；Codex 登入在 `codexWebSearch`（[進階選項](CONFIGURATION.zh-TW.md#進階選項)）開啟且工作階段提供 WebSearch 時使用原生搜尋。`web_fetch` 自行下載公開 HTTP(S) 頁面，每一跳都檢查所有 DNS 回答，拒絕迴路（loopback）、私網、link-local、共享位址空間（CGNAT）、多播、保留與未指定位址，以及主機名稱 localhost 與最後一段為 local 或 internal 的名稱；其他特殊用途範圍不在檢查內（最多五次重新導向）。
+- **圖片生成。** `generate_image` 把 PNG 存到工作目錄，預設在 `generated-images/` 下。在 Git 倉庫內，該檔案是未追蹤的二進位檔，因此審查 gate 會回報 "An untracked file is binary; review was not performed."，Stop gate 的結果為 `unknown`，直到該檔案被刪除或忽略。API 路徑使用 `/v1/images/generations` 與設定的圖片模型；Codex 登入使用內建圖片生成，不需設定 `imageModel`，僅支援 POSIX。Codex 可能先讀取帳號目錄中內建的圖片生成技能檔，因此可能多出一次讀取權限提示。
 - **Codex 父 thread 重用。** 符合條件的請求可重用父 thread；見[隱私與清理](LIMITATIONS.zh-TW.md#父-thread-隱私與清理)。
 - **Codex 推理延續。** 工具迴圈期間可透過實驗性 app-server API 在記憶體保留不透明的 reasoning item；真實 Codex 回合的重放尚未驗證。fork 請求不保留 reasoning；若要保留，請將 `codexThreadReuse`（[進階選項](CONFIGURATION.zh-TW.md#進階選項)）設為 `off`。見[限制說明](LIMITATIONS.zh-TW.md#codex-登入的限制)。
 - **工具搜尋。** `tool_search` 用來找出 schema 被延後載入的 MCP 工具。
@@ -25,11 +25,11 @@ Codex 模型的工具清單不包含 mod 的 `web_search`；原生搜尋無法�
 
 ## 委派與資料流
 
-`/model-mod:review` 要求唯讀的原生 Codex 審查；`--base REF` 指定 base。`--adversarial` 送出範圍內的 diff，允許在 `--` 後指定焦點並接受 `--effort`；它不含未追蹤檔案。原生 review 不接受焦點文字或 `--effort`。`--gate` 要求下述結構化審查。`/model-mod:rescue -- TASK` 請 Codex 協助。兩者預設前景執行，並接受 `--account NAME` 與 `--model ID`。Rescue 接受 `--effort`、`--background`、`--write`；原生 review 接受 `--base`、`--background`；adversarial review 接受 `--base`、`--effort`、`--background` 與焦點文字；gate 接受 `--base`、`--effort`，但不接受 `--background` 或焦點文字。Windows 不支援背景工作。
+`/model-mod:review` 要求唯讀的原生 Codex 審查；`--base REF` 指定 base。`--adversarial` 送出範圍內的 diff，允許在 `--` 後指定焦點並接受 `--effort`；它不含未追蹤檔案。使用 `--base REF` 時只送出已提交的變更 `REF...HEAD`，不含已暫存、未暫存或未追蹤的內容；未使用 `--base` 時送出相對於 `HEAD` 的 diff，包含已暫存與未暫存的修改。原生 review 不接受焦點文字或 `--effort`。`--gate` 要求下述結構化審查。`/model-mod:rescue -- TASK` 請 Codex 協助。兩者預設前景執行，並接受 `--account NAME` 與 `--model ID`。Rescue 接受 `--effort`、`--background`、`--write`；原生 review 接受 `--base`、`--background`；adversarial review 接受 `--base`、`--effort`、`--background` 與焦點文字；gate 接受 `--base`、`--effort`，但不接受 `--background` 或焦點文字。Windows 不支援背景工作。
 
 `/model-mod:rescue --write -- TASK` 需要互動確認工作目錄。它要求對該目錄使用 workspace-write 並關閉網路；命令可能有其他外部副作用。每個帳號最多一個未終態的背景 write 工作。review 與一般 rescue 使用唯讀 sandbox，限制寫入與網路，但**不限制讀取範圍**；命令可能讀取工作區外的檔案。這與 Messages bridge 停用內建 shell 不同。見[限制說明](LIMITATIONS.zh-TW.md#背景委派限制)。
 
-透過使用者登入的 Codex CLI，任務與焦點文字及審查內容會送到 OpenAI。Adversarial review 送出 diff；gate review 送出 diff 與未追蹤且未忽略檔案的完整內容。原生 review 把目標交給 Codex，Codex 可讀取 sandbox 內的檔案並送出讀到的內容。啟用選用的 Stop gate 後，符合條件的收尾回合可將 diff 與未追蹤內容送去審查；此功能預設關閉。`transfer` 經確認後把目前對話 transcript 匯入所選 Codex 帳號，由 OpenAI 持久保存。官方 CLI 自行處理連線；model-mod 的委派路徑不使用 API 代理，外掛本身也未加入遙測。CLI 與供應商的行為（包括是否有遙測）不在本專案的驗證範圍內。
+透過使用者登入的 Codex CLI，任務與焦點文字及審查內容會送到 OpenAI。Adversarial review 送出 diff；gate review 送出 diff 與未追蹤且未忽略檔案的完整內容。Git 透過 `.gitignore`、`.git/info/exclude` 或使用者全域忽略檔（`core.excludesFile`；未設定時為 `~/.config/git/ignore`）排除的未追蹤檔案不會送出；已追蹤的檔案即使也符合忽略規則，其變更仍會出現在 diff 中。原生 review 把目標交給 Codex，Codex 可讀取 sandbox 內的檔案並送出讀到的內容。啟用選用的 Stop gate 後，符合條件的收尾回合可將 diff 與未追蹤內容送去審查；此功能預設關閉。`transfer` 經確認後把目前對話 transcript 匯入所選 Codex 帳號，由 OpenAI 持久保存。官方 CLI 自行處理連線；model-mod 的委派路徑不使用 API 代理，外掛本身也未加入遙測。CLI 與供應商的行為（包括是否有遙測）不在本專案的驗證範圍內。
 
 工作狀態與結果留在本機 model-mod 狀態目錄的 `delegate/v1` 下，最多 50 筆。超過七天的已完成紀錄會在背景 broker 下次啟動時移除，broker 執行期間約每小時再清一次，並非定時器；在那之前仍留在磁碟上。結果可能包含敏感片段；本機遮罩能力有限。`/model-mod:cancel ID` 停止工作；`/model-mod:jobs --clear` 立即移除目前工作區已完成的工作與結果，但不會刪除 Codex 或供應商端紀錄。與官方 `openai/codex-plugin-cc` 並存只做了原始碼的靜態比對；見[限制說明](LIMITATIONS.zh-TW.md#尚未驗證)。Codex 輸出是不可信資料；gate findings 會標示並清除控制字元，但不代表已獨立驗證。
 
@@ -37,7 +37,7 @@ Codex 模型的工具清單不包含 mod 的 `web_search`；原生搜尋無法�
 
 `/model-mod:review --gate [--account NAME] [--model ID] [--effort E] [--base REF]` 對範圍內變更（含未追蹤檔案）要求結構化裁定，顯示帳號、模型、快照指紋與不可信的 findings。`unknown` 需要人工審查；pass 只適用同一工作階段與快照。Gate 模式不接受 `--adversarial`、`--background` 或焦點文字。Adversarial 審查不包含未追蹤檔案。
 
-選用 Stop gate 預設關閉。啟用後，主工作階段結束回合時可能額外啟動唯讀 Codex 審查，把 diff 與未追蹤且未被 gitignore 的檔案全文送往 OpenAI，並可能阻擋結束，最多達該工作階段的設定次數；被 `.gitignore` 排除的未追蹤檔案不會送出；已追蹤的檔案即使也符合 `.gitignore`，其變更仍會出現在 diff 中。唯讀仍可能執行命令。達上限或結果為 unknown 時可能在未驗證通過下結束，需人工審查。
+選用 Stop gate 預設關閉。啟用後，主工作階段結束回合時可能額外啟動唯讀 Codex 審查，把與 gate 審查相同的資料（見[委派與資料流](#委派與資料流)）送往 OpenAI，並可能阻擋結束，最多達該工作階段的設定次數；唯讀仍可能執行命令。達上限或結果為 unknown 時可能在未驗證通過下結束，需人工審查。
 
 ## 背景 Codex 委派
 
