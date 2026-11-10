@@ -51,7 +51,9 @@ export function classifyStepFailure(input: StepFailureInput): StepDecision {
   let { codex, error, exitCode, httpStatus, rawError, retryAfter, streamed, sendThinking, attempt, retryDelays } = input
   const curlError = [6, 7].includes(exitCode ?? 0) ? `could not connect (curl ${exitCode})` :
     exitCode === 28 ? 'request timed out (curl 28)' : [35, 60, 51, 58, 59].includes(exitCode ?? 0) ? `TLS error (curl ${exitCode})` : 'curl failed'
-  let reason = httpStatus === 429 ? 'upstream rate limited (HTTP 429)' :
+  // A body the stream parser could not read says nothing about the HTTP status, which is 200 here.
+  const unreadable = error?.type === 'invalid_stream' && httpStatus < 400
+  let reason = httpStatus === 429 ? 'upstream rate limited (HTTP 429)' : unreadable ? 'upstream sent an unreadable response' :
     error || exitCode === 22 ? 'HTTP error' : exitCode !== 0 ? curlError : 'incomplete upstream response'
   let type: unknown = error?.type
   if (!error) {

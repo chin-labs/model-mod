@@ -539,6 +539,13 @@ test('transient SSE errors before output share the same retry budget and status 
   expect(w.reached).toEqual([])
 })
 
+test('a 200 answer whose stream cannot be read ends the turn without claiming an HTTP error', async ($, on) => {
+  const w = world(on, baseConfig, LOCAL, { stdout: 'event: message_start\ndata: {not json\n\n', stderr: '\nmodel-mod-http:200\n', code: 0 })
+  const { result } = await drain($.turn.step(STEP(LOCAL)))
+  expect(result.answer).toBe('model-mod: upstream sent an unreadable response.')
+  expect(w.spawned.length).toBe(1)
+})
+
 test('SSE errors after output never retry even when content and error arrive in one piece', async ($, on) => {
   const partial = 'event: content_block_delta\ndata: {"index":0,"delta":{"type":"text_delta","text":"partial"}}\n\n'
   const error = 'event: error\ndata: {"type":"error","error":{"type":"overloaded_error"}}\n\n'
