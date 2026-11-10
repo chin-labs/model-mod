@@ -584,7 +584,7 @@ class Contract(unittest.TestCase):
                 self.assertIn(feature, calls[0]['argv'])
                 self.assertEqual(calls[0]['argv'][calls[0]['argv'].index(feature) - 1], '--disable')
             self.assertNotIn('code_mode_host', calls[0]['argv'])
-            for setting in ('include_permissions_instructions=false', 'include_environment_context=false'):
+            for setting in ('include_permissions_instructions=false', 'include_environment_context=false', 'project_doc_max_bytes=0'):
                 self.assertIn(setting, calls[0]['argv'])
                 self.assertEqual(calls[0]['argv'][calls[0]['argv'].index(setting) - 1], '-c')
             self.assertEqual(sum(c.get('method') == 'turn/interrupt' for c in calls), 1)

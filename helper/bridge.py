@@ -213,7 +213,7 @@ def apply_effort(prepared, model):
 class App:
     def __init__(self, args, cwd):
         self.web_search = 'live' if getattr(args, 'web_search', False) else 'disabled'
-        argv = [args.codex_bin, 'app-server', '-c', 'web_search="' + self.web_search + '"', '-c', 'include_permissions_instructions=false', '-c', 'include_environment_context=false']
+        argv = [args.codex_bin, 'app-server', '-c', 'web_search="' + self.web_search + '"', '-c', 'include_permissions_instructions=false', '-c', 'include_environment_context=false', '-c', 'project_doc_max_bytes=0']
         window = getattr(args, 'compact_window', None)
         if window is not None:
             argv.extend(['-c', 'model_auto_compact_token_limit=' + str((window * 11 + 9) // 10)])
