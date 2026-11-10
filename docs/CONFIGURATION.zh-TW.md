@@ -115,13 +115,13 @@ Codex effort 依模型宣告的等級夾值：`max` 取支援的最高等級；�
 |---|---|
 | `baseUrl`（必填） | 意義與檢查同 `baseUrl` 選項。 |
 | `headerFile`（必填） | 上述標頭檔的絕對路徑。 |
-| `models`（必填） | mod 負責回應的模型 ID 陣列。`[]`：上游列出的所有聊天模型。 |
+| `models`（必填） | mod 負責回應的模型 ID 陣列。`[]`：檔案不提供任何模型，只回應先前工作階段記住的模型，且檔案模式從不取得上游清單。 |
 | `maxTokens`（必填） | 以 `max_tokens` 送出的正整數。 |
 | `toolsFile` | JSON 檔 `{"tools": [{"name", "description", "input_schema"}]}`，記錄 Claude Code 內建工具與其輸入 schema。未設定時，mod 以開放物件 schema 列出工具。 |
 | `effortMode`、`imageModel`、`sideModel`、`keepThinking`、`localTitle`、`localContext`、`toolSearch`、`toolSearchPercent`、`promptsDir` | 與同名選項相同。檔案中的預設值不同：`effortMode` 除非設為 `suffix` 否則為 `none`，`imageModel` 沒有自動選擇（未設定時 API 圖片路徑關閉），`sideModel` 沒有預設值。 |
 | `contextWindows` | 物件，把 `models` 中的模型 ID 對應到其 context window（token，32000 到 4000000）。 |
 
-提示檔變更後，請重新啟動 Claude Code 才會生效。上游模型清單的變更，只有在插件選項未設 `models` 清單時，重新啟動後才會生效：設了 `models` 清單時不套用取得的清單，檔案模式也從不取得清單。使用 `/model-mod:status` 和 `/model-mod:doctor` 查看 Codex 狀態。改過的選項需 `/reload-plugins` 才會生效。
+提示檔變更後，請重新啟動 Claude Code 才會生效。插件選項模式會在工作階段開始時讀取上游模型清單，因此上游新列出的聊天模型，只有在選項未設 `models` 清單時，重新啟動後才會加入（設了 `models` 清單時不加入取得的聊天模型）；檔案模式從不取得清單。使用 `/model-mod:status` 和 `/model-mod:doctor` 查看 Codex 狀態。改過的選項需 `/reload-plugins` 才會生效。
 
 `contextWindow`、`fallbackModel`、`fallbackPercent` 與 `workerModel` 只從插件選項讀取。
 

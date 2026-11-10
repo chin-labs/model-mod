@@ -115,13 +115,13 @@ Instead of `apiKey`, the file names a `headerFile`: a file of HTTP header lines 
 |---|---|
 | `baseUrl` (required) | Same meaning and checks as the `baseUrl` option. |
 | `headerFile` (required) | Absolute path of the header file described above. |
-| `models` (required) | Array of model IDs the mod answers for. `[]`: every chat model the upstream lists. |
+| `models` (required) | Array of model IDs the mod answers for. `[]`: no models from the file; only models remembered from earlier sessions are answered, and file mode never fetches the upstream's list. |
 | `maxTokens` (required) | Positive integer sent as `max_tokens`. |
 | `toolsFile` | JSON file `{"tools": [{"name", "description", "input_schema"}]}` with Claude Code's built-in tools and their input schemas. Without it, the mod lists the tools with an open object schema. |
 | `effortMode`, `imageModel`, `sideModel`, `keepThinking`, `localTitle`, `localContext`, `toolSearch`, `toolSearchPercent`, `promptsDir` | Same as the options of the same name. The defaults differ in the file: `effortMode` is `none` unless set to `suffix`, `imageModel` has no automatic choice (the API image path is off without it) and `sideModel` has no default. |
 | `contextWindows` | Object mapping a model ID from `models` to its context window in tokens (32000 to 4000000). |
 
-Restart Claude Code for changes to prompt files to take effect. Changes to the upstream model list take effect after a restart only when the plugin options have no `models` list: with a `models` list the fetched list is not applied, and file mode never fetches it. Use `/model-mod:status` and `/model-mod:doctor` to check Codex status. Changed options need `/reload-plugins`.
+Restart Claude Code for changes to prompt files to take effect. In plugin-options mode the upstream model list is read at session start, so chat models newly listed by the upstream are added after a restart only when the options have no `models` list (with a `models` list the fetched chat models are not added); file mode never fetches the list. Use `/model-mod:status` and `/model-mod:doctor` to check Codex status. Changed options need `/reload-plugins`.
 
 `contextWindow`, `fallbackModel`, `fallbackPercent` and `workerModel` are read only from the plugin options.
 
