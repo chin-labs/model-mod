@@ -68,22 +68,15 @@ class JobStoreTest(unittest.TestCase):
         self.assertEqual(self.store.clear(workspace=jobs.workspace_hash(self.tmp.name)), 1)
         self.assertEqual(self.store.records(), [])
 
-    def test_group_identity_before_signal(self):
-        member = {'pid': 23, 'started': 'start'}
-        with patch.object(job_process, 'start_time', return_value='different'), \
-             patch.object(job_process.os, 'getpgid', return_value=42), \
-             patch.object(job_process.os, 'killpg') as kill:
-            self.assertFalse(job_process.cleanup_verified(42, [member]))
-            kill.assert_not_called()
+    def test_group_identity_verification(self):
+        member = {'pid': 42, 'started': 'start'}
+        for started, group in (('different', 42), ('start', 43), (None, 42)):
+            with patch.object(job_process, 'start_time', return_value=started), \
+                 patch.object(job_process.os, 'getpgid', return_value=group):
+                self.assertFalse(job_process.verified_group(42, [member]))
         with patch.object(job_process, 'start_time', return_value='start'), \
-             patch.object(job_process.os, 'getpgid', return_value=43), \
-             patch.object(job_process.os, 'killpg') as kill:
-            self.assertFalse(job_process.cleanup_verified(42, [member]))
-            kill.assert_not_called()
-        with patch.object(job_process, 'start_time', return_value=None), \
-             patch.object(job_process.os, 'killpg') as kill:
-            self.assertFalse(job_process.cleanup_verified(42, [member]))
-            kill.assert_not_called()
+             patch.object(job_process.os, 'getpgid', return_value=42):
+            self.assertTrue(job_process.verified_group(42, [member]))
 
     def test_invalid_record_cleanup(self):
         import json
@@ -103,12 +96,9 @@ class JobStoreTest(unittest.TestCase):
         self.assertEqual(self.store.clear(workspace='unavailable'), 1)
 
     def test_runner_group_mismatch(self):
-        member = {'pid': 23, 'started': 'start'}
         with patch.object(job_process, 'start_time', return_value='start'), \
-             patch.object(job_process.os, 'getpgid', return_value=42), \
-             patch.object(job_process.os, 'killpg') as kill:
-            self.assertFalse(job_process.cleanup_verified(42, [member]))
-            kill.assert_not_called()
+             patch.object(job_process.os, 'getpgid', return_value=42):
+            self.assertFalse(job_process.verified_group(42, [{'pid': 23, 'started': 'start'}]))
         self.assertFalse(job_process.verified_group(os.getpgrp(), [{'pid': os.getpgrp(), 'started': 'start'}]))
 
     def test_ttl_and_queue_limit(self):

@@ -1,6 +1,5 @@
 """Conservative process identity checks for background job recovery."""
 import os
-import signal
 import subprocess
 import sys
 
@@ -35,10 +34,3 @@ def verified_group(pgid, members):
         except (KeyError, TypeError, OSError):
             continue
     return False
-
-
-def cleanup_verified(pgid, members):
-    if not verified_group(pgid, members): return False
-    try: os.killpg(pgid, signal.SIGTERM)
-    except ProcessLookupError: return False
-    return True
