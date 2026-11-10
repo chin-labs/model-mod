@@ -16,7 +16,7 @@ hook 透過 stdin 把 Messages 請求 body 傳給 helper。helper 轉換後交�
 
 ## 自訂提示
 
-壓縮、標題、子代理與 worker 的提示放在插件 `prompts/` 目錄的 `compact.md`、`title.md`、`subagent-note.md`、`worker.md`。要用自己的版本，把 `promptsDir`（[進階選項](CONFIGURATION.zh-TW.md#進階選項)）設為你的目錄（插件目錄內的檔案會在升級時被取代）。沒有內建後備：檔案缺少、為空、無法讀取或超過 8000 字元，都視為不可用。沒有 `compact.md` 時略過本地壓縮；沒有 `title.md` 時以提示的前 50 個字元當標題；沒有 `worker.md` 時不提供 worker 代理類型。`/model-mod:refresh` 會重新讀取這些檔案。
+壓縮、標題、子代理與 worker 的提示放在插件 `prompts/` 目錄的 `compact.md`、`title.md`、`subagent-note.md`、`worker.md`。要用自己的版本，把 `promptsDir`（[進階選項](CONFIGURATION.zh-TW.md#進階選項)）設為你的目錄（插件目錄內的檔案會在升級時被取代）。沒有內建後備：檔案缺少、為空、無法讀取或超過 8000 字元，都視為不可用。沒有 `compact.md` 時略過本地壓縮；沒有 `title.md` 時以提示的前 50 個字元當標題；沒有 `worker.md` 時不提供 worker 代理類型。重新啟動 Claude Code 才會重新讀取這些檔案。
 
 ## 限制、隱私與合規
 

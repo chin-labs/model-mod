@@ -118,11 +118,10 @@ Instead of `apiKey`, the file names a `headerFile`: a file of HTTP header lines 
 | `models` (required) | Array of model IDs the mod answers for. `[]`: every chat model the upstream lists. |
 | `maxTokens` (required) | Positive integer sent as `max_tokens`. |
 | `toolsFile` | JSON file `{"tools": [{"name", "description", "input_schema"}]}` with Claude Code's built-in tools and their input schemas. Without it, the mod lists the tools with an open object schema. |
-| `refresh` | Command run by `/model-mod:refresh` to rewrite `toolsFile`: an array of 4 to 64 strings whose first two items are absolute paths (the program and its script). Anything else is ignored. |
 | `effortMode`, `imageModel`, `sideModel`, `keepThinking`, `localTitle`, `localContext`, `toolSearch`, `toolSearchPercent`, `promptsDir` | Same as the options of the same name. The defaults differ in the file: `effortMode` is `none` unless set to `suffix`, `imageModel` has no automatic choice (the API image path is off without it) and `sideModel` has no default. |
 | `contextWindows` | Object mapping a model ID from `models` to its context window in tokens (32000 to 4000000). |
 
-`/model-mod:refresh` reloads prompts and checks Codex login status, CLI version and quota. If the `refresh` option is set, it runs that command to refresh tool schemas (Codex status is not displayed in that branch); otherwise it displays Codex status and refreshes the API model list when an API key is configured. Changed options need `/reload-plugins`.
+Restart Claude Code for changes to prompt files or the upstream model list to take effect. Use `/model-mod:status` and `/model-mod:doctor` to check Codex status. Changed options need `/reload-plugins`.
 
 `contextWindow`, `fallbackModel`, `fallbackPercent` and `workerModel` are read only from the plugin options.
 

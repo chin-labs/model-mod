@@ -118,11 +118,10 @@ Codex effort 依模型宣告的等級夾值：`max` 取支援的最高等級；�
 | `models`（必填） | mod 負責回應的模型 ID 陣列。`[]`：上游列出的所有聊天模型。 |
 | `maxTokens`（必填） | 以 `max_tokens` 送出的正整數。 |
 | `toolsFile` | JSON 檔 `{"tools": [{"name", "description", "input_schema"}]}`，記錄 Claude Code 內建工具與其輸入 schema。未設定時，mod 以開放物件 schema 列出工具。 |
-| `refresh` | `/model-mod:refresh` 執行來重寫 `toolsFile` 的指令：4 到 64 個字串的陣列，前兩項必須是絕對路徑（程式與其腳本）；不符合者會被忽略。 |
 | `effortMode`、`imageModel`、`sideModel`、`keepThinking`、`localTitle`、`localContext`、`toolSearch`、`toolSearchPercent`、`promptsDir` | 與同名選項相同。檔案中的預設值不同：`effortMode` 除非設為 `suffix` 否則為 `none`，`imageModel` 沒有自動選擇（未設定時 API 圖片路徑關閉），`sideModel` 沒有預設值。 |
 | `contextWindows` | 物件，把 `models` 中的模型 ID 對應到其 context window（token，32000 到 4000000）。 |
 
-`/model-mod:refresh` 會重新載入提示檔並檢查 Codex 登入狀態、CLI 版本與額度。若已設定 `refresh` 選項，則執行該命令更新工具 schema（此分支不顯示 Codex 狀態）；否則顯示 Codex 狀態，並在已設定 API 金鑰時更新 API 模型清單。改過的選項需 `/reload-plugins` 才會生效。
+提示檔或上游模型清單變更後，請重新啟動 Claude Code 才會生效。使用 `/model-mod:status` 和 `/model-mod:doctor` 查看 Codex 狀態。改過的選項需 `/reload-plugins` 才會生效。
 
 `contextWindow`、`fallbackModel`、`fallbackPercent` 與 `workerModel` 只從插件選項讀取。
 

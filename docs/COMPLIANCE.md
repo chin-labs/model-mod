@@ -16,7 +16,7 @@ model-mod is a plugin for Claude Code. This is an independent project, not affil
 | Your model IDs only | Handles the models you selected or the upstream lists, plus a valid worker or fallback model. IDs containing `claude` or `anthropic` and Claude Code's official aliases are never handled. Every other model goes through Claude Code as usual. |
 | No fallback | If a turn or `/btw` on one of your models fails, it ends with an error message. It is never retried through the subscription, and a failed local compaction never uses a subscription summary. |
 | No identity spoofing | Responses report the actual local model ID and are never relabeled as a subscription model. |
-| No direct settings writes | Setup and refresh use Claude Code's configuration API, not the settings files. Claude Code itself may keep your configuration and your last model choice. |
+| No direct settings writes | Setup uses Claude Code's configuration API, not the settings files. Claude Code itself may keep your configuration and your last model choice. |
 
 The optional usage-limit switch is off by default. It only changes which model later messages use, switching back after the reported reset. It does not resend the turn that hit the limit or reset any limit.
 

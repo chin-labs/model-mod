@@ -598,7 +598,7 @@ test('a config whose upstream is the subscription API leaves the mod inert', asy
 
 test('compaction of a bridge model is summarised upstream and never reaches the chain, even when that fails', async ($, on) => {
   let sent: { system: string; messages: { content: { text: string }[] }[] } | undefined
-  const failed = world(on, { ...baseConfig, promptsDir: '/cfg/prompts' }, LOCAL, { stdout: '', code: 0 }, (_argv, stdin) => {
+  const failed = world(on, { ...baseConfig, refresh: ['/bin/false', '/bin/false', 'x', 'y'], promptsDir: '/cfg/prompts' }, LOCAL, { stdout: '', code: 0 }, (_argv, stdin) => {
     sent = JSON.parse(stdin!)
     return { exitCode: 22, stdout: '' }
   })
@@ -612,20 +612,20 @@ test('compaction of a bridge model is summarised upstream and never reaches the 
   failed.files[customPath] = 'changed without refresh'
   await $.session.compact({ trigger: 'manual', messages: [] } as never)
   expect(sent?.system).toBe('CUSTOM COMPACT instructions')
-  const refresh = () => $.command.run({ command: 'model-mod:refresh', args: '', origin: { kind: 'composer' } } as never)
-  // Missing/empty/NUL/oversized files disable compaction; refresh re-reads the cached config's prompts.
-  for (const invalid of [undefined, '', ' \n', 'bad\0prompt', 'x'.repeat(8001)]) {
-    if (invalid === undefined) delete failed.files[customPath]
-    else failed.files[customPath] = invalid
-    const refreshed = await refresh()
-    expect(refreshed.text).toContain('missing=compact')
-    const missing = await $.session.compact({ trigger: 'manual', messages: [{ role: 'user', text: prior, toolUses: [] }] } as never)
-    expect(missing).toEqual({ skip: 'model-mod: compaction prompt file missing' })
-  }
   expect(sent?.system).toBe('CUSTOM COMPACT instructions')
   expect('skip' in answer && answer.skip).toMatch(/^model-mod:/)
   expect(failed.reached).toEqual([])
 })
+
+for (const [name, invalid] of [['missing', undefined], ['empty', ''], ['blank', ' \n'], ['NUL', 'bad\0prompt'], ['oversized', 'x'.repeat(8001)]] as const) {
+  test(`compaction: ${name} prompt disables compaction`, async ($, on) => {
+    const w = world(on, { ...baseConfig, promptsDir: '/cfg/prompts' }, LOCAL, { stdout: '', code: 0 })
+    if (invalid !== undefined) w.files['/cfg/prompts/compact.md'] = invalid
+    const result = await $.session.compact({ trigger: 'manual', messages: [{ role: 'user', text: 'prior', toolUses: [] }] } as never)
+    expect(result).toEqual({ skip: 'model-mod: compaction prompt file missing' })
+    expect(w.reached).toEqual([])
+  })
+}
 
 test('compaction of a subscription model goes down the chain', async ($, on) => {
   const w = world(on, baseConfig, 'claude-sonnet-5-5', { stdout: '', code: 0 })
@@ -855,20 +855,6 @@ test('options: an unusable key does not fall back to the configuration file', { 
   expect(w.spawned).toEqual([])
 })
 
-// `refresh` in the configuration file is argv that /model-mod:refresh runs; only absolute paths for the program and its
-// script are accepted, and anything else is ignored rather than run.
-for (const [name, refresh, runs] of [['absolute program and script', ['/usr/bin/python3', '/opt/capture.py', '--out', '/cfg/tools.json'], true],
-  ['relative script', ['/usr/bin/python3', 'capture.py', '--out', '/cfg/tools.json'], false],
-  ['relative program', ['python3', '/opt/capture.py', '--out', '/cfg/tools.json'], false],
-  ['too few items', ['/usr/bin/python3', '/opt/capture.py', '--out'], false]] as const) {
-  test(`refresh: a configuration file with ${name} ${runs ? 'runs the command' : 'does not run the command'}`, async ($, on) => {
-    const w = world(on, { ...baseConfig, refresh }, LOCAL, { stdout: '', code: 0 }, { exitCode: 0, stdout: '' })
-    const out = await $.command.run({ command: 'model-mod:refresh', args: '', origin: { kind: 'composer' } } as never)
-    expect(w.ran.filter(argv => argv.join(' ') === refresh.join(' '))).toEqual(runs ? [refresh] : [])
-    if (runs) expect(out.text).toContain('tool schemas refreshed')
-  })
-}
-
 test('options: with an allowlist only the allowlist is answered and the other known models are refused here', { options: { ...OPTIONS, models: 'gpt-a' } }, async ($, on) => {
   const w = world(on, null, 'gpt-a', { stdout: SSE_OK, code: 0 })
   w.store.models = ['gpt-b', 'gpt-a']
@@ -887,6 +873,14 @@ test('options: the store keeps every model the bridge has owned, not only the la
   w.models = [LOCAL]
   await $.command.run({ command: 'model-mod:setup', args: '', origin: { kind: 'composer' }, presentation: { layout: 'main', columns: 80 } } as never)
   expect(w.store.models).toEqual(['gpt-old', LOCAL])
+})
+
+test('options: startup keeps the ownership cache and writes no settings file with a saved subset', { options: { ...OPTIONS, models: 'gpt-old,gpt-kept' } }, async ($, on) => {
+  const w = world(on, null, LOCAL, { stdout: '', code: 0 })
+  w.models = ['gpt-kept', 'gpt-new']; w.store.models = ['gpt-old']
+  await $.session.start({ cwd: '/work' } as never)
+  expect(w.store.models).toEqual(['gpt-old'])
+  expect(w.saved).toEqual([]); expect(w.writes).toEqual([])
 })
 
 test('options: an error body that echoes the key never reaches the conversation', { options: OPTIONS }, async ($, on) => {
@@ -1627,19 +1621,6 @@ test('setup: headless run shows status without a question or changes; old comman
   expect(out.text).toContain('picker=active')
   expect(w.questions).toEqual([]); expect(w.writes).toEqual([]); expect(w.saved).toEqual([])
   expect((await $.command.run({ ...SETUP, command: 'old-command', args: '' })).text).toBe('engine')
-})
-
-test('refresh: saved subset removes disappeared IDs, keeps the ownership cache and writes no file', { options: { ...OPTIONS, models: 'gpt-old,gpt-kept' } }, async ($, on) => {
-  const w = world(on, null, LOCAL, { stdout: '', code: 0 })
-  w.models = ['gpt-kept', 'gpt-new']; w.store.models = ['gpt-old']
-  const out = await $.command.run({ ...SETUP, command: 'model-mod:refresh' })
-  expect(out.text).toContain('/model-mod:model offers')
-  expect(w.saved).toEqual([{ key: 'model-mod.models', value: 'gpt-kept' }])
-  expect(w.store.models).toEqual(['gpt-old', 'gpt-kept'])
-  expect(w.writes).toEqual([]); expect(w.ran).toEqual([])
-  w.models = ['gpt-new']
-  expect((await $.command.run({ ...SETUP, command: 'model-mod:refresh' })).text).toContain('allowlist unchanged')
-  expect(w.saved).toEqual([{ key: 'model-mod.models', value: 'gpt-kept' }])
 })
 
 const MODEL = { ...SETUP, command: 'model', args: '' }

@@ -259,7 +259,7 @@ async function configurePicker($: EngineInterface, c: { baseUrl: string; key?: s
 }
 
 type CodexAccount = { account: string; model: string; directory: string; window?: number }
-type Config = { codex?: Map<string, CodexAccount>; pythonBin?: string; codexBin?: string; accountsDir?: string; apiInvalid?: boolean; prompts: Prompts; promptsDir?: string; baseUrl: string; headerFile?: string; key?: string; models: string[]; toolsFile?: string; defaultWindow?: number; contextWindowExplicit?: boolean; explicitModels?: boolean; excluded?: Set<string>; codexDirectoryUnavailable?: Set<string>; imageAuto?: boolean; source?: 'options' | 'file'; maxTokens: number; effortMode: 'suffix' | 'none'; imageModel?: string; contextWindows?: Record<string, number>; sideModel?: string; keepThinking?: boolean; localTitle?: boolean; localContext?: boolean; toolSearch?: 'auto' | 'on' | 'off'; toolSearchPercent?: number; refresh?: string[]; fallbackModel?: string; fallbackPercent?: number; workerModel?: string; codexServiceTier?: 'default' | 'priority'; codexServiceTierInvalid?: boolean; codexWebSearch?: 'on' | 'off'; codexWebSearchInvalid?: boolean; codexKeepReasoning?: 'on' | 'off'; codexKeepReasoningInvalid?: boolean; codexThreadReuse?: 'on' | 'off'; codexThreadReuseInvalid?: boolean }
+type Config = { codex?: Map<string, CodexAccount>; pythonBin?: string; codexBin?: string; accountsDir?: string; apiInvalid?: boolean; prompts: Prompts; promptsDir?: string; baseUrl: string; headerFile?: string; key?: string; models: string[]; toolsFile?: string; defaultWindow?: number; contextWindowExplicit?: boolean; explicitModels?: boolean; excluded?: Set<string>; codexDirectoryUnavailable?: Set<string>; imageAuto?: boolean; source?: 'options' | 'file'; maxTokens: number; effortMode: 'suffix' | 'none'; imageModel?: string; contextWindows?: Record<string, number>; sideModel?: string; keepThinking?: boolean; localTitle?: boolean; localContext?: boolean; toolSearch?: 'auto' | 'on' | 'off'; toolSearchPercent?: number; fallbackModel?: string; fallbackPercent?: number; workerModel?: string; codexServiceTier?: 'default' | 'priority'; codexServiceTierInvalid?: boolean; codexWebSearch?: 'on' | 'off'; codexWebSearchInvalid?: boolean; codexKeepReasoning?: 'on' | 'off'; codexKeepReasoningInvalid?: boolean; codexThreadReuse?: 'on' | 'off'; codexThreadReuseInvalid?: boolean }
 type Tool = { name: string; description: string; input_schema: Record<string, unknown> }
 
 const threadSessions = new Map<string, Map<string, CodexAccount>>()
@@ -519,11 +519,6 @@ async function loadNow($: EngineInterface) {
       models: [],
       imageModel: typeof candidate.imageModel === 'string' && /^[A-Za-z0-9._-]{1,64}$/.test(candidate.imageModel) &&
         !/claude|anthropic/i.test(candidate.imageModel) ? candidate.imageModel : undefined,
-      // argv of an external command that re-captures the tool schemas, run by `/model-mod:refresh`: an absolute path to a
-      // program and an absolute path to its script, 4 to 64 strings. Anything else is ignored.
-      refresh: Array.isArray(candidate.refresh) && candidate.refresh.length >= 4 && candidate.refresh.length <= 64 &&
-        candidate.refresh.every((x: unknown) => typeof x === 'string' && x.length <= 4096 && !x.includes('\0')) &&
-        candidate.refresh[0].startsWith('/') && candidate.refresh[1].startsWith('/') ? candidate.refresh : undefined,
       toolSearch: ['auto', 'on', 'off'].includes(candidate.toolSearch) ? candidate.toolSearch : 'auto',
       toolSearchPercent: Number.isInteger(candidate.toolSearchPercent) && candidate.toolSearchPercent >= 1 &&
         candidate.toolSearchPercent <= 90 ? candidate.toolSearchPercent : 10,
@@ -634,7 +629,7 @@ async function capturedTools($: EngineInterface, c: Config): Promise<Tool[] | un
     } catch {
       if (!missingToolsHint) {
         missingToolsHint = true
-        $.ui.status('no tool schemas; toolsFile could not be read (run /model-mod:refresh if refresh is configured).')
+        $.ui.status('no tool schemas; toolsFile could not be read.')
       }
       return undefined
     }
@@ -1175,10 +1170,6 @@ async function loadPrompts($: EngineInterface, custom: unknown): Promise<Prompts
   return prompts
 }
 
-function promptStatus(prompts: Prompts): string {
-  return `prompts files=${PROMPT_NAMES.filter(name => prompts.files.includes(name)).join(',') || 'none'}; missing=${PROMPT_NAMES.filter(name => !prompts.files.includes(name)).join(',') || 'none'}`
-}
-
 async function registerWorker($: EngineInterface, c: Config): Promise<void> {
   const worker = c.workerModel ?? c.fallbackModel
   if (worker !== undefined && c.prompts.text.worker !== undefined) {
@@ -1561,7 +1552,6 @@ function codexAccountList(c: Config): CodexAccount[] {
   return [...accounts.values()]
 }
 
-// `/model-mod:refresh` still prints one line per account.
 async function codexStatus($: EngineInterface, c: Config): Promise<string[]> {
   const search = await codexWebSearchState($, c)
   return Promise.all(codexAccountList(c).map(async item => {
@@ -1773,7 +1763,7 @@ async function statusReport($: EngineInterface, e: { presentation?: { columns?: 
     groups.push({ title: 'Tools', rows: [
       { label: 'tools', value: captured ? (c.toolsFile ? 'captured' : 'listed') : 'missing', warn: !captured },
       { label: 'tool search', value: c.toolSearch ?? 'auto' },
-      { label: 'MCP without schema', value: `${open}${open && c.refresh ? ' (/model-mod:refresh captures them)' : ''}`, warn: open > 0 }] })
+      { label: 'MCP without schema', value: `${open}`, warn: open > 0 }] })
     const files = PROMPT_NAMES.filter(name => c.prompts.files.includes(name)), missing = PROMPT_NAMES.filter(name => !c.prompts.files.includes(name))
     groups.push({ title: 'Prompts', rows: [{ label: 'files', value: files.join(', ') || 'none' }, { label: 'missing', value: missing.join(', ') || 'none', warn: missing.length > 0 }] })
   }
@@ -1866,7 +1856,7 @@ async function doctorReport($: EngineInterface, c: Config | undefined, columns?:
   return renderDoctor(checks, columns)
 }
 
-async function admin($: EngineInterface, e: { origin: { kind: string }; presentation?: { columns?: number } }, arg: 'setup' | 'status' | 'refresh' | 'doctor') {
+async function admin($: EngineInterface, e: { origin: { kind: string }; presentation?: { columns?: number } }, arg: 'setup' | 'status' | 'doctor') {
   const c = await load($)
   const invalidCodex = invalidCodexFields(pluginOptions)
   const gateSettings = stopGateSettings(pluginOptions)
@@ -1895,24 +1885,6 @@ async function admin($: EngineInterface, e: { origin: { kind: string }; presenta
   }
   if (arg === 'doctor') return { text: await doctorReport($, c, e.presentation?.columns) }
   if (!c) return { text: `model-mod: inactive; picker=inactive; models=0. ${await configHint($)}${arg === 'status' ? codexWarning : ''}` }
-  if (arg === 'refresh') {
-    c.prompts = await loadPrompts($, c.promptsDir)
-    await registerWorker($, c)
-    const prompts = promptStatus(c.prompts)
-    const codex = c.codex?.size ? await codexStatus($, c) : []
-    if (!c.refresh) {
-      const api = c.key || c.headerFile ? await configurePicker($, c, false, e.origin.kind === 'composer' || e.origin.kind === 'bridge', '') : ''
-      return { text: [api, ...codex, prompts].filter(Boolean).join('; ') }
-    }
-    const before = await capturedTools($, c)
-    const run = await $.process.run(c.refresh, { timeoutMs: 240_000 })
-    const after = await capturedTools($, c)
-    const names = new Set((before ?? []).map(tool => tool.name))
-    const added = (after ?? []).filter(tool => !names.has(tool.name)).map(tool => tool.name)
-    return { text: run.exitCode === 0
-      ? `tool schemas refreshed (${after?.length ?? 0} tools${added.length ? `; new: ${added.join(', ')}` : ''}); ${prompts}.`
-      : `refresh failed (exit ${run.exitCode}); ${prompts}.` }
-  }
   return { text: await statusReport($, e, c) }
 }
 
@@ -2389,7 +2361,6 @@ export const register: Register = (on, options) => {
   })
   on('command.run', { command: 'model-mod:status' }, ($, e) => admin($, e, 'status').then(commandText))
   on('command.run', { command: 'model-mod:doctor' }, ($, e) => admin($, e, 'doctor').then(commandText))
-  on('command.run', { command: 'model-mod:refresh' }, ($, e) => admin($, e, 'refresh').then(commandText))
   on('command.run', { command: 'model-mod:review' }, async ($, e, next) => delegate($, 'review', e.args, await load($), next.signal))
   on('command.run', { command: 'model-mod:rescue' }, async ($, e, next) => delegate($, 'rescue', e.args, await load($), next.signal, e.origin.kind === 'composer' || e.origin.kind === 'bridge'))
   on('command.run', { command: 'model-mod:transfer' }, async ($, e, next) => transfer($, e.args, await load($), transcript, next.signal, e.origin.kind === 'composer' || e.origin.kind === 'bridge'))
