@@ -24,6 +24,8 @@ const MODEL_CACHE_CAP = 2000
 const STREAM_IDLE_SECONDS = 300
 // CLIProxyAPI's default loopback address; keep it in step with the manifest's baseUrl default.
 const DEFAULT_BASE_URL = 'http://127.0.0.1:8317'
+// The options that left the install form are set in the settings file.
+const IN_SETTINGS_FILE = 'in the settings file (see Advanced options in the configuration docs)'
 
 function endpoint(value: string): string {
   const url = new URL(value.trim())
@@ -536,7 +538,7 @@ async function loadNow($: EngineInterface) {
       const appdata = await $.env.get('APPDATA')
       const dir = candidate.accountsDir ?? (appdata ? appdata.replace(/[\\/]+$/, '') + '\\model-mod\\accounts' : home ? home.replace(/\/+$/, '') + '/.config/model-mod/accounts' : undefined)
       if (!dir) {
-        $.ui.status('Codex login: accounts directory unavailable; configure codexAccountsDir.')
+        $.ui.status(`Codex login: accounts directory unavailable; set codexAccountsDir ${IN_SETTINGS_FILE}.`)
         built.excluded ??= new Set()
         built.codexDirectoryUnavailable = new Set()
         for (const account of candidate.accounts as string[]) for (const model of candidate.codexModels as string[]) {
@@ -1408,7 +1410,7 @@ async function setupCodex($: EngineInterface, c?: Config): Promise<string> {
     const bin = typeof pluginOptions.codexBin === 'string' && pluginOptions.codexBin.trim() || 'codex'
     const validCommand = (s: string) => !/[\0\r\n]/.test(s) && (/^(?:\/|[A-Za-z]:[\\/])/.test(s) || /^[A-Za-z0-9._-]+$/.test(s))
     if (['codexAccountsDir', 'codexBin', 'pythonBin'].some(name => typeof pluginOptions[name] === 'string' && /[\0\r\n]/.test(pluginOptions[name] as string)) ||
-        !validCommand(python) || !validCommand(bin)) return 'model-mod: Codex login: invalid path; configure codexAccountsDir, pythonBin and codexBin.'
+        !validCommand(python) || !validCommand(bin)) return `model-mod: Codex login: invalid path; check codexBin in the plugin options, and codexAccountsDir and pythonBin ${IN_SETTINGS_FILE}.`
     const py = await $.process.run([python, '--version'], { timeoutMs: 15_000 })
     const pv = /Python\s+(\d+)\.(\d+)/.exec(py.stdout + py.stderr)
     if (py.exitCode !== 0 || !pv || Number(pv[1]) < 3 || (Number(pv[1]) === 3 && Number(pv[2]) < 9)) return 'model-mod: Codex login: Python 3.9 or newer required; install Python.'
@@ -1422,7 +1424,7 @@ async function setupCodex($: EngineInterface, c?: Config): Promise<string> {
     const home = await $.env.get('HOME'), appdata = await $.env.get('APPDATA')
     const configured = typeof pluginOptions.codexAccountsDir === 'string' ? pluginOptions.codexAccountsDir.trim() : ''
     const dir = configured || (appdata ? appdata.replace(/[\\/]+$/, '') + '\\model-mod\\accounts' : home ? home.replace(/\/+$/, '') + '/.config/model-mod/accounts' : '')
-    if (!dir || !/^(?:\/|[A-Za-z]:[\\/])/.test(dir) || /[\0\r\n]/.test(dir)) return 'model-mod: Codex login: invalid accounts directory; configure codexAccountsDir.'
+    if (!dir || !/^(?:\/|[A-Za-z]:[\\/])/.test(dir) || /[\0\r\n]/.test(dir)) return `model-mod: Codex login: invalid accounts directory; set codexAccountsDir ${IN_SETTINGS_FILE}.`
     const sep = dir.includes('\\') && !dir.includes('/') ? '\\' : '/'
     const accountHome = dir.replace(/[\\/]+$/, '') + sep + account
     const bridge = c ?? { prompts: { text: {}, files: [] }, baseUrl: DEFAULT_BASE_URL, models: [], maxTokens: 32000, effortMode: 'suffix' as const }
@@ -1468,7 +1470,7 @@ async function setupCodex($: EngineInterface, c?: Config): Promise<string> {
           failed: 'model-mod: Codex login: account configuration refused; previous settings restored.',
           rollbackFailed: 'model-mod: Codex login: account configuration failed and rollback failed; restore the previous settings in /plugin.' }),
       ],
-      ok: `model-mod: Codex login (${account}): ${selected.length} models configured; dir=${accountHome}. Parent thread reuse defaults to on; set codexThreadReuse to off for ephemeral threads only.`,
+      ok: `model-mod: Codex login (${account}): ${selected.length} models configured; dir=${accountHome}. Parent thread reuse defaults to on; turn it off for ephemeral threads only with codexThreadReuse ${IN_SETTINGS_FILE}.`,
     }, setupFlow?.detached === true)
     return done.text
   } catch (err) {
@@ -2297,7 +2299,7 @@ export const register: Register = (on, options) => {
     const c = await load($)
     if (!c?.models.includes(args) && (await retiredModels($)).includes(args)) return commandText({ text: 'model-mod: model is not in the allowlist; use /model to choose another model or run /model-mod:setup.' })
     if (!c) return next(e)
-    if (c.excluded?.has(args)) return commandText({ text: c.codexDirectoryUnavailable?.has(args) ? 'model-mod: model is not in the allowlist; configure codexAccountsDir' : `model-mod: ${args} is not in the allowlist; run /model-mod:setup.` })
+    if (c.excluded?.has(args)) return commandText({ text: c.codexDirectoryUnavailable?.has(args) ? `model-mod: model is not in the allowlist; set codexAccountsDir ${IN_SETTINGS_FILE}` : `model-mod: ${args} is not in the allowlist; run /model-mod:setup.` })
     if (!c.models.includes(args)) return next(e)
     try { await $.env.set('ANTHROPIC_CUSTOM_MODEL_OPTION', args) } catch {
       return commandText({ text: 'model-mod: could not prepare the local model; model not changed.' })
@@ -2310,7 +2312,7 @@ export const register: Register = (on, options) => {
   on('command.run', { command: 'model-mod:model' }, async ($, e) => {
     const c = await load($)
     if (!c) return commandText({ text: `model-mod: inactive; models=0. ${await configHint($)}` })
-    if (c.codexDirectoryUnavailable?.has(e.args.trim())) return commandText({ text: 'model-mod: model is not in the allowlist; configure codexAccountsDir' })
+    if (c.codexDirectoryUnavailable?.has(e.args.trim())) return commandText({ text: `model-mod: model is not in the allowlist; set codexAccountsDir ${IN_SETTINGS_FILE}` })
     if (e.origin.kind !== 'composer' && e.origin.kind !== 'bridge') return commandText({ text: 'model-mod: /model-mod:model needs an interactive session.' })
     if (!c.models.length) return commandText({ text: 'model-mod: no local models. Run /model-mod:setup to add them.' })
     let current = ''
@@ -2471,7 +2473,7 @@ export const register: Register = (on, options) => {
       lastStep = { model: e.model, ...(typeof e.effort === 'string' ? { effort: e.effort } : {}) }
       try { await applyWindow($, c, e.model) } catch { /* window stays as it was */ }
     }
-    if (c.excluded?.has(e.model)) return yield* failure(e, c.codexDirectoryUnavailable?.has(e.model) ? 'model is not in the allowlist; configure codexAccountsDir' : 'model is not in the allowlist')
+    if (c.excluded?.has(e.model)) return yield* failure(e, c.codexDirectoryUnavailable?.has(e.model) ? `model is not in the allowlist; set codexAccountsDir ${IN_SETTINGS_FILE}` : 'model is not in the allowlist')
     if (!c.models.includes(e.model)) return yield* next(e)
     const codex = c.codex?.get(e.model)
     let parser = new MessagesStream(e.model)

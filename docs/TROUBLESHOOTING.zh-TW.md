@@ -44,7 +44,7 @@
 | 症狀 | 處理方式 |
 |---|---|
 | 尚未登入或帳號目錄不存在 | 執行 `/model-mod:setup` 並選 Codex login，依顯示的網址與代碼完成裝置驗證，登入後選 Continue。若 setup 無法取得網址或代碼，請依顯示的終端機命令手動登入，再重新執行 setup；Windows 會顯示 PowerShell 命令。 |
-| `model is not in the allowlist; configure codexAccountsDir` | 無法決定帳號目錄，因而排除 Codex 模型 ID。請設定絕對路徑 `codexAccountsDir`（[進階選項](CONFIGURATION.zh-TW.md#進階選項)），或確認 `HOME` 或 `APPDATA` 可供決定預設目錄；必要時建立帳號目錄並登入，再重新載入插件。 |
+| `model is not in the allowlist; set codexAccountsDir in the settings file (see Advanced options in the configuration docs)` | 無法決定帳號目錄，因而排除 Codex 模型 ID。請設定絕對路徑 `codexAccountsDir`（[進階選項](CONFIGURATION.zh-TW.md#進階選項)），或確認 `HOME` 或 `APPDATA` 可供決定預設目錄；必要時建立帳號目錄並登入，再重新載入插件。 |
 | Codex 版本過舊 | 將官方 CLI 升級至至少 0.165.0，再重試。 |
 | helper 無法啟動 | 安裝 Python 3.9 以上版本並檢查 `pythonBin` 與 `codexAccountsDir`（都是[進階選項](CONFIGURATION.zh-TW.md#進階選項)），也檢查 `codexBin` 路徑。執行檔須為命令名稱或絕對路徑。 |
 | `Codex used a built-in tool that model-mod does not support` | helper 遇到不支援的項目時會終止回合。重試前請檢查 Codex 版本及有效設定。見[限制說明](LIMITATIONS.zh-TW.md#codex-登入的限制)。 |

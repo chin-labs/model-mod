@@ -44,7 +44,7 @@ After `/model-mod:setup`:
 | Symptom | What to do |
 |---|---|
 | Not logged in or account directory missing | Run `/model-mod:setup`, select Codex login and follow the device-auth link and code; select Continue after logging in. If setup cannot obtain the link or code, follow its manual terminal commands and rerun setup. Windows uses PowerShell commands instead. |
-| `model is not in the allowlist; configure codexAccountsDir` | The accounts directory could not be determined, so Codex model IDs were excluded. Set an absolute `codexAccountsDir` (an [advanced option](CONFIGURATION.md#advanced-options)), or make sure `HOME` or `APPDATA` is available for the default directory; create the account directory and log in if needed. Reload the plugin. |
+| `model is not in the allowlist; set codexAccountsDir in the settings file (see Advanced options in the configuration docs)` | The accounts directory could not be determined, so Codex model IDs were excluded. Set an absolute `codexAccountsDir` (an [advanced option](CONFIGURATION.md#advanced-options)), or make sure `HOME` or `APPDATA` is available for the default directory; create the account directory and log in if needed. Reload the plugin. |
 | Codex too old | Upgrade the official CLI to at least 0.165.0, then retry. |
 | Helper cannot start | Install Python 3.9+ and check `pythonBin` and `codexAccountsDir` (both [advanced options](CONFIGURATION.md#advanced-options)); check the `codexBin` path. Executables must be command names or absolute paths. |
 | `Codex used a built-in tool that model-mod does not support` | The helper stopped the turn on an unsupported item. Check the Codex version and effective settings before retrying. See [limitations](LIMITATIONS.md#codex-login-limitations). |

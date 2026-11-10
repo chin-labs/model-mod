@@ -1988,9 +1988,9 @@ for (const apiKey of [KEY, 'bad key']) {
 test('Codex login: missing account directory leaves the API active and refuses Codex IDs', { options: { ...CODEX_OPTIONS, ...OPTIONS, models: LOCAL } }, async ($, on) => {
   const w = world(on, null, LOCAL, { stdout: SSE_OK, code: 0 }, undefined, { HOME: '', APPDATA: '' })
   expect((await drain($.turn.step(STEP(LOCAL)))).result.answer).toBe('local answer')
-  expect((await drain($.turn.step(STEP(CODEX_MODEL)))).result.answer).toContain('not in the allowlist; configure codexAccountsDir')
-  expect((await $.command.run({ ...MODEL, args: CODEX_MODEL })).text).toContain('model is not in the allowlist; configure codexAccountsDir')
-  expect((await $.command.run({ ...PICK, args: CODEX_MODEL })).text).toContain('model is not in the allowlist; configure codexAccountsDir')
+  expect((await drain($.turn.step(STEP(CODEX_MODEL)))).result.answer).toContain('not in the allowlist; set codexAccountsDir in the settings file')
+  expect((await $.command.run({ ...MODEL, args: CODEX_MODEL })).text).toContain('model is not in the allowlist; set codexAccountsDir in the settings file')
+  expect((await $.command.run({ ...PICK, args: CODEX_MODEL })).text).toContain('model is not in the allowlist; set codexAccountsDir in the settings file')
   expect(w.reached).toEqual([])
 })
 
