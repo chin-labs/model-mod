@@ -155,7 +155,8 @@ def global_excludes():
     # as a path to a pattern file, which git reads and never executes. All other global settings stay unread.
     value = git(os.path.abspath(os.sep), ['config', '--global', '--includes', '--path', '-z', '--get', 'core.excludesFile'], 4096,
                 allow_no_match=True, read_global=True)
-    return [] if not value else ['-c', 'core.excludesFile=' + os.fsdecode(value[:-1] if value.endswith(b'\0') else value)]
+    path = value[:-1] if value.endswith(b'\0') else value
+    return ['-c', 'core.excludesFile=' + os.fsdecode(path)] if path else []
 
 
 def gate_snapshot(cwd, base, session):
