@@ -82,17 +82,18 @@ def cancel(signum, frame):
     raise Cancelled()
 
 
-def git_env():
+def git_env(read_global=False):
     allowed = ('PATH', 'HOME', 'SYSTEMROOT', 'WINDIR', 'TMPDIR', 'TEMP', 'TMP')
     result = {key: os.environ[key] for key in allowed if key in os.environ}
-    result.update(GIT_CONFIG_NOSYSTEM='1', GIT_CONFIG_GLOBAL=os.devnull, GIT_NO_LAZY_FETCH='1')
+    result.update(GIT_CONFIG_NOSYSTEM='1', GIT_NO_LAZY_FETCH='1')
+    if not read_global: result['GIT_CONFIG_GLOBAL'] = os.devnull
     return result
 
 
-def git(cwd, args, limit=MAX_DIFF, config_args=(), allow_no_match=False):
+def git(cwd, args, limit=MAX_DIFF, config_args=(), allow_no_match=False, read_global=False):
     try:
         proc = subprocess.Popen(['git', '-c', 'core.hooksPath=' + os.devnull, '-c', 'core.fsmonitor=false', '-c', 'diff.autoRefreshIndex=false', *config_args, *args], cwd=cwd,
-                                env=git_env(), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+                                env=git_env(read_global), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
         try:
             output = queue.Queue(maxsize=1)
             threading.Thread(target=lambda: output.put(proc.stdout.read(limit + 1)), daemon=True).start()
@@ -149,6 +150,14 @@ def snapshot_unavailable(cwd):
         path = parent
 
 
+def global_excludes():
+    # Only the value of core.excludesFile is read from the user's global config, from a neutral directory. It is passed on
+    # as a path to a pattern file, which git reads and never executes. All other global settings stay unread.
+    value = git(os.path.abspath(os.sep), ['config', '--global', '--includes', '--path', '-z', '--get', 'core.excludesFile'], 4096,
+                allow_no_match=True, read_global=True)
+    return [] if not value else ['-c', 'core.excludesFile=' + os.fsdecode(value[:-1] if value.endswith(b'\0') else value)]
+
+
 def gate_snapshot(cwd, base, session):
     if not isinstance(session, str) or not session or len(session) > 256: raise Failure('Session unavailable.')
     root = git(cwd, ['rev-parse', '--show-toplevel'], 4096)
@@ -166,7 +175,7 @@ def gate_snapshot(cwd, base, session):
     with_dirty = safe_diff(cwd, ['diff', *common, '--ignore-submodules=none', '--'])
     if with_dirty != unstaged: raise Failure('Dirty submodule contents cannot be reviewed by the gate.')
     committed = diff_for(cwd, base) if base else b''
-    names = git(cwd, ['ls-files', '--others', '--exclude-standard', '-z'])
+    names = git(cwd, ['ls-files', '--others', '--exclude-standard', '-z'], config_args=global_excludes())
     untracked = []
     size = len(staged) + len(unstaged) + len(committed) + len(names)
     for raw in names.split(b'\0'):

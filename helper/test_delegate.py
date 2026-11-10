@@ -886,6 +886,20 @@ class DelegateTest(unittest.TestCase):
         (self.repo / 'new').write_bytes(b'\x00binary')
         with self.assertRaises(delegate.Failure): delegate.gate_snapshot(str(self.repo), None, 'session')
 
+    def test_gate_honors_global_ignore_file(self):
+        home = self.root / 'home'
+        home.mkdir()
+        (home / 'ignore').write_text('*.pem\n')
+        (home / '.gitconfig').write_text('[core]\n\texcludesFile = ' + str(home / 'ignore') + '\n')
+        (self.repo / 'secret.pem').write_text('GLOBALLY-IGNORED\n')
+        (self.repo / 'plain.txt').write_text('NOT-IGNORED\n')
+        self.mode('gate')
+        with patch.dict(os.environ, {'HOME': str(home)}):
+            self.assertEqual(json.loads(delegate.execute(dict(self.request, kind='review', options={'gate': True}, sessionId='session')))['verdict'], 'pass')
+        text = next(r['params'] for r in self.records() if r.get('method') == 'turn/start')['input'][0]['text']
+        self.assertIn('NOT-IGNORED', text)
+        self.assertNotIn('GLOBALLY-IGNORED', text)
+
     def test_gate_rejects_dirty_submodule(self):
         module = self.root / 'module'
         module.mkdir()
