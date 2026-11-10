@@ -401,18 +401,37 @@ class BrokerTest(unittest.TestCase):
         for path in broker.paths(self.root)[:3]: self.assertFalse(os.path.exists(path))
 
     def test_recovery_checks_identity(self):
-        member = {'pid': 23, 'started': 'expected'}
-        for started, group in (('different', 42), ('expected', 43), (None, 42)):
-            with patch.object(job_process, 'start_time', return_value=started), \
-                 patch.object(job_process.os, 'getpgid', return_value=group), \
-                 patch.object(broker, 'terminate_group') as terminate:
-                server = object.__new__(broker.Server)
-                server.store = unittest.mock.Mock()
-                server.store.records.return_value = [{'id': 'a' * 32, 'state': 'running', 'pgid': 42,
-                                                       'runner': member, 'appServer': None}]
+        def recover(runner):
+            server = object.__new__(broker.Server)
+            server.store = unittest.mock.Mock()
+            server.store.records.return_value = [{'id': 'a' * 32, 'state': 'running', 'pgid': runner['pid'],
+                                                   'runner': runner, 'appServer': None}]
+            with patch.object(broker.os, 'killpg') as kill, patch.object(broker.time, 'sleep'):
                 server.recover()
-                terminate.assert_not_called()
-                server.store.transition.assert_called_once_with('a' * 32, 'interrupted', error='possible_leftover')
+            return kill, server.store.transition
+        runner = {'pid': 424242, 'started': 'expected'}
+        for started, group in (('different', 424242), ('expected', 424243), (None, 424242)):
+            with patch.object(job_process, 'start_time', return_value=started), \
+                 patch.object(job_process.os, 'getpgid', return_value=group):
+                kill, transition = recover(runner)
+            kill.assert_not_called()
+            transition.assert_called_once_with('a' * 32, 'interrupted', error='possible_leftover')
+        with patch.object(job_process, 'start_time', return_value='expected'), \
+             patch.object(job_process.os, 'getpgid', return_value=424242):
+            kill, transition = recover(runner)
+        self.assertEqual([c.args for c in kill.call_args_list],
+                         [(424242, signal.SIGTERM), (424242, signal.SIGKILL)])
+        transition.assert_called_once_with('a' * 32, 'interrupted', error='broker_restarted')
+        child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'])
+        try:
+            reused = {'pid': child.pid, 'started': job_process.start_time(child.pid)}
+            self.assertIsNotNone(reused['started'])
+            kill, transition = recover(reused)
+            kill.assert_not_called()
+            transition.assert_called_once_with('a' * 32, 'interrupted', error='possible_leftover')
+        finally:
+            child.kill()
+            child.wait()
 
 
 if __name__ == '__main__': unittest.main()
