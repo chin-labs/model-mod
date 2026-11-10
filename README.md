@@ -13,7 +13,7 @@ model-mod is a plugin (a "mod") for Claude Code that puts models from your own C
 ## Requirements
 
 - Claude Code must load plugin hooks; after installation, check that `/model-mod:status` responds.
-- Codex login: Python 3.9 or newer and an installed `codex` CLI (minimum supported version 0.165.0; lower versions are refused). The Codex context window comes from the account's model catalog (effective percentage applied), falling back to 128,000 tokens; `contextWindow` overrides it. Or use your own running Messages-compatible API and its API key; CLIProxyAPI is one tested API upstream example. model-mod does not install or run the API server.
+- Codex login: Python 3.9 or newer and an installed `codex` CLI (minimum supported version 0.165.0; lower versions are refused). The Codex context window comes from the account's model catalog (effective percentage applied), falling back to 128,000 tokens; `contextWindow` (an [advanced option](docs/CONFIGURATION.md#advanced-options)) overrides it. Or use your own running Messages-compatible API and its API key; CLIProxyAPI is one tested API upstream example. model-mod does not install or run the API server.
 - `curl` and `bash`; web fetch and image generation need additional system tools listed in [Configuration](docs/CONFIGURATION.md#system-tools).
 
 ## Quick start
@@ -54,9 +54,9 @@ Send a short message after selecting a model. An upstream failure ends the turn 
 
 - Your models alongside subscription models; `/model-mod:model` selects the model and saves it as the default for new sessions across projects, sending conversations to your Codex login or your own API until you run `/model sonnet` or select another subscription model.
 - Streaming, tool calls, Skills, MCP servers, subagents and Workflow agents.
-- Codex login uses native web search (`codexWebSearch`) and image generation on POSIX; the API path uses the mod’s search, fetch and image-generation tools. Web fetch and tool search are also available to Codex.
+- Codex login uses native web search (`codexWebSearch`, an [advanced option](docs/CONFIGURATION.md#advanced-options)) and image generation on POSIX; the API path uses the mod’s search, fetch and image-generation tools. Web fetch and tool search are also available to Codex.
 - Delegate through your logged-in Codex CLI with `/model-mod:review` (native, `--adversarial`, `--gate`), `/model-mod:rescue`, background jobs (`/model-mod:jobs`, `/model-mod:result`, `/model-mod:cancel`) and `/model-mod:transfer`; see [delegation and data flow](docs/FEATURES.md#delegation-and-data-flow).
-- With `codexThreadReuse` on, eligible Codex login requests fork an ephemeral thread from a short-lived parent; small-sample tests on one Mac observed improved cache reuse, which is not guaranteed. See [features](docs/FEATURES.md) and [privacy and cleanup](docs/LIMITATIONS.md#parent-thread-privacy-and-cleanup).
+- With `codexThreadReuse` (an [advanced option](docs/CONFIGURATION.md#advanced-options)) on, eligible Codex login requests fork an ephemeral thread from a short-lived parent; small-sample tests on one Mac observed improved cache reuse, which is not guaranteed. See [features](docs/FEATURES.md) and [privacy and cleanup](docs/LIMITATIONS.md#parent-thread-privacy-and-cleanup).
 - Automatic retry of transient upstream errors with bounded `Retry-After` handling, and Claude Code's five effort levels.
 - Compaction through your selected model and optional `fallbackModel` switching at subscription or Codex login rate limits; accounts are not rotated automatically, and API upstream models have no official rate-limit switching.
 

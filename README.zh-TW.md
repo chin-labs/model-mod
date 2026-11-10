@@ -13,7 +13,7 @@ model-mod 是供 Claude Code 使用的插件（mod），讓你把自己的 Codex
 ## 需求
 
 - Claude Code 必須載入插件 hooks；安裝後可檢查 `/model-mod:status` 是否有回應。
-- Codex 登入：Python 3.9 以上版本及已安裝的 `codex` CLI（最低支援版本 0.165.0；更舊版本會被拒絕）。Codex context 視窗取自帳號模型目錄（套用有效比例），讀不到時退回 128,000 token；`contextWindow` 可覆寫。或使用你自己已啟動的 Messages 相容 API 與其金鑰；CLIProxyAPI 是曾測試過的一例 API 上游，model-mod 不會安裝或啟動該伺服器。
+- Codex 登入：Python 3.9 以上版本及已安裝的 `codex` CLI（最低支援版本 0.165.0；更舊版本會被拒絕）。Codex context 視窗取自帳號模型目錄（套用有效比例），讀不到時退回 128,000 token；`contextWindow`（[進階選項](docs/CONFIGURATION.zh-TW.md#進階選項)）可覆寫。或使用你自己已啟動的 Messages 相容 API 與其金鑰；CLIProxyAPI 是曾測試過的一例 API 上游，model-mod 不會安裝或啟動該伺服器。
 - `curl` 與 `bash`；網頁擷取與圖片生成另需[設定說明](docs/CONFIGURATION.zh-TW.md#系統工具)列出的系統工具。
 
 ## 快速開始
@@ -54,9 +54,9 @@ Codex 登入是主要路徑。先安裝 Python 3.9 以上版本與官方 `codex`
 
 - 你的模型與訂閱模型並存；`/model-mod:model` 選擇模型並將它儲存為所有專案中新工作階段的預設模型，持續把對話送到你的 Codex 登入或你自己的 API，直到執行 `/model sonnet` 或選擇其他訂閱模型。
 - 支援串流、工具呼叫、Skills、MCP 伺服器、子代理與 Workflow agent。
-- Codex 登入使用原生網頁搜尋（`codexWebSearch`）及僅支援 POSIX 的圖片生成；API 路徑使用 mod 的搜尋、擷取及圖片生成工具。Codex 也可使用網頁擷取與工具搜尋。
+- Codex 登入使用原生網頁搜尋（`codexWebSearch`，[進階選項](docs/CONFIGURATION.zh-TW.md#進階選項)）及僅支援 POSIX 的圖片生成；API 路徑使用 mod 的搜尋、擷取及圖片生成工具。Codex 也可使用網頁擷取與工具搜尋。
 - 透過你登入的 Codex CLI 使用 `/model-mod:review`（原生、`--adversarial`、`--gate`）、`/model-mod:rescue`、背景工作（`/model-mod:jobs`、`/model-mod:result`、`/model-mod:cancel`）與 `/model-mod:transfer`；見[委派與資料流](docs/FEATURES.zh-TW.md#委派與資料流)。
-- `codexThreadReuse` 開啟時，符合條件的 Codex 登入請求從短期父 thread 建立 ephemeral fork；一台 Mac 上的小樣本測試觀察到快取重用改善，但不保證命中。見[特色](docs/FEATURES.zh-TW.md)與[隱私與清理](docs/LIMITATIONS.zh-TW.md#父-thread-隱私與清理)。
+- `codexThreadReuse`（[進階選項](docs/CONFIGURATION.zh-TW.md#進階選項)）開啟時，符合條件的 Codex 登入請求從短期父 thread 建立 ephemeral fork；一台 Mac 上的小樣本測試觀察到快取重用改善，但不保證命中。見[特色](docs/FEATURES.zh-TW.md)與[隱私與清理](docs/LIMITATIONS.zh-TW.md#父-thread-隱私與清理)。
 - 暫時性上游錯誤自動重試，採用有上限的 `Retry-After` 處理，並支援 Claude Code 的五級 effort。
 - 以你選的模型壓縮上下文；訂閱或 Codex 登入額度達上限時，可選擇切換至 `fallbackModel`，不會自動輪流更換帳號；API 上游模型沒有官方額度切換機制。
 

@@ -41,7 +41,7 @@ Marketplace 安裝已用本機 clone 與使用標準 HTTP 協定的 Git 伺服�
 - Codex 內建 shell、網路與瀏覽器工具、sleep、子代理、apps、plugins 和 goals 均已停用。patch 與檔案操作會被唯讀 sandbox 與項目白名單阻擋；項目處理方式如上述檢查所示。動態工具來自客戶端，另有上述 MCP 資源清單例外。模型會收到簡短的 developer instructions，要求只使用提供的函式工具、不使用內建 sleep、等待、協作及子代理工具，等待背景工作時結束回合；唯讀隔離的細節不會告知模型。
 - Codex 保留 `mcp__` 開頭的名稱並限制工具名稱。bridge 以 `bridge_` 加雜湊作為受影響名稱的別名，回傳時還原原名。
 - `max_tokens` 會接受但忽略；`tool_choice`、`temperature`、`top_p`、`stop_sequences`、`cache_control` 與 thinking 預算會被忽略。helper 寫出的 `model-mod-note:` 診斷行是內部標記，會被丟棄，不會顯示給使用者。不要依賴這些控制項生效。
-- `codexKeepReasoning` 預設為 `on`。thread 重用的 fork 請求不保留 reasoning；若要保留，請將 `codexThreadReuse` 設為 `off`。bridge 使用 Codex 0.165.0 的實驗性 `experimentalRawEvents` 與 `thread/inject_items` 介面；上游可能修改這些 API，且重放尚未對真實 Codex 回合驗證。OpenAI 回傳的不透明 reasoning item 可能包含加密資料；簽章每個 item 上限 256 KiB、每次回應上限 1 MiB，超出的項目會丟棄。只保留第一段助手文字或工具呼叫之前的 reasoning；其後交錯的 reasoning 會丟棄，以維持重放順序。推理只在同一工作階段的工具往返期間保存在記憶體，重新載入或重啟後遺失。換帳號或模型可能使其失效；若輸出前被拒，會去掉推理重建請求一次。不保證與 API 路徑完全等價。
+- `codexKeepReasoning` 預設為 `on`。thread 重用的 fork 請求不保留 reasoning；若要保留，請將 `codexThreadReuse`（[進階選項](CONFIGURATION.zh-TW.md#進階選項)）設為 `off`。bridge 使用 Codex 0.165.0 的實驗性 `experimentalRawEvents` 與 `thread/inject_items` 介面；上游可能修改這些 API，且重放尚未對真實 Codex 回合驗證。OpenAI 回傳的不透明 reasoning item 可能包含加密資料；簽章每個 item 上限 256 KiB、每次回應上限 1 MiB，超出的項目會丟棄。只保留第一段助手文字或工具呼叫之前的 reasoning；其後交錯的 reasoning 會丟棄，以維持重放順序。推理只在同一工作階段的工具往返期間保存在記憶體，重新載入或重啟後遺失。換帳號或模型可能使其失效；若輸出前被拒，會去掉推理重建請求一次。不保證與 API 路徑完全等價。
 - Codex 原生搜尋僅在 `codexWebSearch` 開啟且工作階段工具清單包含 WebSearch 時啟用。原生搜尋與 openPage 在 OpenAI 端執行，不受 Claude 權限的網域規則（allowed／blocked domains）限制；model-mod 不做 `allowed_domains` 的安全宣稱。查詢文字會送往 OpenAI。原生搜尋不經 Claude 逐次詢問權限，顯示的搜尋文字也會進入助手歷史。搜尋活動每次顯示為一行助手文字，不是可展開的工具結果或內建「已搜尋」區塊；該行助手文字僅在一台 Mac 的真實客戶端看過一次，且不顯示不透明的搜尋結果。Codex 不提供 mod 的 `web_search`，但保留 `generate_image` 與 `web_fetch`。Codex 使用內建圖片模型，提示詞與生成圖片內容送往 OpenAI；尺寸與品質僅作為提示詞中的請求，不保證生效；是否計入額度尚未驗證。超過 20 MiB 的圖片會被拒絕。即使 sandbox 唯讀，app-server 仍會自行把圖片寫入 `CODEX_HOME/generated_images`；取得位元組後，model-mod 嘗試不跟隨符號連結刪除該字面路徑，失敗僅記內部 note，不使呼叫失敗。輸出以 0600 權限排他建立。Codex context 預設為帳號模型目錄視窗乘以有效比例，讀不到時退回 128,000 token；明設 `contextWindow` 可覆寫。helper 將 Codex 自動壓縮門檻設在客戶端視窗之上並於內部記錄壓縮事件；這不保證完全停用 Codex 壓縮，也不會停用 model-mod 自己的壓縮。
 - 每次呼叫會啟動一個本機 helper 程序與 `codex app-server`，會增加延遲；啟動延遲尚未量測。Windows **尚未驗證**；見 [Windows 驗證清單](WINDOWS.zh-TW.md)。Codex 圖片生成僅支援 POSIX。
 - Codex 的額度與速率限制取決於你自己的訂閱；達到限制時 model-mod 不會輪替帳號。
@@ -53,7 +53,7 @@ Marketplace 安裝已用本機 clone 與使用標準 HTTP 協定的 Git 伺服�
 
 | 項目 | 會發生什麼 | 變通方法 |
 |---|---|---|
-| 輸出長度與 context | `maxTokens` 預設 32000；CLIProxyAPI 搭配 Codex 未強制較小的值，實際最大輸出未知。API 模型的預設 context 視窗為 272000（可設 `contextWindow`，最小 32000）。視窗過小時，客戶端的自動壓縮門檻會變負值，造成反覆壓縮。 | 把 `contextWindow` 設為模型的實際上限。 |
+| 輸出長度與 context | `maxTokens` 預設 32000；CLIProxyAPI 搭配 Codex 未強制較小的值，實際最大輸出未知。API 模型的預設 context 視窗為 272000（可設 `contextWindow`（[進階選項](CONFIGURATION.zh-TW.md#進階選項)），最小 32000）。視窗過小時，客戶端的自動壓縮門檻會變負值，造成反覆壓縮。 | 把 `contextWindow` 設為模型的實際上限。 |
 | 請求內容 | 對話請求帶 `model`、`max_tokens`、`stream`、`messages`、`system` 及選用的 `tools`；客戶端的其他請求欄位不會送出。 | 無需處理。 |
 | 推理 | API 路徑只在工具迴圈內交回 Codex 形式的加密推理簽章；其他 thinking 與 server-tool 區塊會移除。簽章被拒時，去除後重試一次。 | 上游拒絕簽章時，設 `keepThinking: false`。 |
 | Effort | API 路徑以模型後綴（如 `model(high)`）送出五個等級；Codex 登入路徑依模型目錄宣告夾值，`max` 對應最高宣告值，絕不送 `minimal`；目錄不可用時維持原值。未帶 effort 後綴時，若支援 `low` 則使用 `low`，否則使用模型預設值。這只確認名稱有送到上游，不代表推理強度會改變。Ultracode 是獨立開關，不改變等級；`/effort ultra` 由客戶端自己拒絕。 | 上游拒絕後綴時，設 `effortMode: none`。 |
