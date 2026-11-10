@@ -204,6 +204,29 @@ class Contract(unittest.TestCase):
             with contextlib.redirect_stdout(io.StringIO()):
                 with self.assertRaisesRegex(bridge.BridgeError, 'expired.*setup'):
                     bridge.device_login(args)
+            log2 = Path(tmp, 'log_expired')
+            config.write_text(json.dumps({'mode': 'login_expired', 'login_delay': .01, 'log': str(log2)}))
+            def reap_child():
+                for _ in range(200):
+                    if log2.exists():
+                        try:
+                            rec = json.loads(log2.read_text().splitlines()[0])
+                            os.kill(rec['child'], signal.SIGKILL)
+                            break
+                        except Exception: pass
+                    time.sleep(0.01)
+            import threading
+            threading.Thread(target=reap_child, daemon=True).start()
+            with patch.object(bridge.os, 'killpg', side_effect=PermissionError), contextlib.redirect_stdout(io.StringIO()):
+                with self.assertRaisesRegex(bridge.BridgeError, 'expired.*setup'):
+                    bridge.device_login(args)
+            records = json.loads(log2.read_text().splitlines()[0])
+            for pid in records.values():
+                for _ in range(50):
+                    try: os.kill(pid, 0)
+                    except ProcessLookupError: break
+                    time.sleep(.02)
+                else: self.fail('login process survived expiry')
 
     def run_bridge(self, body=BASE, mode='text', log=None, extra=()):
         with tempfile.TemporaryDirectory() as home:

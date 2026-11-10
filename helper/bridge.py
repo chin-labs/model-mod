@@ -65,6 +65,18 @@ def install_cancel_handlers():
     if hasattr(signal, 'SIGHUP'): signal.signal(signal.SIGHUP, cancel)
 
 
+def kill_group(proc, sig):
+    if os.name == 'posix':
+        try: os.killpg(proc.pid, sig)
+        except ProcessLookupError: return
+        except PermissionError:
+            if proc.poll() is None:
+                try:
+                    if sig == signal.SIGTERM: proc.terminate()
+                    else: proc.kill()
+                except OSError: pass
+
+
 def note(text):
     print('model-mod-note:' + text, file=sys.stderr, flush=True)
 
@@ -338,16 +350,14 @@ class App:
             finally:
                 try:
                     if os.name == 'posix':
-                        try: os.killpg(self.proc.pid, signal.SIGTERM)
-                        except ProcessLookupError: pass
+                        kill_group(self.proc, signal.SIGTERM)
                     elif self.proc.poll() is None: self.proc.terminate()
                 finally:
                     try: self.proc.wait(timeout=3)
                     except subprocess.TimeoutExpired:
                         try:
                             if os.name == 'posix':
-                                try: os.killpg(self.proc.pid, signal.SIGKILL)
-                                except ProcessLookupError: pass
+                                kill_group(self.proc, signal.SIGKILL)
                             else: self.proc.kill()
                         finally:
                             try: self.proc.wait(timeout=3)
@@ -667,20 +677,17 @@ def device_login(args):
         return False
     finally:
         if os.name == 'posix':
-            try: os.killpg(proc.pid, signal.SIGTERM)
-            except ProcessLookupError: pass
+            kill_group(proc, signal.SIGTERM)
         elif proc.poll() is None:
             subprocess.run(['taskkill', '/PID', str(proc.pid), '/T', '/F'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
         try: proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
             if os.name == 'posix':
-                try: os.killpg(proc.pid, signal.SIGKILL)
-                except ProcessLookupError: pass
+                kill_group(proc, signal.SIGKILL)
             else: proc.kill()
             proc.wait()
         if os.name == 'posix':
-            try: os.killpg(proc.pid, signal.SIGKILL)
-            except ProcessLookupError: pass
+            kill_group(proc, signal.SIGKILL)
         proc.stdout.close()
 
 
