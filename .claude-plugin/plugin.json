@@ -30,22 +30,11 @@
       "title": "Codex login models",
       "description": "Comma-separated model IDs."
     },
-    "codexAccountsDir": {
-      "type": "string",
-      "title": "Codex accounts directory",
-      "description": "Absolute accounts directory. Windows default: %APPDATA%\\model-mod\\accounts (not verified)."
-    },
     "codexBin": {
       "type": "string",
       "title": "Codex executable",
       "description": "Executable name or absolute path.",
       "default": "codex"
-    },
-    "pythonBin": {
-      "type": "string",
-      "title": "Python executable",
-      "description": "Python 3.9 or newer. On Windows set this to python (not verified).",
-      "default": "python3"
     },
     "apiKey": {
       "type": "string",
@@ -58,72 +47,15 @@
       "title": "Model allowlist (optional)",
       "description": "Comma-separated model IDs to use through the upstream. Empty: every chat model the upstream lists."
     },
-    "imageModel": {
-      "type": "string",
-      "title": "Image model (optional)",
-      "description": "API image model for generate_image. Empty: gpt-image-2 or the first gpt-image* listed; none: disable API images. Codex uses its built-in image model independently."
-    },
-    "contextWindow": {
-      "type": "number",
-      "title": "Context window",
-      "description": "Input tokens assumed for a model whose context window is unknown. Default 272000 for API models; Codex uses its effective catalog window or 128000 if unavailable."
-    },
     "fallbackModel": {
       "type": "string",
       "title": "Fallback model (optional)",
       "description": "One of your models to use when a subscription or Codex login quota is exhausted. No account rotation; choose a different upstream or account. Automatic switching requires a known reset time; API upstreams have no official rate limits. Empty: off."
     },
-    "fallbackPercent": {
-      "type": "number",
-      "title": "Fallback threshold (%)",
-      "description": "Used share of a rate-limit window (50-100) at which to switch to the fallback model. Only used when a fallback model is set.",
-      "default": 100
-    },
     "workerModel": {
       "type": "string",
       "title": "Local worker model (optional)",
       "description": "Model for the model-mod:local-worker agent type, which any model can hand a task to with the Agent tool. Empty: the fallback model; if that is empty too, there is no worker agent type."
-    },
-    "promptsDir": {
-      "type": "string",
-      "title": "Prompts directory (optional)",
-      "description": "Absolute path of a directory with your own compact.md, title.md, subagent-note.md and worker.md. Empty: use the plugin's prompts. A missing or unusable file is not replaced by a built-in prompt."
-    },
-    "codexThreadReuse": {
-      "type": "string",
-      "title": "Codex parent thread reuse",
-      "description": "on or off. On creates a persistent parent rollout containing fixed instructions, tool definitions and one synthetic turn; off uses ephemeral threads.",
-      "default": "on"
-    },
-    "codexKeepReasoning": {
-      "type": "string",
-      "title": "Codex reasoning continuity",
-      "description": "on or off. Keep opaque Codex reasoning in memory during tool calls using experimental app-server APIs.",
-      "default": "on"
-    },
-    "codexWebSearch": {
-      "type": "string",
-      "title": "Codex native web search",
-      "description": "on or off. Native search sends queries to OpenAI and does not enforce Claude domain rules.",
-      "default": "on"
-    },
-    "codexStopGate": {
-      "type": "string",
-      "title": "Codex Stop review gate",
-      "description": "off or on. When on, completing a main-session turn may start a read-only Codex review that sends the diff and full contents of untracked, non-ignored files to OpenAI; gitignored files are not sent and can block ending, up to the configured limit. Read-only can still run commands; review quality and hook behavior are unverified.",
-      "default": "off"
-    },
-    "codexStopGateBlocks": {
-      "type": "number",
-      "title": "Codex Stop gate block limit",
-      "description": "Maximum number of blocks per session: 1 or 2. After the limit the session may end without a verified pass; human review is required.",
-      "default": 1
-    },
-    "codexServiceTier": {
-      "type": "string",
-      "title": "Codex service tier",
-      "description": "default or priority. Priority requires a supported Codex plan and may use quota faster. Actual tier and billing are unverified.",
-      "default": "default"
     }
   }
 }
