@@ -74,4 +74,4 @@ Then restart Claude Code to apply the update. An update arrives only when the re
 3. Run `/plugin uninstall model-mod@model-mod` in a session, or `claude plugin uninstall model-mod@model-mod` in a shell, then restart.
 4. Remove the marketplace with `claude plugin marketplace remove model-mod` or `/plugin marketplace remove`.
 
-Unless removed by hand, the plugin cache, Codex logins under the accounts directory and delegate job logs remain. After all sessions close, an idle broker exits by itself within about 30 minutes.
+Unless removed by hand, the plugin cache, Codex logins and Codex thread files under the accounts directory, job records and results under `delegate/v1` and the thread registry under `threads/v1` remain. After all sessions close, an idle broker exits by itself within about 30 minutes.

@@ -74,4 +74,4 @@ claude plugin update model-mod@model-mod
 3. 在工作階段執行 `/plugin uninstall model-mod@model-mod`，或在 shell 執行 `claude plugin uninstall model-mod@model-mod`，然後重新啟動。
 4. 執行 `claude plugin marketplace remove model-mod` 或 `/plugin marketplace remove` 移除 marketplace。
 
-除非手動移除，插件快取、帳號目錄中的 Codex 登入及委派工作日誌都會保留。所有工作階段關閉後，閒置的 broker 會在約 30 分鐘內自行結束。
+除非手動移除，插件快取、帳號目錄中的 Codex 登入與 Codex 執行緒檔案、`delegate/v1` 下的工作紀錄與結果，以及 `threads/v1` 下的執行緒登錄都會保留。所有工作階段關閉後，閒置的 broker 會在約 30 分鐘內自行結束。

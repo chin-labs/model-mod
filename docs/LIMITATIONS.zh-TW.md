@@ -60,7 +60,7 @@ Marketplace 安裝已用本機 clone 與使用標準 HTTP 協定的 Git 伺服�
 | setup 選單 | 在終端機輸入 `/model-mod:setup` 時，固定選單在同一個 pane 開啟。文字輸入、超過 12 項的選單、`-p`、bridge 工作階段與太小的 pane 使用對話框，每頁最多四個選項（`More…`）。輸入的答案不是列出的選項時會重新詢問，最多三次，之後取消 setup 且不更動設定。文字輸入對話框之後 pane 會關閉，其餘選單可能改為對話框。 | 放寬終端機視窗，或在對話框中作答。 |
 | 失敗處理 | 尚未有任何輸出前，HTTP 429、502、503、504、529 與可辨識的暫時性錯誤（含早期的 `overloaded_error` 事件）會在 2、6、15 秒後重試（最多三次）。整數 `Retry-After` 為 0–15 秒時，下一次等待至少採用該值；超過 15 秒則立即以 HTTP 狀態與要求的等待秒數結束回合。無效值與 HTTP 日期一律忽略。輸出開始後串流中斷，該回合直接結束，不會重播。失敗的回合不會改用其他模型或訂閱重試。 | 重新送出訊息，或用 `/model` 換模型。 |
 | 壓縮 | 只使用 `prompts/` 內的提示檔；缺檔時略過本地壓縮。摘要品質取決於模型。送去摘要的逐字稿有上限（總計 600000 字元、每則 20000、每個工具結果 1500）。代理內的壓縮尚未驗證。 | 重要事項寫進專案指示，不要只留在對話裡。 |
-| 工具 | 工具 schema 為開放式（只有名稱與描述）。在 API 模型上，`web_search`、`web_fetch` 取代原生 WebSearch、WebFetch；Codex 模型保留 `web_fetch`，並以原生搜尋取代 mod 的 `web_search`，且 `web_fetch` 回傳頁面內容，不做模型摘要。四個 mod 工具（`web_search`、`web_fetch`、`generate_image`、`tool_search`）在訂閱模型下拒絕呼叫，請改用內建工具。`web_fetch` 會拒絕部分公開 IPv6 literal，特殊 IPv6 過渡形式也未完整涵蓋。 | 改用其他網址形式，或用其他工具擷取。 |
+| 工具 | 工具 schema 為開放式（只有名稱與描述）。在 API 模型上，`web_search`、`web_fetch` 取代原生 WebSearch、WebFetch；Codex 模型保留 `web_fetch`，並以原生搜尋取代 mod 的 `web_search`，且 `web_fetch` 回傳頁面內容，不做模型摘要。四個 mod 工具（`web_search`、`web_fetch`、`generate_image`、`tool_search`）在訂閱模型下拒絕呼叫，請改用內建工具。`web_fetch` 會拒絕所有 IPv6 literal 網址（包含公開位址）；請改用主機名稱。 | 改用其他網址形式，或用其他工具擷取。 |
 | 子代理與 Workflow | 子代理取得工作階段系統提示加上委派備註。訂閱工作階段的 Agent 呼叫不能直接指定你的模型 ID；請用 `model-mod:local-worker` 代理類型或 Workflow agent。context 視窗覆寫跟隨主工作階段。 | 設定 `workerModel` 並使用 `model-mod:local-worker`。 |
 | 圖片與 PDF | 圖片可用。單頁 PDF 會轉成圖片。原生 document 區塊與多頁 PDF 尚未驗證。 | 把頁面轉成圖片。 |
 | 用量顯示 | 送往你上游的請求不會更新訂閱用量顯示，CLIProxyAPI 的回覆也不帶 rate-limit 欄位。 | 查看上游自己的用量頁面。 |
