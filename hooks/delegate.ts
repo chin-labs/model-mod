@@ -197,7 +197,8 @@ export async function automaticGate($: EngineInterface, c: DelegateConfig | unde
 export function stopGateSettings(options: Record<string, unknown>): { enabled: boolean; blocks: number; invalid: boolean } {
   const value = options.codexStopGate
   const text = typeof value === 'string' ? value.toLowerCase() : value === undefined ? 'off' : ''
-  const count = options.codexStopGateBlocks
+  // A quoted "1" or "2" counts as the number; any other string is invalid.
+  const raw = options.codexStopGateBlocks, count = typeof raw === 'string' && /^[12]$/.test(raw.trim()) ? Number(raw) : raw
   return { enabled: text === 'on', blocks: count === 1 || count === 2 ? count : 1,
     invalid: !['on', 'off'].includes(text) || (count !== undefined && count !== 1 && count !== 2) }
 }

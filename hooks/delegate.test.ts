@@ -47,6 +47,8 @@ test('stop gate settings are opt-in and invalid values use defaults', () => {
   expect(stopGateSettings({})).toEqual({ enabled: false, blocks: 1, invalid: false })
   expect(stopGateSettings({ codexStopGate: 'ON', codexStopGateBlocks: 2 })).toEqual({ enabled: true, blocks: 2, invalid: false })
   expect(stopGateSettings({ codexStopGate: 'bad', codexStopGateBlocks: 3 })).toEqual({ enabled: false, blocks: 1, invalid: true })
+  expect(stopGateSettings({ codexStopGate: 'on', codexStopGateBlocks: '2' })).toEqual({ enabled: true, blocks: 2, invalid: false })
+  expect(stopGateSettings({ codexStopGate: 'on', codexStopGateBlocks: '3' })).toEqual({ enabled: true, blocks: 1, invalid: true })
 })
 
 test('stop gate skips ineligible events and preserves downstream blocks', async () => {

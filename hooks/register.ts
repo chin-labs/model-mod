@@ -449,17 +449,23 @@ function optionsCandidate(o: PluginOptions): Record<string, unknown> | undefined
   if (hasKey && !validKey && !codexValid) return null
   if (!validKey && !codexValid) return undefined
   const number = (name: string, fallback: number) => typeof o[name] === 'number' && Number.isFinite(o[name]) ? o[name] as number : fallback
+  // maxTokens, contextWindow and fallbackPercent are edited by hand in the settings file, where "80" is easy to write: a quoted
+  // decimal number counts as that number. Any other string is ignored, as before.
+  const quoted = (name: string): number | undefined => {
+    const raw = o[name], value = typeof raw === 'string' && /^-?\d+(\.\d+)?(e[+-]?\d+)?$/i.test(raw.trim()) ? Number(raw) : raw
+    return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+  }
   const side = text('sideModel')
   return { baseUrl: validKey ? baseUrl : DEFAULT_BASE_URL, key: validKey ? key : undefined, apiInvalid: hasKey && !validKey, accounts: codexValid ? accounts : [], codexModels: codexValid ? codexModels : [],
-    accountsDir: dir || undefined, codexBin: bin, pythonBin: python, models: validKey ? text('models').split(/[\s,]+/).filter(Boolean) : [], maxTokens: number('maxTokens', 32_000),
+    accountsDir: dir || undefined, codexBin: bin, pythonBin: python, models: validKey ? text('models').split(/[\s,]+/).filter(Boolean) : [], maxTokens: quoted('maxTokens') ?? 32_000,
     effortMode: text('effortMode') === 'none' ? 'none' : 'suffix', imageModel: text('imageModel') !== 'none' ? text('imageModel') || undefined : undefined, imageAuto: text('imageModel') === '',
-    defaultWindow: number('contextWindow', 272_000), contextWindowExplicit: typeof o.contextWindow === 'number', sideModel: side === 'none' ? undefined : side || 'claude-haiku-5-5',
+    defaultWindow: quoted('contextWindow') ?? 272_000, contextWindowExplicit: quoted('contextWindow') !== undefined, sideModel: side === 'none' ? undefined : side || 'claude-haiku-5-5',
     keepThinking: o.keepThinking !== false, localTitle: o.localTitle !== false, localContext: o.localContext !== false,
     toolSearch: text('toolSearch') || 'auto', toolSearchPercent: number('toolSearchPercent', 10),
     codexWebSearch: ['off', 'false', '0'].includes(toggle('codexWebSearch')) ? 'off' : 'on', codexWebSearchInvalid: toggleInvalid('codexWebSearch'),
     codexKeepReasoning: ['off', 'false', '0'].includes(toggle('codexKeepReasoning')) ? 'off' : 'on', codexKeepReasoningInvalid: toggleInvalid('codexKeepReasoning'),
     codexThreadReuse: toggle('codexThreadReuse') === 'off' ? 'off' : 'on', codexThreadReuseInvalid: o.codexThreadReuse !== undefined && !['on', 'off'].includes(toggle('codexThreadReuse')),
-    codexServiceTier: text('codexServiceTier') === 'priority' ? 'priority' : 'default', codexServiceTierInvalid: !['default', 'priority', ''].includes(text('codexServiceTier')), fallbackModel: text('fallbackModel'), fallbackPercent: number('fallbackPercent', 100), workerModel: text('workerModel'), promptsDir: text('promptsDir') }
+    codexServiceTier: text('codexServiceTier') === 'priority' ? 'priority' : 'default', codexServiceTierInvalid: !['default', 'priority', ''].includes(text('codexServiceTier')), fallbackModel: text('fallbackModel'), fallbackPercent: quoted('fallbackPercent') ?? 100, workerModel: text('workerModel'), promptsDir: text('promptsDir') }
 }
 
 // One load at a time: the options and the settings are read once and every caller gets the same answer.

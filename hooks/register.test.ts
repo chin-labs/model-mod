@@ -803,6 +803,16 @@ test('options: the key never enters an argument vector, models come from the ups
   expect(w.spawned.length).toBe(1)
 })
 
+// maxTokens, contextWindow and fallbackPercent are written by hand in the settings file: a quoted number is read as that number.
+for (const [maxTokens, expected] of [['16000', 16000], ['lots', 32000]] as const) {
+  test(`options: maxTokens ${JSON.stringify(maxTokens)} is sent as ${expected}`, { options: { ...OPTIONS, maxTokens } }, async ($, on) => {
+    const w = world(on, null, LOCAL, { stdout: SSE_OK, code: 0 }, { exitCode: 22, stdout: '' })
+    w.store.models = [LOCAL]
+    await drain($.turn.step(STEP(LOCAL)))
+    expect(JSON.parse(w.spawned[0]!.input ?? '{}').max_tokens).toBe(expected)
+  })
+}
+
 test('options: with the upstream down the cached list and the picker rows still keep their turns off the chain', { options: OPTIONS }, async ($, on) => {
   const w = world(on, null, 'gpt-cached', { stdout: SSE_OK, code: 0 })
   w.store.models = ['gpt-cached']
@@ -931,6 +941,12 @@ test('fallback: nothing happens while the window is not used up, no fallback is 
   await w.clock.set(2 * HOUR)
   await $.turn.complete(END)
   expect(w.modelRuns).toEqual([])
+})
+
+test('fallback: a quoted fallbackPercent is read as a number', { options: { ...FALLBACK_OPTIONS, fallbackPercent: '80' } }, async ($, on) => {
+  const w = fbWorld(on, 'claude-sonnet-5-5', 85)
+  await $.turn.complete(END)
+  expect(w.modelRuns).toEqual(['gpt-fb'])
 })
 
 test('fallback: off when no fallback model is set, and a subscription turn still goes down the chain', { options: OPTIONS }, async ($, on) => {
@@ -2020,8 +2036,8 @@ test('Codex login: streaming and auxiliary requests use the helper without an AP
   expect(w.store.models).toBeUndefined()
 })
 
-for (const [contextWindow, expected] of [[undefined, 475000], [272000, 272000]] as const) {
-  test('Codex login: catalog window and explicit override ' + String(expected), { options: { ...CODEX_OPTIONS, ...(contextWindow ? { contextWindow } : {}) } }, async ($, on) => {
+for (const [contextWindow, expected] of [[undefined, 475000], [272000, 272000], ['272000', 272000]] as const) {
+  test('Codex login: catalog window and explicit override ' + JSON.stringify(contextWindow) + ' -> ' + String(expected), { options: { ...CODEX_OPTIONS, ...(contextWindow ? { contextWindow } : {}) } }, async ($, on) => {
     const w = world(on, null, CODEX_MODEL, { stdout: SSE_OK, code: 0 }, argv => argv.includes('windows')
       ? { exitCode: 0, stdout: '{"windows":{"gpt-6.1-terra":475000}}' } : { exitCode: 1, stdout: '' })
     await drain($.turn.step(STEP(CODEX_MODEL)))
