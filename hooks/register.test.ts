@@ -1637,7 +1637,7 @@ test('/model: a cached local ID excluded by the allowlist is refused without for
   const w = world(on, null, 'claude-sonnet-5-5', { stdout: '', code: 0 })
   w.store.models = ['gpt-old']
   const out = await $.command.run({ ...MODEL, args: 'gpt-old' })
-  expect(out.text).toBe('model-mod: gpt-old is not in the allowlist; run /model-mod:setup.')
+  expect(out.text).toBe('gpt-old is not in the allowlist; run /model-mod:setup.')
   expect(w.modelRuns).toEqual([])
   expect(w.envSet).toEqual([])
 })
@@ -1709,7 +1709,7 @@ test('/model-mod:model: a local selection sets env and runs the native /model; t
 test('/model-mod:model: dismissing the menu never switches', { options: { ...OPTIONS, models: LOCAL } }, async ($, on) => {
   const w = world(on, null, LOCAL, { stdout: '', code: 0 })
   w.answers = [null]
-  expect((await picked($, w, PICK)).text).toBe('model-mod: model not changed.')
+  expect((await picked($, w, PICK)).text).toBe('model not changed.')
   expect(w.modelRuns).toEqual([]); expect(w.envSet).toEqual([])
 })
 
@@ -2272,7 +2272,7 @@ test('transfer retains the main transcript and requires an interactive origin', 
   await $.classic.Stop({ session_id: 'test', cwd: '/work', transcript_path: '/agent.jsonl', agent_id: 'agent', stop_hook_active: false } as never)
   const command = { command: 'model-mod:transfer', args: '' }
   const denied = await $.command.run({ ...command, origin: { kind: 'sdk' } } as never)
-  expect(denied.text).toContain('interactive session')
+  expect(denied.text).toMatch(/^Transfer requires an interactive session/)
   w.answers = ['Import session']
   await $.command.run({ ...command, origin: { kind: 'composer' } } as never)
   expect(JSON.parse(w.spawned[0]!.input!).transcript).toBe('/main.jsonl')

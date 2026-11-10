@@ -1326,8 +1326,9 @@ async function configHint($: EngineInterface): Promise<string> {
     : 'Run /model-mod:setup for Codex login or configure apiKey through /plugin → model-mod configure.'
 }
 
-function commandText(reply: { text: string }): { text: string } {
-  return { text: reply.text.replace(/^model-mod(?:: ?| )/, '') }
+// The client prints "model-mod: " in front of a command result, so a result text drops its own leading prefix.
+function commandText<T extends { text?: string }>(reply: T): T {
+  return reply.text === undefined ? reply : { ...reply, text: reply.text.replace(/^model-mod(?:: ?| )/, '') }
 }
 
 const DEVICE_SETUP_TIMEOUT = 17 * 60_000 // Leave the helper a minute to finish and report expiry.
@@ -2285,7 +2286,7 @@ export const register: Register = (on, options) => {
       }
       return { text: lines.join('\n') }
     } catch (err) {
-      return { text: `model-mod: /context could not be estimated (${err instanceof Error ? err.name : 'error'}).` }
+      return commandText({ text: `model-mod: /context could not be estimated (${err instanceof Error ? err.name : 'error'}).` })
     }
   })
 
@@ -2294,12 +2295,12 @@ export const register: Register = (on, options) => {
     const args = e.args.trim()
     if (!args) return next(e)
     const c = await load($)
-    if (!c?.models.includes(args) && (await retiredModels($)).includes(args)) return { text: 'model-mod: model is not in the allowlist; use /model to choose another model or run /model-mod:setup.' }
+    if (!c?.models.includes(args) && (await retiredModels($)).includes(args)) return commandText({ text: 'model-mod: model is not in the allowlist; use /model to choose another model or run /model-mod:setup.' })
     if (!c) return next(e)
-    if (c.excluded?.has(args)) return { text: c.codexDirectoryUnavailable?.has(args) ? 'model-mod: model is not in the allowlist; configure codexAccountsDir' : `model-mod: ${args} is not in the allowlist; run /model-mod:setup.` }
+    if (c.excluded?.has(args)) return commandText({ text: c.codexDirectoryUnavailable?.has(args) ? 'model-mod: model is not in the allowlist; configure codexAccountsDir' : `model-mod: ${args} is not in the allowlist; run /model-mod:setup.` })
     if (!c.models.includes(args)) return next(e)
     try { await $.env.set('ANTHROPIC_CUSTOM_MODEL_OPTION', args) } catch {
-      return { text: 'model-mod: could not prepare the local model; model not changed.' }
+      return commandText({ text: 'model-mod: could not prepare the local model; model not changed.' })
     }
     return next(e)
   })
@@ -2308,10 +2309,10 @@ export const register: Register = (on, options) => {
   // or the paged menu where the pane cannot be shown.
   on('command.run', { command: 'model-mod:model' }, async ($, e) => {
     const c = await load($)
-    if (!c) return { text: `model-mod: inactive; models=0. ${await configHint($)}` }
-    if (c.codexDirectoryUnavailable?.has(e.args.trim())) return { text: 'model-mod: model is not in the allowlist; configure codexAccountsDir' }
-    if (e.origin.kind !== 'composer' && e.origin.kind !== 'bridge') return { text: 'model-mod: /model-mod:model needs an interactive session.' }
-    if (!c.models.length) return { text: 'model-mod: no local models. Run /model-mod:setup to add them.' }
+    if (!c) return commandText({ text: `model-mod: inactive; models=0. ${await configHint($)}` })
+    if (c.codexDirectoryUnavailable?.has(e.args.trim())) return commandText({ text: 'model-mod: model is not in the allowlist; configure codexAccountsDir' })
+    if (e.origin.kind !== 'composer' && e.origin.kind !== 'bridge') return commandText({ text: 'model-mod: /model-mod:model needs an interactive session.' })
+    if (!c.models.length) return commandText({ text: 'model-mod: no local models. Run /model-mod:setup to add them.' })
     let current = ''
     try { current = await $.session.model() } catch { /* no model is marked */ }
     // A choice is applied through the client's own /model, so the usual switch rules and events run. The engine refuses
@@ -2338,7 +2339,7 @@ export const register: Register = (on, options) => {
       if (shown === 'shown') return {}
     }
     const text = await apply(await menuPick($, c, current))
-    return text ? { text } : {}
+    return text ? commandText({ text }) : {}
   })
 
   // The names stay literal: the engine reads them statically.
@@ -2361,12 +2362,13 @@ export const register: Register = (on, options) => {
   })
   on('command.run', { command: 'model-mod:status' }, ($, e) => admin($, e, 'status').then(commandText))
   on('command.run', { command: 'model-mod:doctor' }, ($, e) => admin($, e, 'doctor').then(commandText))
-  on('command.run', { command: 'model-mod:review' }, async ($, e, next) => delegate($, 'review', e.args, await load($), next.signal))
-  on('command.run', { command: 'model-mod:rescue' }, async ($, e, next) => delegate($, 'rescue', e.args, await load($), next.signal, e.origin.kind === 'composer' || e.origin.kind === 'bridge'))
-  on('command.run', { command: 'model-mod:transfer' }, async ($, e, next) => transfer($, e.args, await load($), transcript, next.signal, e.origin.kind === 'composer' || e.origin.kind === 'bridge'))
-  on('command.run', { command: 'model-mod:jobs' }, async ($, e) => backgroundCommand($, 'jobs', e.args, await load($)))
-  on('command.run', { command: 'model-mod:result' }, async ($, e) => backgroundCommand($, 'result', e.args, await load($)))
-  on('command.run', { command: 'model-mod:cancel' }, async ($, e) => backgroundCommand($, 'cancel', e.args, await load($)))
+  // The delegate texts carry their own "model-mod: " prefix on errors; success texts never start with it.
+  on('command.run', { command: 'model-mod:review' }, async ($, e, next) => commandText(await delegate($, 'review', e.args, await load($), next.signal)))
+  on('command.run', { command: 'model-mod:rescue' }, async ($, e, next) => commandText(await delegate($, 'rescue', e.args, await load($), next.signal, e.origin.kind === 'composer' || e.origin.kind === 'bridge')))
+  on('command.run', { command: 'model-mod:transfer' }, async ($, e, next) => commandText(await transfer($, e.args, await load($), transcript, next.signal, e.origin.kind === 'composer' || e.origin.kind === 'bridge')))
+  on('command.run', { command: 'model-mod:jobs' }, async ($, e) => commandText(await backgroundCommand($, 'jobs', e.args, await load($))))
+  on('command.run', { command: 'model-mod:result' }, async ($, e) => commandText(await backgroundCommand($, 'result', e.args, await load($))))
+  on('command.run', { command: 'model-mod:cancel' }, async ($, e) => commandText(await backgroundCommand($, 'cancel', e.args, await load($))))
 
   on('agent.spawn', async ($, e, next) => {
     const started = await next(e)
