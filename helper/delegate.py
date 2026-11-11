@@ -83,7 +83,7 @@ def cancel(signum, frame):
 
 
 def git_env(read_global=False):
-    allowed = ('PATH', 'HOME', 'SYSTEMROOT', 'WINDIR', 'TMPDIR', 'TEMP', 'TMP')
+    allowed = ('PATH', 'HOME', 'XDG_CONFIG_HOME', 'SYSTEMROOT', 'WINDIR', 'TMPDIR', 'TEMP', 'TMP')
     result = {key: os.environ[key] for key in allowed if key in os.environ}
     result.update(GIT_CONFIG_NOSYSTEM='1', GIT_NO_LAZY_FETCH='1')
     if not read_global: result['GIT_CONFIG_GLOBAL'] = os.devnull
@@ -150,10 +150,10 @@ def snapshot_unavailable(cwd):
         path = parent
 
 
-def global_excludes():
-    # Only the value of core.excludesFile is read from the user's global config, from a neutral directory. It is passed on
-    # as a path to a pattern file, which git reads and never executes. All other global settings stay unread.
-    value = git(os.path.abspath(os.sep), ['config', '--global', '--includes', '--path', '-z', '--get', 'core.excludesFile'], 4096,
+def global_excludes(cwd):
+    # Resolve the effective ignore file in the repository context, including conditional config includes.
+    # Git already reads repository config for ls-files; the resulting path names a pattern file, not executable code.
+    value = git(cwd, ['config', '--includes', '--path', '-z', '--get', 'core.excludesFile'], 4096,
                 allow_no_match=True, read_global=True)
     path = value[:-1] if value.endswith(b'\0') else value
     return ['-c', 'core.excludesFile=' + os.fsdecode(path)] if path else []
@@ -176,7 +176,7 @@ def gate_snapshot(cwd, base, session):
     with_dirty = safe_diff(cwd, ['diff', *common, '--ignore-submodules=none', '--'])
     if with_dirty != unstaged: raise Failure('Dirty submodule contents cannot be reviewed by the gate.')
     committed = diff_for(cwd, base) if base else b''
-    names = git(cwd, ['ls-files', '--others', '--exclude-standard', '-z'], config_args=global_excludes())
+    names = git(cwd, ['ls-files', '--others', '--exclude-standard', '-z'], config_args=global_excludes(cwd))
     untracked = []
     size = len(staged) + len(unstaged) + len(committed) + len(names)
     for raw in names.split(b'\0'):

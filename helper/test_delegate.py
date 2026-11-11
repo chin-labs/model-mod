@@ -887,18 +887,39 @@ class DelegateTest(unittest.TestCase):
         with self.assertRaises(delegate.Failure): delegate.gate_snapshot(str(self.repo), None, 'session')
 
     def test_gate_honors_global_ignore_file(self):
-        home = self.root / 'home'
-        home.mkdir()
-        (home / 'ignore').write_text('*.pem\n')
-        (home / '.gitconfig').write_text('[core]\n\texcludesFile = ' + str(home / 'ignore') + '\n')
-        (self.repo / 'secret.pem').write_text('GLOBALLY-IGNORED\n')
-        (self.repo / 'plain.txt').write_text('NOT-IGNORED\n')
         self.mode('gate')
-        with patch.dict(os.environ, {'HOME': str(home)}):
-            self.assertEqual(json.loads(delegate.execute(dict(self.request, kind='review', options={'gate': True}, sessionId='session')))['verdict'], 'pass')
-        text = next(r['params'] for r in self.records() if r.get('method') == 'turn/start')['input'][0]['text']
-        self.assertIn('NOT-IGNORED', text)
-        self.assertNotIn('GLOBALLY-IGNORED', text)
+        for case in ('global', 'repository', 'includeIf', 'xdg'):
+            with self.subTest(case=case):
+                home = self.root / ('home-' + case)
+                home.mkdir()
+                xdg = home / 'xdg'
+                (xdg / 'git').mkdir(parents=True)
+                ignore = home / 'ignore'
+                ignore.write_text('*.pem\n' if case == 'global' else '*.irrelevant\n')
+                config = home / '.gitconfig'
+                if case in ('global', 'repository'):
+                    config.write_text('[core]\n excludesFile = ' + str(ignore) + '\n')
+                if case == 'repository':
+                    local = home / 'local-ignore'
+                    local.write_text('*.pem\n')
+                    subprocess.run(['git', '-C', str(self.repo), 'config', 'core.excludesFile', str(local)], check=True)
+                if case == 'includeIf':
+                    include = home / 'included'
+                    ignore.write_text('*.pem\n')
+                    include.write_text('[core]\n excludesFile = ' + str(ignore) + '\n')
+                    config.write_text('[includeIf "gitdir:' + str((self.repo / '.git').resolve()) + '"]\n path = ' + str(include) + '\n')
+                if case == 'xdg':
+                    (xdg / 'git' / 'ignore').write_text('*.pem\n')
+                (self.repo / 'secret.pem').write_text('IGNORED-MARKER\n')
+                (self.repo / 'plain.txt').write_text('NOT-IGNORED\n')
+                self.log.unlink(missing_ok=True)
+                with patch.dict(os.environ, {'HOME': str(home), 'XDG_CONFIG_HOME': str(xdg)}):
+                    self.assertEqual(json.loads(delegate.execute(dict(self.request, kind='review', options={'gate': True}, sessionId='session')))['verdict'], 'pass')
+                text = next(r['params'] for r in self.records() if r.get('method') == 'turn/start')['input'][0]['text']
+                self.assertIn('NOT-IGNORED', text)
+                self.assertNotIn('IGNORED-MARKER', text)
+                if case == 'repository':
+                    subprocess.run(['git', '-C', str(self.repo), 'config', '--unset', 'core.excludesFile'], check=True)
 
     def test_gate_rejects_dirty_submodule(self):
         module = self.root / 'module'
