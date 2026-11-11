@@ -78,7 +78,7 @@ Codex effort 依模型宣告的等級夾值：`max` 取支援的最高等級；�
 
 | 進階選項 | 用途 | 預設值 |
 |---|---|---|
-| `imageModel` | API 路徑的 `generate_image` 圖片模型。空白：`gpt-image-2`，或上游列出的第一個 `gpt-image*`。`none` 關閉 API 圖片路徑；Codex 使用內建圖片模型，不受此設定影響。 | 空白 |
+| `imageModel` | API 路徑的 `generate_image` 圖片模型。空白：先前的 session 找到並保存的圖片模型，沒有的話用 `gpt-image-2`，或上游列出的第一個 `gpt-image*`。`none` 關閉 API 圖片路徑；Codex 使用內建圖片模型，不受此設定影響。 | 空白 |
 | `contextWindow` | 對未知視窗大小的模型所假設的輸入 token 數（最小 32000）。明設的值會覆寫 Codex 模型目錄視窗（見[限制](LIMITATIONS.zh-TW.md#codex-登入的限制)）。 | `272000`（API）；目錄有效視窗或 128,000（Codex） |
 | `fallbackPercent` | rate-limit 視窗用量達多少比例（50–100）時切換。僅在設定 `fallbackModel` 時有效。 | `100` |
 | `promptsDir` | 存放自訂 `compact.md`、`title.md`、`subagent-note.md`、`worker.md` 的絕對路徑目錄。空白：使用插件內的 `prompts/`。 | 空白 |
@@ -142,6 +142,6 @@ claude plugin configure model-mod@model-mod --values-stdin < /path/to/private-co
 
 ## 背景工作儲存與限制
 
-SessionStart hook 會啟動本機 broker。所有 session 關閉後，閒置的 broker 最多仍存活 30 分鐘。最多保留 50 個工作；新增第 51 個時會先淘汰最舊的終態紀錄與結果；若沒有終態紀錄則拒絕新增；每個帳號最多兩個執行中、五個排隊中，且最多一個未終態的 write 工作。背景執行總時限為 30 分鐘、無活動時限為五分鐘；前景分別為五分鐘及兩分鐘。使用 `/model-mod:jobs --clear` 可立即移除目前工作區已完成的工作與結果。
+SessionStart hook 會啟動本機 broker。所有 session 關閉後，閒置的 broker 最多仍存活 30 分鐘。最多保留 50 個工作；新增第 51 個時會先淘汰最舊的終態紀錄與結果，但標為 `possible_leftover` 的紀錄最後才淘汰；若沒有終態紀錄則拒絕新增；每個帳號最多兩個執行中、五個排隊中，且最多一個未終態的 write 工作。背景執行總時限為 30 分鐘、無活動時限為五分鐘；前景分別為五分鐘及兩分鐘。使用 `/model-mod:jobs --clear` 可立即移除目前工作區已完成的工作與結果。
 
 工作輸出保存在本機 `$XDG_STATE_HOME/model-mod/delegate/v1`；未設定 `XDG_STATE_HOME` 時改用 XDG 預設的 state 目錄（目錄權限 0700、檔案 0600）。結果可能含有你的 prompt 或程式碼片段：遮罩只對長度至少 32 字元的 prompt 或 diff 作精確字串比對，無法識別模型改寫的內容。超過七天的已完成紀錄會在背景 broker 下次啟動時移除，broker 執行期間約每小時再清一次，並非定時器；在那之前仍留在磁碟上。刪除本機紀錄不會刪除 Codex 自己的 thread 或 provider 端紀錄。狀態紀錄本身不儲存 prompt、diff、思考、帳號目錄路徑或環境變數。
