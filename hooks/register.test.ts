@@ -298,7 +298,7 @@ test('generate_image: the prompt names the path and pipeline refusals reach the 
   expect(outcomes[0]).toContain('Image request failed (path resolves outside the working directory).')
   expect(outcomes[1]).toContain('Image request failed (file already exists).')
   expect(outcomes.slice(0, 2).every(outcome => !outcome.includes('Saved image'))).toBe(true)
-  expect(outcomes[2]).toContain('Saved image to /work/generated-images/new.png (67 bytes, 1024x1024).')
+  expect(outcomes[2]).toContain('Saved image to /work/generated-images/new.png (67 bytes, requested size 1024x1024).')
 })
 
 // What generate_image answers, exactly: a refusal is `{ deny }`, a success `{ result }`. The tests below keep each text and the
@@ -355,7 +355,7 @@ test('generate_image: argument rules, permission verdicts and pipeline results k
   expect(await call({})).toEqual({ deny: `Image request failed (${'e'.repeat(100)}).` })
   reply = { exitCode: 0, stdout: '67\n' }
   expect(await call({ prompt: '  red dot  ', size: '1536x1024', quality: 'high', path: 'a/b.png' })).toEqual({
-    result: 'Saved image to /work/a/b.png (67 bytes, 1536x1024). Open it with the Read tool to look at it.' })
+    result: 'Saved image to /work/a/b.png (67 bytes, requested size 1536x1024). Open it with the Read tool to look at it.' })
   expect(JSON.parse(bodies.at(-1)!)).toEqual({ model: 'gpt-image-2', prompt: 'red dot', size: '1536x1024', quality: 'high', n: 1 })
   expect(w.questions.length).toBe(1)
 })

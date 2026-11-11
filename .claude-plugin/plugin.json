@@ -23,12 +23,12 @@
     "codexAccounts": {
       "type": "string",
       "title": "Codex login accounts",
-      "description": "Comma-separated account names."
+      "description": "Comma-separated account names; written by /model-mod:setup."
     },
     "codexModels": {
       "type": "string",
       "title": "Codex login models",
-      "description": "Comma-separated model IDs."
+      "description": "Comma-separated model IDs; written by /model-mod:setup."
     },
     "codexBin": {
       "type": "string",

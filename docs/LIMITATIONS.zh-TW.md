@@ -43,6 +43,7 @@ Marketplace 安裝已用本機 clone 與使用標準 HTTP 協定的 Git 伺服�
 - `max_tokens` 會接受但忽略；`tool_choice`、`temperature`、`top_p`、`stop_sequences`、`cache_control` 與 thinking 預算會被忽略。helper 寫出的 `model-mod-note:` 診斷行是內部標記，會被丟棄，不會顯示給使用者。不要依賴這些控制項生效。
 - `codexKeepReasoning` 預設為 `on`。thread 重用的 fork 請求不保留 reasoning；若要保留，請將 `codexThreadReuse`（[進階選項](CONFIGURATION.zh-TW.md#進階選項)）設為 `off`。bridge 使用 Codex 0.165.0 的實驗性 `experimentalRawEvents` 與 `thread/inject_items` 介面；上游可能修改這些 API，且重放尚未對真實 Codex 回合驗證。OpenAI 回傳的不透明 reasoning item 可能包含加密資料；簽章每個 item 上限 256 KiB、每次回應上限 1 MiB，超出的項目會丟棄。只保留第一段助手文字或工具呼叫之前的 reasoning；其後交錯的 reasoning 會丟棄，以維持重放順序。推理只在同一工作階段的工具往返期間保存在記憶體，重新載入或重啟後遺失。換帳號或模型可能使其失效；若輸出前被拒，會去掉推理重建請求一次。不保證與 API 路徑完全等價。
 - Codex 原生搜尋僅在 `codexWebSearch` 開啟且工作階段工具清單包含 WebSearch 時啟用。原生搜尋與 openPage 在 OpenAI 端執行，不受 Claude 權限的網域規則（allowed／blocked domains）限制；model-mod 不做 `allowed_domains` 的安全宣稱。查詢文字會送往 OpenAI。原生搜尋不經 Claude 逐次詢問權限，顯示的搜尋文字也會進入助手歷史。搜尋活動每次顯示為一行助手文字，不是可展開的工具結果或內建「已搜尋」區塊；該行助手文字僅在一台 Mac 的真實客戶端看過一次，且不顯示不透明的搜尋結果。Codex 不提供 mod 的 `web_search`，但保留 `generate_image` 與 `web_fetch`。Codex 使用內建圖片模型，提示詞與生成圖片內容送往 OpenAI；尺寸與品質僅作為提示詞中的請求，不保證生效；是否計入額度尚未驗證。超過 20 MiB 的圖片會被拒絕。即使 sandbox 唯讀，app-server 仍會自行把圖片寫入 `CODEX_HOME/generated_images`；取得位元組後，model-mod 嘗試不跟隨符號連結刪除該字面路徑，失敗僅記內部 note，不使呼叫失敗。輸出以 0600 權限排他建立。Codex context 預設為帳號模型目錄視窗乘以有效比例，讀不到時退回 128,000 token；明設 `contextWindow` 可覆寫。helper 將 Codex 自動壓縮門檻設在客戶端視窗之上並於內部記錄壓縮事件；這不保證完全停用 Codex 壓縮，也不會停用 model-mod 自己的壓縮。
+- helper 啟動 `codex app-server` 時設定 `project_doc_max_bytes=0`，讓 Codex 不自行讀取工作目錄中的專案文件（例如 `AGENTS.md`）。此設定的效果尚未以真實 Codex 回合驗證。客戶端納入的專案指示（例如 `CLAUDE.md` 的內容）仍會隨對話送出。
 - 每次呼叫會啟動一個本機 helper 程序與 `codex app-server`，會增加延遲；啟動延遲尚未量測。Windows **尚未驗證**；見 [Windows 驗證清單](WINDOWS.zh-TW.md)。Codex 圖片生成僅支援 POSIX。
 - Codex 的額度與速率限制取決於你自己的訂閱；達到限制時 model-mod 不會輪替帳號。
 - 帳號名稱含 `claude` 或 `anthropic` 時，該帳號的模型 ID 會被過濾。若有效的 API 金鑰搭配遭拒的 `baseUrl`，整個 mod（含 Codex）都會停用。
@@ -122,7 +123,7 @@ Transfer 僅支援預設 Claude 設定目錄（`~/.claude`）；離線實測 Cod
 
 - Windows 不支援背景指令；前景委派仍可使用。手動檢查中，Ctrl+C 與 `/reload-plugins` 都沒有讓 broker 結束（macOS）。
 - broker 死亡時工作會中斷而不會繼續，復原後標為 `interrupted`。清理是盡力而為：macOS `ps lstart` 只有秒級精度，可能遇到 PID 重用與 TOCTOU 時間窗口，呼叫 `setsid` 的孫程序也可能逃過清理。無法確認清理時標示 `possible_leftover`。完成通知僅盡力提供，且只會出現在發起工作的 session；其他 session 請用 `/model-mod:jobs` 與 `/model-mod:result` 查看。
-- 沒有工作在執行時，背景 broker 閒置 30 分鐘後會自行結束；在此之前可能留有殘留的 broker 程序。
+- 沒有工作在執行時，背景 broker 閒置 30 分鐘後會自行結束；在此之前可能留有殘留的 broker 程序。外掛更新後，已在執行的 broker 會繼續使用舊的 helper 程式碼，直到它結束或被停止。
 - 背景委派只支援預設帳號根目錄；自訂帳號根目錄請使用前景委派。`codexBin` 必須能在 broker 的環境中執行。
 - write 模式下，Codex 可能執行命令並修改真實工作目錄，沒有自動備份；建議先 commit 或 stash。sandbox 限制 Codex 的命令與檔案寫入，不保證阻擋所有外部副作用；關閉網路的效果尚未跨平台驗證。
 - Codex 啟動 workspace-write 時可能在帳號的 `config.toml` 記錄專案信任；model-mod 為 thread 指定不信任專案的覆寫，離線測試 Codex 0.166.0 時未留下持久信任紀錄。委派與圖片生成會拒絕已啟用或無法驗證的專案設定層，包括帳號原有信任所啟用的設定。寫入委派也會拒絕 thread 啟動後存在的工作目錄「已信任」專案紀錄；明確標為 `untrusted` 的紀錄會放行。若要移除信任，請在帳號的 Codex 設定中取消該專案的信任。

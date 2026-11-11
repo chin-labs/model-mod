@@ -45,8 +45,8 @@ The mod activates with either a valid `apiKey` or a valid combination of `codexA
 
 | Option | Format and default |
 |---|---|
-| `codexAccounts` | Comma-separated account names; empty by default. Each is 1–32 characters, starts with `[a-z0-9]`, and otherwise uses `[a-z0-9-]`. |
-| `codexModels` | Comma-separated model names; empty by default. Each is 1–64 characters, starts with `[A-Za-z0-9]`, and otherwise uses `[A-Za-z0-9._-]`; names containing `claude` or `anthropic` are rejected, case-insensitively. |
+| `codexAccounts` | Comma-separated account names; empty by default. Each is 1–32 characters, starts with `[a-z0-9]`, and otherwise uses `[a-z0-9-]`. `/model-mod:setup` writes this value. |
+| `codexModels` | Comma-separated model names; empty by default. Each is 1–64 characters, starts with `[A-Za-z0-9]`, and otherwise uses `[A-Za-z0-9._-]`; names containing `claude` or `anthropic` are rejected, case-insensitively. `/model-mod:setup` writes this value. |
 | `codexBin` | Executable name or absolute path; default `codex`. |
 
 Codex effort is clamped to levels declared by the model: `max` selects the highest supported level; an unsupported explicit level selects the highest supported level at or below it, or the lowest if none is lower. `minimal` is never sent. If no explicit level is given, the supported model default is used when needed.

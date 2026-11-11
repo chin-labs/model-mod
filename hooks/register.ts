@@ -1943,7 +1943,7 @@ async function imageToolCall($: EngineInterface, e: { tool: string; agentId?: st
     const run = await $.process.run(['bash', '-c', IMAGE_PIPELINE, 'bash', c.headerFile ?? '',
       c.baseUrl + '/v1/images/generations', out, cwd], { stdin: body, timeoutMs: 300_000, ...(c.key !== undefined ? { env: { MODEL_MOD_KEY: c.key } } : {}) })
     if (run.exitCode !== 0) return answer(`Image request failed (${run.stdout.trim().slice(0, 100) || 'no output'}).`, true)
-    return answer(`Saved image to ${out} (${run.stdout.trim()} bytes, ${size}). Open it with the Read tool to look at it.`)
+    return answer(`Saved image to ${out} (${run.stdout.trim()} bytes, requested size ${size}). Open it with the Read tool to look at it.`)
   } catch (err) {
     return answer(`Image request failed (${err instanceof Error ? err.name : 'error'}).`, true)
   }
