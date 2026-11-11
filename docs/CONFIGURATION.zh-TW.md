@@ -38,7 +38,7 @@ API 伺服器路徑會把工作階段送往接受 Messages 風格串流請求（
 | `baseUrl` | 你的上游基底網址，不含 `/v1`。僅限 HTTP／HTTPS；含帳密、查詢參數、fragment 的網址，以及 `anthropic.com`、`claude.ai` 主機會被拒絕。 | `http://127.0.0.1:8317` |
 | `apiKey` | API 上游的金鑰（機密）。API 路徑需要此欄位。 | 無 |
 | `models` | 以逗號分隔的模型 ID，mod 只接管這些。空白：上游列出的所有 chat 模型。 | 空白 |
-| `fallbackModel` | 訂閱或 Codex 登入額度達上限時切換的模型；不會輪流換帳號，同帳號不可作為備援。空白：不自動切換。 | 空白 |
+| `fallbackModel` | 訂閱或 Codex 登入額度達上限時切換的模型；不會輪流換帳號，同帳號不可作為備援。空白：不自動切換。客戶端會把這次切換存成新工作階段的預設模型。 | 空白 |
 | `workerModel` | `model-mod:local-worker` 代理類型使用的模型。空白：用 fallback 模型；兩者都空白則不提供 worker 代理類型。 | 空白 |
 
 ### Codex 登入選項

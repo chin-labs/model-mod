@@ -1209,8 +1209,9 @@ let unknownResetHinted = false
 let fallbackHinted = false
 // Called when a turn of the main loop has ended. While a subscription model is selected and a rate-limit window the
 // last response reported is used up (and not yet reset), the session switches to `fallbackModel` with the client's own
-// `/model` command (this session only); once the window has reset it switches back. A model the person chose by hand
-// is never changed. Returns the notice to show, if any. The turn that hit the limit is not repeated: it already failed.
+// `/model` command (the client saves that choice as its default model for new sessions, as it does for a choice made
+// with the picker); once the window has reset it switches back. A model the person chose by hand is never changed.
+// Returns the notice to show, if any. The turn that hit the limit is not repeated: it already failed.
 async function autoFallback($: EngineInterface, c: Config): Promise<string | undefined> {
   const model = await $.session.model()
   const memo: FallbackMemo = { ...(await $.state.get(FALLBACK)).value }

@@ -38,7 +38,7 @@ The mod activates with either a valid `apiKey` or a valid combination of `codexA
 | `baseUrl` | Base URL of your upstream, without `/v1`. HTTP or HTTPS only; URLs with credentials, queries or fragments, and `anthropic.com` or `claude.ai` hosts, are refused. | `http://127.0.0.1:8317` |
 | `apiKey` | Your API upstream's key (secret). Required for the API path. | none |
 | `models` | Comma-separated model IDs the mod answers for. Empty: every chat model the upstream lists. | empty |
-| `fallbackModel` | Model to switch to when a subscription or Codex login quota is reached; no account rotation, and the same account cannot be the fallback. Empty: off. | empty |
+| `fallbackModel` | Model to switch to when a subscription or Codex login quota is reached; no account rotation, and the same account cannot be the fallback. Empty: off. The client saves the switch as its default model for new sessions. | empty |
 | `workerModel` | Model for the `model-mod:local-worker` agent type. Empty: the fallback model; if both are empty there is no worker type. | empty |
 
 ### Codex login options
