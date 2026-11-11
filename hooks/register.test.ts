@@ -819,6 +819,30 @@ for (const [maxTokens, expected] of [['16000', 16000], ['lots', 32000]] as const
   })
 }
 
+for (const [value, expectedOn] of [
+  [false, false],
+  ['false', false],
+  ['off', false],
+  ['0', false],
+  [' OFF ', false],
+  [0, false],
+  [true, true],
+  ['on', true],
+  [undefined, true],
+] as const) {
+  test(`options: localContext ${JSON.stringify(value)} -> ${expectedOn ? 'local' : 'engine'}`, { options: { ...OPTIONS, models: LOCAL, ...(value !== undefined ? { localContext: value } : {}) } }, async ($, on) => {
+    const w = world(on, null, LOCAL, { stdout: '', code: 0 })
+    const out = await $.command.run({ command: 'context', args: '', origin: { kind: 'composer' }, presentation: { layout: 'main', columns: 80 } } as never)
+    if (expectedOn) {
+      expect(out.text).toMatch(/estimated locally/)
+      expect(w.reached).toEqual([])
+    } else {
+      expect(out.text).toBe('engine')
+      expect(w.reached).toEqual(['command.run'])
+    }
+  })
+}
+
 test('options: with the upstream down the cached list and the picker rows still keep their turns off the chain', { options: OPTIONS }, async ($, on) => {
   const w = world(on, null, 'gpt-cached', { stdout: SSE_OK, code: 0 })
   w.store.models = ['gpt-cached']

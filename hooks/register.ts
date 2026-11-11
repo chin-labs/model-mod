@@ -425,6 +425,7 @@ function invalidCodexFields(o: PluginOptions): string[] {
   }
   return fields
 }
+const isOff = (v: unknown) => v === false || v === 0 || (typeof v === 'string' && ['off', 'false', '0'].includes(v.trim().toLowerCase()))
 function optionsCandidate(o: PluginOptions): Record<string, unknown> | undefined | null {
   const text = (name: string) => typeof o[name] === 'string' ? (o[name] as string).trim() : ''
   const toggle = (name: string) => typeof o[name] === 'boolean' || typeof o[name] === 'number' ? String(o[name]).trim().toLowerCase() : text(name).toLowerCase()
@@ -457,7 +458,7 @@ function optionsCandidate(o: PluginOptions): Record<string, unknown> | undefined
     accountsDir: dir || undefined, codexBin: bin, pythonBin: python, models: validKey ? text('models').split(/[\s,]+/).filter(Boolean) : [], maxTokens: quoted('maxTokens') ?? 32_000,
     effortMode: text('effortMode') === 'none' ? 'none' : 'suffix', imageModel: text('imageModel') !== 'none' ? text('imageModel') || undefined : undefined, imageAuto: text('imageModel') === '',
     defaultWindow: quoted('contextWindow') ?? 272_000, contextWindowExplicit: quoted('contextWindow') !== undefined, sideModel: side === 'none' ? undefined : side || 'claude-haiku-5-5',
-    keepThinking: o.keepThinking !== false, localTitle: o.localTitle !== false, localContext: o.localContext !== false,
+    keepThinking: !isOff(o.keepThinking), localTitle: !isOff(o.localTitle), localContext: !isOff(o.localContext),
     toolSearch: text('toolSearch') || 'auto', toolSearchPercent: number('toolSearchPercent', 10),
     codexWebSearch: ['off', 'false', '0'].includes(toggle('codexWebSearch')) ? 'off' : 'on', codexWebSearchInvalid: toggleInvalid('codexWebSearch'),
     codexKeepReasoning: ['off', 'false', '0'].includes(toggle('codexKeepReasoning')) ? 'off' : 'on', codexKeepReasoningInvalid: toggleInvalid('codexKeepReasoning'),
@@ -519,9 +520,9 @@ async function loadNow($: EngineInterface) {
       toolSearch: ['auto', 'on', 'off'].includes(candidate.toolSearch) ? candidate.toolSearch : 'auto',
       toolSearchPercent: Number.isInteger(candidate.toolSearchPercent) && candidate.toolSearchPercent >= 1 &&
         candidate.toolSearchPercent <= 90 ? candidate.toolSearchPercent : 10,
-      keepThinking: candidate.keepThinking !== false,
-      localTitle: candidate.localTitle !== false,
-      localContext: candidate.localContext !== false,
+      keepThinking: !isOff(candidate.keepThinking),
+      localTitle: !isOff(candidate.localTitle),
+      localContext: !isOff(candidate.localContext),
       sideModel: typeof candidate.sideModel === 'string' && /^claude-[a-z0-9.-]{1,60}$/.test(candidate.sideModel) ? candidate.sideModel : undefined,
       contextWindows: Object.fromEntries(Object.entries((candidate.contextWindows ?? {}) as Record<string, number>)
         .filter(([id, n]) => candidate.models.includes(id) && Number.isInteger(n) && n >= 32_000 && n <= 4_000_000)) }
