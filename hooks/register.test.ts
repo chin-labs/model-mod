@@ -1328,7 +1328,8 @@ for (const status of [404, 405, 501, 200]) {
     w.answers = ['Keep (recommended)', 'gpt-manual, claude-sonnet-5-5, gpt-image-2']
     const out = await $.command.run(SETUP)
     expect(out.text).toContain('1 local models selected')
-    expect(w.questions[1]!.question).toContain('does not support')
+    expect(w.questions[1]!.question).toContain('The model list was not found')
+    expect(w.questions[1]!.question).toContain('baseUrl does not end in /v1')
     expect(w.saved[1]!.value).toBe('gpt-manual')
     if (status === 404) {
       w.httpStatus = undefined; w.httpStatuses = [404, 404, 404]; w.models = [LOCAL]

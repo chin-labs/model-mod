@@ -20,7 +20,7 @@
 | API 上游顯示 `沒有額度資料` | API 伺服器不回報額度 | 屬正常現象，不需處理。 |
 | setup pane 顯示 `Keyboard not captured` | pane 沒有取得鍵盤 | 按 Ctrl+X，再按 Tab。 |
 | `setup is already open; finish or close it first.` | 先前 `/model-mod:setup` 的 pane 仍開著 | 完成該次 setup，或在 pane 內按 Esc。 |
-| setup 時出現模型清單錯誤 | 網路、驗證或伺服器問題 | 檢查上游與金鑰。明確設定 `models` 可略過探索繼續進行。 |
+| setup 時出現模型清單錯誤 | 網路、驗證或伺服器問題 | 修復上游或金鑰後重新執行 setup。或者，在 Claude Code 設定檔的 `pluginConfigs` 下之外掛 `options` 物件中手動設定 `models`，不經 setup 使用；重新啟動 Claude Code。 |
 | Doctor 回報連線遭拒、DNS、逾時或 TLS 錯誤 | API 網址或網路無法連線 | 檢查網址、網路和 TLS 憑證。 |
 | Doctor 回報 401 或 403 | API 金鑰遭拒 | 檢查插件設定中的金鑰。 |
 | Doctor 回報 `The apiKey option holds characters that cannot be used.` | 已設定基礎網址且沒有有效的 Codex 上游時，非空金鑰不是字串、超過 512 個字元，或包含允許的可列印 ASCII 範圍以外的字元（包括空格、雙引號與反斜線） | 在插件設定中重新輸入金鑰。 |

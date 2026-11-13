@@ -199,7 +199,7 @@ async function configurePicker($: EngineInterface, c: { baseUrl: string; key?: s
       const fetched = await modelList($, baseUrl, c.key)
       if ('error' in fetched) {
         if (!fetched.unsupported) return `model-mod: model list failed (${fetched.error}); nothing changed.`
-        const input = await ask($, `The API does not support a model list (${fetched.error}). Which comma-separated model IDs should be used? Type them under Other.`, ['Cancel', 'Try again'])
+        const input = await ask($, `The model list was not found (${fetched.error}). Check that baseUrl does not end in /v1 before entering model IDs by hand. Which comma-separated model IDs should be used? Type them under Other.`, ['Cancel', 'Try again'])
         if (input === 'Cancel') throw new Cancelled()
         if (input === 'Try again') {
           if (retries >= 3) return 'model-mod: model list retry limit reached; nothing changed.'

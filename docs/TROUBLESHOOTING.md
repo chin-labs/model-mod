@@ -20,7 +20,7 @@ After `/model-mod:setup`:
 | An API upstream shows `沒有額度資料` | API servers report no quota | Expected; nothing to fix. |
 | The setup pane says `Keyboard not captured` | The pane does not hold the keyboard | Press Ctrl+X, then Tab. |
 | `setup is already open; finish or close it first.` | A setup pane from an earlier `/model-mod:setup` is still open | Finish it, or press Esc in the pane. |
-| Model-list error during setup | Network, authentication or server problem | Check the upstream and key. Setting `models` explicitly lets you proceed without discovery. |
+| Model-list error during setup | Network, authentication or server problem | Fix the upstream or key and run setup again. Alternatively, set `models` by hand in the plugin’s `options` object under `pluginConfigs` in the Claude Code settings file and use them without setup; restart Claude Code. |
 | Doctor reports refused, DNS, timeout or TLS | The API URL or network is unreachable | Check the address, network and TLS certificate. |
 | Doctor reports 401 or 403 | The API key was rejected | Check the key in plugin settings. |
 | Doctor reports `The apiKey option holds characters that cannot be used.` | With a base URL and no valid Codex upstream, a nonempty key is not a string, exceeds 512 characters, or contains characters outside the permitted printable ASCII range (including spaces, double quotes and backslashes) | Re-enter the key in plugin settings. |
