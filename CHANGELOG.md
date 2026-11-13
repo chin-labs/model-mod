@@ -8,8 +8,8 @@ All notable changes to this project are listed here. The format follows [Keep a 
 - `/model-mod:refresh` and the `refresh` key of a configuration file are removed. Restart Claude Code to read the prompt files again; in plugin-options mode it also reads the upstream model list again, while file mode (`MODEL_MOD_CONFIG`) never fetches it and uses the models in the file. Or run `/model-mod:setup` to change the model selection. A restart does not capture tool schemas: the command that `refresh` could run to rewrite `toolsFile` has no replacement, and `toolsFile` itself is read as before.
 
 ### Changed
-- Failed model steps now say that the step did not finish and will not be retried automatically.
-- Failed or cancelled write delegations warn that files may already have changed.
+- Model steps that fail at the upstream (any API upstream failure; Codex rate limits, timeouts and request failures) now say that the step did not finish and will not be retried automatically.
+- Failed or cancelled write delegations warn that files may already have changed: in the foreground reply, and in `/model-mod:result` for a background job.
 - Documentation: troubleshooting covers model-list configuration, missing background results and unfinished model steps.
 - The API image success message labels the size as the requested size.
 - The `/model-mod:setup` model-list fallback prompt says the list was not found and asks you to check `baseUrl` before entering model IDs.

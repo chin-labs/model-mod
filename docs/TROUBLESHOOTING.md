@@ -31,8 +31,8 @@ After `/model-mod:setup`:
 | Doctor reports 429 or a 5xx error | The API is rate limited or has a server error | Wait and try again. |
 | Doctor reports an invalid or empty models list | The server may not be OpenAI-compatible | Check the upstream server and its models endpoint. |
 | `model is not in the allowlist` | The ID is outside `models` | Choose an allowed ID or update the list. |
-| `No result is available.` for a background job | A failed job has no result | Check its state with `/model-mod:jobs`. |
-| `This model step did not finish` | The step failed and model-mod will not retry it automatically; any earlier automatic retries have already happened and are shown in the status line while they run | Check the last message and send it again if needed. |
+| `No result is available.` for a background job | The job has not finished, or it failed or was cancelled; only a completed job has a result | Check its state with `/model-mod:jobs`. |
+| `This model step did not finish` | The step failed and model-mod will not retry it automatically; any earlier automatic retries have already happened. | Check the last message and send it again if needed. |
 | Errors after selecting a model | Model unavailable, upstream down or key rejected | Fix the upstream, model or key, then restart Claude Code. There is no subscription fallback. |
 | Effort suffix rejected | The upstream does not understand `model(level)` | Set the advanced option `effortMode` to `none`. |
 | Image tool missing or refused | No local model selected, API image model missing, permission denied, or Codex login, quota or image generation unavailable | Select a configured model and approve the request. API models need `imageModel` (an [advanced option](CONFIGURATION.md#advanced-options)); Codex uses its built-in image model. For Codex failures check login, quota and the CLI version. If the image exceeds 20 MiB, request a smaller image; if the output path exists or is outside the working directory, choose another path. |
