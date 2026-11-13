@@ -12,30 +12,30 @@ All notable changes to this project are listed here. The format follows [Keep a 
 - `maxTokens`, `contextWindow` and `fallbackPercent` accept a number written in quotes (`"80"`) as that number, and `codexStopGateBlocks` accepts `"1"` or `"2"`. Any other text in a number option is ignored as before (`codexStopGateBlocks` reports it as invalid).
 - `keepThinking`, `localTitle` and `localContext` also accept the text `off`, `false` or `0` as "off" (in the plugin options and in a configuration file); until now only the JSON value `false` turned them off.
 - The review gate and the Stop gate no longer send untracked files that are ignored through the effective `core.excludesFile` (your global Git config, repository config and conditional includes are honored) or Git's default user ignore file under `XDG_CONFIG_HOME` (`~/.config` by default), in addition to `.gitignore` files and `.git/info/exclude`. System-level Git config, other user-level Git settings (only the value of `core.excludesFile` is taken from your global config) and Git environment variables other than `HOME` and `XDG_CONFIG_HOME` are not read, so ignore rules that exist only there still do not apply and those files are sent.
-- Codex login requests start `codex app-server` with `project_doc_max_bytes=0`, so that Codex does not read project documents such as `AGENTS.md` from the helper's own working directory. Project instructions that Claude Code puts into the conversation are sent as before.
+- Codex login conversation requests start `codex app-server` with `project_doc_max_bytes=0`, so that Codex does not read project documents such as `AGENTS.md` from the helper's own working directory. Project instructions that Claude Code puts into the conversation are sent as before. Review, rescue and image generation start Codex as before.
 - Status lines and command results no longer repeat the `model-mod:` prefix, and the `retrying (n/3)` status line is cleared when the turn ends. A response with status 200 whose stream cannot be read now reports "upstream sent an unreadable response" instead of "HTTP error".
 - `/model-mod:doctor` points to the Troubleshooting page linked from the README, and that page now lists the doctor rows added in 0.2.4.
 - Internal restructuring (turn-step helpers, shared app-server line handling, rate-limit mapping) with more tests around it; no change in behavior is intended.
-- Documentation corrections:
-  - A model chosen with `/model-mod:model`, and the switch made by the automatic `fallbackModel` fallback, are saved by Claude Code as the default model for new sessions. A session started while the fallback is active starts on the fallback model; if you close the session that switched before the limit resets, choose your usual model with `/model`.
-  - With an empty `imageModel`, an image model found and kept by an earlier session is used first, then `gpt-image-2`, then the first `gpt-image*` the upstream lists.
-  - When the job limit of 50 is reached, the oldest finished job is removed first, except that records marked `possible_leftover` are removed last. Finished records older than seven days are removed when the background broker starts and about hourly while it runs.
-  - Changes to a tracked file are in the review gate diff even if an ignore rule also matches the file. A `generate_image` file saved in a Git repository is untracked and binary, so the gates return `unknown` until it is deleted or ignored.
-  - The conversation text sent to your upstream, and on the Codex login path to OpenAI, can include account details that Claude Code adds, such as your email address, together with the working directory and git status.
-  - Uninstall steps now include removing upstreams and accounts in `/model-mod:setup` first and removing the marketplace afterwards. After a plugin update, a background broker that is already running keeps the old helper code until it exits or is stopped.
+- Documentation: a model chosen with `/model-mod:model`, and the switch made by the automatic `fallbackModel` fallback, are saved by Claude Code as the default model for new sessions. A session started while the fallback is active starts on the fallback model; if you close the session that switched before the limit resets, choose your usual model with `/model`.
+- Documentation: with an empty `imageModel`, an image model found and kept by an earlier session is used first, then `gpt-image-2`, then the first `gpt-image*` the upstream lists.
+- Documentation: when the job limit of 50 is reached, the oldest finished job is removed first, except that records marked `possible_leftover` are removed last; finished records older than seven days are removed when the background broker starts and about hourly while it runs.
+- Documentation: changes to a tracked file are in the review gate diff even if an ignore rule also matches the file. A `generate_image` file saved in a Git repository is untracked and binary, so the gates return `unknown` until it is deleted or ignored by one of the rules listed in the features guide.
+- Documentation: the conversation text sent to your upstream, and on the Codex login path to OpenAI, can include account details that Claude Code adds, such as your email address, together with the working directory and git status.
+- Documentation: in a configuration file, `models: []` does not list every chat model of the upstream; file mode never fetches the upstream's model list. `web_fetch` refuses every IPv6 literal URL, not only some.
+- Documentation: uninstall steps now start with removing upstreams and accounts in `/model-mod:setup` and end with removing the marketplace. After a plugin update, a background broker that is already running keeps the old helper code until it exits or is stopped.
 
 ### Fixed
 - A background job command (`/model-mod:review --background`, `/model-mod:rescue --background`, `/model-mod:jobs`, `/model-mod:result`, `/model-mod:cancel`) used after the background broker exited from idleness (30 minutes) failed with "Background broker socket is unavailable"; the helper client now starts the broker again and retries once.
-- `/model-mod:setup` for Codex login reports "codex unavailable; install Codex or configure codexBin" when the `codex` executable cannot be started, instead of failing with an unexplained error.
+- `/model-mod:setup` for Codex login reports "codex unavailable; install Codex or configure codexBin" when the `codex` executable cannot be started.
 - `/model-mod:doctor` still prints its report when the tool list cannot be read.
-- Stopping the Codex helper's process group no longer fails when the operating system refuses the signal; the helper process is stopped directly if it is still running.
+- Stopping the process group of a Codex child process (`codex app-server`, device login) no longer fails when the operating system refuses the signal; the child is stopped directly if it is still running.
 
 ### Not verified
 - Codex login paths with these changes against a real Codex login (the tests use a fake `codex`): in particular that `project_doc_max_bytes=0` stops Codex from reading project documents, and the review and Stop gates against a real login.
 - Ignore handling for the gates with Git versions other than the one used in testing, with ignore files that are not regular files, in linked worktrees and submodules, and on Windows.
-- That values stored from the 20-option install form of earlier versions are kept by the client after the update to the 8-option form.
 - The 8-option install form, the cleared retry status line and the unprefixed command results in Remote Control, desktop and VS Code sessions and on Windows.
 - Whether a session started while the automatic fallback is active switches back after the reset.
+- The text values `off`, `false` and `0` for `keepThinking`, `localTitle` and `localContext` in a configuration file (not covered by the tests).
 
 ## 0.2.4 - 2026-11-08
 
