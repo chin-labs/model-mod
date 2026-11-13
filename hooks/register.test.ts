@@ -452,7 +452,7 @@ test('HTTP failures stop after three retries and respect bounded Retry-After sec
   const w = world(on, baseConfig, LOCAL, reply)
   const { chunks, result } = await drain($.turn.step(STEP(LOCAL)))
   expect(w.spawned.length).toBe(4)
-  expect(result.answer).toBe('model-mod: HTTP error.')
+  expect(result.answer).toContain('model-mod: HTTP error.')
   expect(chunks.filter(c => c.kind === 'text').map(c => c.text).join('')).toBe(result.answer)
   const waited = () => w.ran.filter(argv => argv[0] === 'sleep').map(argv => Number(argv[1])).reduce((sum, delay) => sum + delay, 0)
   for (const seconds of [1, 4, 120]) {
@@ -462,7 +462,7 @@ test('HTTP failures stop after three retries and respect bounded Retry-After sec
     const limited = await drain($.turn.step(STEP(LOCAL)))
     expect(w.spawned.length).toBe(seconds > 15 ? 1 : 4)
     expect(waited()).toBe(seconds > 15 ? 0 : Math.max(2, seconds) + 6 + 15)
-    expect(limited.result.answer).toBe('model-mod: upstream rate limited (HTTP 429)' + (seconds > 15 ? `, retry after ${seconds}s.` : '.'))
+    expect(limited.result.answer).toContain('model-mod: upstream rate limited (HTTP 429)' + (seconds > 15 ? `, retry after ${seconds}s.` : '.'))
     // Retry-After is read from the write-out; no header file is opened.
     const argv = w.spawned[0]!.argv
     expect(argv.slice(argv.indexOf('--speed-limit'), argv.indexOf('--speed-limit') + 4)).toEqual(['--speed-limit', '1', '--speed-time', '300'])
@@ -478,7 +478,7 @@ test('HTTP failures stop after three retries and respect bounded Retry-After sec
     const limited = await drain($.turn.step(STEP(LOCAL)))
     expect(w.spawned.length).toBe(4)
     expect(waited()).toBe(2 + 6 + 15)
-    expect(limited.result.answer).toBe('model-mod: upstream rate limited (HTTP 429).')
+    expect(limited.result.answer).toContain('This model step did not finish and the request was not repeated; check the last message and send it again if needed.')
   }
   // A large Retry-After on a 200 whose stream broke before any output does not end the turn early.
   reply.stderr = '\nmodel-mod-http:200\nmodel-mod-retry-after:999\n'
@@ -488,7 +488,7 @@ test('HTTP failures stop after three retries and respect bounded Retry-After sec
   const cut = await drain($.turn.step(STEP(LOCAL)))
   expect(w.spawned.length).toBe(4)
   expect(waited()).toBe(2 + 6 + 15)
-  expect(cut.result.answer).toBe('model-mod: curl failed.')
+  expect(cut.result.answer).toContain('model-mod: curl failed.')
   // curl prints its write-out only when the transfer ends, so an SSE error event can come first. The status and Retry-After
   // behind it still count (the rest of the body is dropped); a curl that never prints them costs one bounded wait per attempt.
   const sseError = 'event: error\ndata: {"type":"error","error":{"type":"rate_limit_error","message":"untrusted message"}}\n\n'
@@ -507,7 +507,7 @@ test('HTTP failures stop after three retries and respect bounded Retry-After sec
   expect(w.spawned.length).toBe(1)
   expect(waited()).toBe(0)
   expect(w.clock.now() - started).toBeLessThan(2000)
-  expect(late.result.answer).toBe('model-mod: upstream rate limited (HTTP 429) (rate_limit_error), retry after 120s.')
+  expect(late.result.answer).toContain('model-mod: upstream rate limited (HTTP 429) (rate_limit_error), retry after 120s.')
   delete reply.stderr
   Object.assign(reply, { wait: undefined, hang: true })
   w.spawned.length = 0
@@ -517,7 +517,7 @@ test('HTTP failures stop after three retries and respect bounded Retry-After sec
   expect(w.spawned.length).toBe(4)
   expect(waited()).toBe(2 + 6 + 15)
   expect(w.clock.now() - started).toBeLessThan(10_000)
-  expect(silent.result.answer).toBe('model-mod: HTTP error (rate_limit_error).')
+  expect(silent.result.answer).toContain('model-mod: HTTP error (rate_limit_error).')
   expect(w.reached).toEqual([])
 })
 
@@ -542,7 +542,7 @@ test('transient SSE errors before output share the same retry budget and status 
 test('a 200 answer whose stream cannot be read ends the turn without claiming an HTTP error', async ($, on) => {
   const w = world(on, baseConfig, LOCAL, { stdout: 'event: message_start\ndata: {not json\n\n', stderr: '\nmodel-mod-http:200\n', code: 0 })
   const { result } = await drain($.turn.step(STEP(LOCAL)))
-  expect(result.answer).toBe('model-mod: upstream sent an unreadable response.')
+  expect(result.answer).toContain('model-mod: upstream sent an unreadable response.')
   expect(w.spawned.length).toBe(1)
 })
 
@@ -557,9 +557,9 @@ test('SSE errors after output never retry even when content and error arrive in 
     reply.stdout = stdout
     const { chunks, result } = await drain($.turn.step(STEP(LOCAL)))
     expect(chunks.filter(c => c.kind === 'text').map(c => c.text)).toEqual([
-      'partial', 'model-mod: HTTP error (overloaded_error).',
+      'partial', 'model-mod: HTTP error (overloaded_error). This model step did not finish and the request was not repeated; check the last message and send it again if needed.',
     ])
-    expect(result.answer).toBe('model-mod: HTTP error (overloaded_error).')
+    expect(result.answer).toContain('model-mod: HTTP error (overloaded_error).')
   }
   expect(w.spawned.length).toBe(2)
   expect(w.ran.filter(argv => argv[0] === 'sleep')).toEqual([])

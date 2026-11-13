@@ -649,12 +649,16 @@ def main():
             return
         text = transfer(request) if request.get('kind') == 'transfer' else execute(request)
     except Cancelled:
+        failed = True
         text = 'Cancelled; result is incomplete.'
     except Exception as exc:
+        failed = True
         if isinstance(exc, Failure): text = str(exc)
         elif getattr(exc, 'code', '') == 'codex_too_old': text = 'Codex is too old; upgrade to 0.165.0 or newer.'
         elif getattr(exc, 'code', '') == 'codex_unavailable': text = 'Codex is unavailable.'
         else: text = 'Delegation failed; result is incomplete.'
+    if 'request' in locals() and request.get('options', {}).get('write') and locals().get('failed', False):
+        text += ' Changes may already have been made in the working directory; check them before running it again.'
     print(json.dumps({'text': text}, ensure_ascii=False), flush=True)
 
 

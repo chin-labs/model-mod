@@ -350,6 +350,9 @@ test('background commands validate IDs and sanitize display and errors', async (
   expect(result).toContain('Codex output is unverified')
   expect(result).not.toContain('\x1b')
   expect(result).not.toContain('\x01')
+  response = { ok: true, job: { ...job, state: 'failed', mode: 'write' } }
+  const $failed = { ...$, process: { run: async (argv: string[]) => ({ stdout: JSON.stringify(argv.at(-1) === 'status' ? response : { ok: false, error: 'No result is available.' }) }) } } as unknown as EngineInterface
+  expect((await backgroundCommand($failed, 'result', 'abcd', config)).text).toContain('Changes may already have been made in the working directory; check them before running it again.')
 })
 
 test('notification polling deduplicates, stops on terminal or error and times out', async () => {
@@ -370,12 +373,17 @@ test('notification polling deduplicates, stops on terminal or error and times ou
 })
 
 test('successful background submission starts a job without spawning foreground helper', async () => {
-  let timer = 0
+  let timer = 0, state = 'queued'
   const $ = { plugin: { root: '/plugin' }, session: { model: async () => 'test/chat', cwd: async () => '/repo' },
-    clock: { after: () => { timer++ } }, process: { run: async () => ({ stdout: JSON.stringify({ ok: true, job }) }), spawn: () => { throw new Error('foreground used') } } } as unknown as EngineInterface
+    clock: { after: () => { timer++ } }, process: { run: async () => ({ stdout: JSON.stringify({ ok: true, job: { ...job, state, errorCode: state === 'failed' ? 'runner_start_failed' : null } }) }), spawn: () => { throw new Error('foreground used') } } } as unknown as EngineInterface
   const result = await delegate($, 'rescue', '--background -- hello', config, new AbortController().signal)
   expect(result.text).toContain('Started Codex job abcdef012345')
   expect(timer).toBe(1)
+  state = 'failed'
+  const failed = await delegate($, 'rescue', '--background -- hello', config, new AbortController().signal)
+  expect(failed.text).toContain('Nothing was started')
+  expect(failed.text).toContain('runner could not start')
+  expect(failed.text).toContain('/model-mod:jobs')
 })
 
 

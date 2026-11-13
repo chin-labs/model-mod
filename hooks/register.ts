@@ -1126,8 +1126,8 @@ async function messagesOnce($: EngineInterface, c: Config, model: string, body: 
     '--data-binary', '@-', c.baseUrl + '/v1/messages'], { stdin: JSON.stringify(body), timeoutMs })
 }
 
-function* failure(e: TurnStepInput, reason: string, index = 0): Generator<TurnStepChunk, TurnStepResult> {
-  const answer = `model-mod: ${reason}.`
+function* failure(e: TurnStepInput, reason: string, index = 0, unfinished = false): Generator<TurnStepChunk, TurnStepResult> {
+  const answer = `model-mod: ${reason}.${unfinished ? ' This model step did not finish and the request was not repeated; check the last message and send it again if needed.' : ''}`
   const usage = { model: e.model, input_tokens: 0, output_tokens: 0,
     cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }
   yield { kind: 'text', index, text: answer }
@@ -2574,7 +2574,7 @@ export const register: Register = (on, options) => {
             }
             if (decision.kind === 'not-logged-in') throw new Error('Codex account unavailable')
             if (codex && decision.limitFailed) codexLimitFailed.add(codex.directory)
-            return yield* failure(e, decision.reason, parser.nextIndex)
+            return yield* failure(e, decision.reason, parser.nextIndex, !codex || decision.reason.includes('rate limited') || decision.reason.includes('app-server timed out') || decision.reason.includes('app-server request failed'))
           }
           if (codex && reasoningRebuilt) {
             for (const message of messages) for (const block of message.content) {

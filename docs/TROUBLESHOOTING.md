@@ -20,7 +20,7 @@ After `/model-mod:setup`:
 | An API upstream shows `沒有額度資料` | API servers report no quota | Expected; nothing to fix. |
 | The setup pane says `Keyboard not captured` | The pane does not hold the keyboard | Press Ctrl+X, then Tab. |
 | `setup is already open; finish or close it first.` | A setup pane from an earlier `/model-mod:setup` is still open | Finish it, or press Esc in the pane. |
-| Model-list error during setup | Network, authentication or server problem | Fix the upstream or key and run setup again. Alternatively, set `models` by hand in the plugin’s `options` object under `pluginConfigs` in the Claude Code settings file and use them without setup; restart Claude Code. |
+| Model-list error during setup | Network, authentication or server problem | Fix the upstream or key and run setup again. Alternatively, set `models` by hand in the plugin’s `options` object under `pluginConfigs` in the Claude Code settings file and use them without setup; restart Claude Code. Setting `models` by hand does not fix a wrong key or URL. |
 | Doctor reports refused, DNS, timeout or TLS | The API URL or network is unreachable | Check the address, network and TLS certificate. |
 | Doctor reports 401 or 403 | The API key was rejected | Check the key in plugin settings. |
 | Doctor reports `The apiKey option holds characters that cannot be used.` | With a base URL and no valid Codex upstream, a nonempty key is not a string, exceeds 512 characters, or contains characters outside the permitted printable ASCII range (including spaces, double quotes and backslashes) | Re-enter the key in plugin settings. |
@@ -31,6 +31,8 @@ After `/model-mod:setup`:
 | Doctor reports 429 or a 5xx error | The API is rate limited or has a server error | Wait and try again. |
 | Doctor reports an invalid or empty models list | The server may not be OpenAI-compatible | Check the upstream server and its models endpoint. |
 | `model is not in the allowlist` | The ID is outside `models` | Choose an allowed ID or update the list. |
+| `No result is available.` for a background job | A failed job has no result | Check its state with `/model-mod:jobs`. |
+| `This model step did not finish` | The step failed and the request was not repeated | Check the last message and send it again if needed. |
 | Errors after selecting a model | Model unavailable, upstream down or key rejected | Fix the upstream, model or key, then restart Claude Code. There is no subscription fallback. |
 | Effort suffix rejected | The upstream does not understand `model(level)` | Set the advanced option `effortMode` to `none`. |
 | Image tool missing or refused | No local model selected, API image model missing, permission denied, or Codex login, quota or image generation unavailable | Select a configured model and approve the request. API models need `imageModel` (an [advanced option](CONFIGURATION.md#advanced-options)); Codex uses its built-in image model. For Codex failures check login, quota and the CLI version. If the image exceeds 20 MiB, request a smaller image; if the output path exists or is outside the working directory, choose another path. |

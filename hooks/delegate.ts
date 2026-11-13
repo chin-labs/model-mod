@@ -80,7 +80,7 @@ export function parseDelegate(kind: 'review' | 'rescue', input: string): Options
 }
 
 export async function delegate($: EngineInterface, kind: 'review' | 'rescue', args: string, c: DelegateConfig | undefined, signal: AbortSignal, interactive = true): Promise<{ text: string }> {
-  let gateMode = false, lockedSession: string | undefined
+  let gateMode = false, lockedSession: string | undefined, writeStarted = false
   try {
     const options = parseDelegate(kind, args)
     gateMode = options.gate === true
@@ -119,6 +119,7 @@ export async function delegate($: EngineInterface, kind: 'review' | 'rescue', ar
       const reply = await client($, c, 'submit', { request: { kind, options: jobOptions, account: selected, accountsDir: c.accountsDir, directory: account.directory, codexBin: c.codexBin ?? 'codex', model, cwd, ...(writeRoot ? { writeRoot } : {}) } })
       if (!reply.ok || !reply.job) return { text: 'model-mod: ' + cleanDisplay(reply.error ?? 'Background submission failed.') }
       const id = reply.job.id.slice(0, 12)
+      if (terminal.has(reply.job.state) && reply.job.state !== 'completed') return { text: `Nothing was started. ${jobLine(reply.job)}. See /model-mod:jobs.` }
       pollJob($, c, reply.job.id)
       return { text: `Started Codex job ${cleanDisplay(id)} (${cleanDisplay(selected)}, ${cleanDisplay(model)}). Check with /model-mod:jobs, read with /model-mod:result ${cleanDisplay(id)}.` }
     }
@@ -131,6 +132,7 @@ export async function delegate($: EngineInterface, kind: 'review' | 'rescue', ar
     }
     const child = $.process.spawn({ argv: [c.pythonBin ?? 'python3', '-E', '-s', script],
       input: JSON.stringify({ kind, options, account: selected, accountsDir: c.accountsDir, directory: account.directory, codexBin: c.codexBin ?? 'codex', model, cwd, ...(sessionId ? { sessionId } : {}), ...(writeRoot ? { writeRoot } : {}) }), cwd })
+    writeStarted = options.write === true
     let stdout = ''
     const abort = () => { void child.return({ code: null, signal: 'SIGTERM' }).catch(() => {}) }
     signal.addEventListener('abort', abort, { once: true })
@@ -154,7 +156,7 @@ export async function delegate($: EngineInterface, kind: 'review' | 'rescue', ar
     return { text: formatOutput(selected, model, reply.text ?? 'Delegation failed.', options.write) }
   } catch (error) {
     const message = error instanceof Error && /^(Unclosed quote|Unknown flag|Repeated flag|Missing value|Invalid effort|A task|Native review|Review focus|Gate accepts)/.test(error.message) ? error.message : gateMode ? 'Gate verdict: unknown. Not verified; human review required.' : 'Delegation failed or was cancelled; the result is incomplete. Use --background for longer jobs.'
-    return { text: 'model-mod: ' + message }
+    return { text: 'model-mod: ' + message + (writeStarted ? ' Changes may already have been made in the working directory; check them before running it again.' : '') }
   } finally {
     if (lockedSession) gateRunning.delete(lockedSession)
   }
@@ -385,7 +387,11 @@ export async function backgroundCommand($: EngineInterface, command: 'jobs' | 'r
     const method = command === 'jobs' ? id ? 'status' : 'list' : command
     const payload = method === 'list' ? { cwd: await $.session.cwd(), all, clear } : { id }
     const reply = await client($, c, method, payload)
-    if (!reply.ok) return { text: 'model-mod: ' + cleanDisplay(reply.error ?? 'Background request failed.') }
+    if (!reply.ok) {
+      const status = method === 'result' && reply.error === 'No result is available.' ? await client($, c, 'status', { id }) : undefined
+      const reminder = status?.job?.mode === 'write' && ['failed', 'cancelled', 'interrupted', 'unknown'].includes(status.job.state) ? ' Changes may already have been made in the working directory; check them before running it again.' : ''
+      return { text: 'model-mod: ' + cleanDisplay(reply.error ?? 'Background request failed.') + reminder }
+    }
     if (method === 'list') return { text: reply.jobs?.length ? reply.jobs.map(jobLine).join('\n') : 'No jobs found.' }
     if (!reply.job) throw new Error('Invalid broker response.')
     if (method === 'result') return { text: formatOutput(reply.job.account, reply.job.model, reply.text ?? '', reply.job.mode === 'write') }
