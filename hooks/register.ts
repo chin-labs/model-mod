@@ -1127,7 +1127,7 @@ async function messagesOnce($: EngineInterface, c: Config, model: string, body: 
 }
 
 function* failure(e: TurnStepInput, reason: string, index = 0, unfinished = false): Generator<TurnStepChunk, TurnStepResult> {
-  const answer = `model-mod: ${reason}.${unfinished ? ' This model step did not finish and the request was not repeated; check the last message and send it again if needed.' : ''}`
+  const answer = `model-mod: ${reason}.${unfinished ? ' This model step did not finish and will not be retried automatically; check the last message and send it again if needed.' : ''}`
   const usage = { model: e.model, input_tokens: 0, output_tokens: 0,
     cache_read_input_tokens: 0, cache_creation_input_tokens: 0 }
   yield { kind: 'text', index, text: answer }
@@ -1211,7 +1211,7 @@ let fallbackHinted = false
 // last response reported is used up (and not yet reset), the session switches to `fallbackModel` with the client's own
 // `/model` command (the client saves that choice as its default model for new sessions, as it does for a choice made
 // with the picker); once the window has reset it switches back. A model the person chose by hand is never changed.
-// Returns the notice to show, if any. The turn that hit the limit is not repeated: it already failed.
+// Returns the notice to show, if any. The turn that hit the limit already failed; the fallback does not resend it.
 async function autoFallback($: EngineInterface, c: Config): Promise<string | undefined> {
   const model = await $.session.model()
   const memo: FallbackMemo = { ...(await $.state.get(FALLBACK)).value }

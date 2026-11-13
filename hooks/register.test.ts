@@ -478,7 +478,7 @@ test('HTTP failures stop after three retries and respect bounded Retry-After sec
     const limited = await drain($.turn.step(STEP(LOCAL)))
     expect(w.spawned.length).toBe(4)
     expect(waited()).toBe(2 + 6 + 15)
-    expect(limited.result.answer).toContain('This model step did not finish and the request was not repeated; check the last message and send it again if needed.')
+    expect(limited.result.answer).toContain('This model step did not finish and will not be retried automatically; check the last message and send it again if needed.')
   }
   // A large Retry-After on a 200 whose stream broke before any output does not end the turn early.
   reply.stderr = '\nmodel-mod-http:200\nmodel-mod-retry-after:999\n'
@@ -557,7 +557,7 @@ test('SSE errors after output never retry even when content and error arrive in 
     reply.stdout = stdout
     const { chunks, result } = await drain($.turn.step(STEP(LOCAL)))
     expect(chunks.filter(c => c.kind === 'text').map(c => c.text)).toEqual([
-      'partial', 'model-mod: HTTP error (overloaded_error). This model step did not finish and the request was not repeated; check the last message and send it again if needed.',
+      'partial', 'model-mod: HTTP error (overloaded_error). This model step did not finish and will not be retried automatically; check the last message and send it again if needed.',
     ])
     expect(result.answer).toContain('model-mod: HTTP error (overloaded_error).')
   }
