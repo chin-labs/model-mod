@@ -2,6 +2,41 @@
 
 All notable changes to this project are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Every release that changes plugin code or manifest files raises the `version` in `.claude-plugin/plugin.json`; installed clients only pick up a release whose version differs from the one they have.
 
+## 0.2.5 - 2026-11-13
+
+### Removed
+- `/model-mod:refresh` and the `refresh` key of a configuration file are removed. Restart Claude Code to read the prompt files and the upstream model list again, or run `/model-mod:setup` to change the model selection. A restart does not capture tool schemas: the command that `refresh` could run to rewrite `toolsFile` has no replacement, and `toolsFile` itself is read as before.
+
+### Changed
+- The install form (`/plugin configure model-mod@model-mod`) shows 8 options instead of 20: `baseUrl`, `apiKey`, `models`, `codexAccounts`, `codexModels`, `codexBin`, `fallbackModel` and `workerModel`. The other 12 (`imageModel`, `contextWindow`, `fallbackPercent`, `promptsDir`, `codexAccountsDir`, `pythonBin`, `codexThreadReuse`, `codexKeepReasoning`, `codexWebSearch`, `codexStopGate`, `codexStopGateBlocks`, `codexServiceTier`) keep their names and meaning but are set in the `options` object under `pluginConfigs` in the Claude Code settings file; the configuration guide lists them under Advanced options, and messages that used to tell you to configure one of them now say so.
+- `maxTokens`, `contextWindow` and `fallbackPercent` accept a number written in quotes (`"80"`) as that number, and `codexStopGateBlocks` accepts `"1"` or `"2"`. Any other text in a number option is ignored as before (`codexStopGateBlocks` reports it as invalid).
+- `keepThinking`, `localTitle` and `localContext` also accept the text `off`, `false` or `0` as "off" (in the plugin options and in a configuration file); until now only the JSON value `false` turned them off.
+- The review gate and the Stop gate no longer send untracked files that are ignored through the effective `core.excludesFile` (your global Git config, repository config and conditional includes are honored) or Git's default user ignore file under `XDG_CONFIG_HOME` (`~/.config` by default), in addition to `.gitignore` files and `.git/info/exclude`. System-level Git config, other user-level Git settings (only the value of `core.excludesFile` is taken from your global config) and Git environment variables other than `HOME` and `XDG_CONFIG_HOME` are not read, so ignore rules that exist only there still do not apply and those files are sent.
+- Codex login requests start `codex app-server` with `project_doc_max_bytes=0`, so that Codex does not read project documents such as `AGENTS.md` from the helper's own working directory. Project instructions that Claude Code puts into the conversation are sent as before.
+- Status lines and command results no longer repeat the `model-mod:` prefix, and the `retrying (n/3)` status line is cleared when the turn ends. A response with status 200 whose stream cannot be read now reports "upstream sent an unreadable response" instead of "HTTP error".
+- `/model-mod:doctor` points to the Troubleshooting page linked from the README, and that page now lists the doctor rows added in 0.2.4.
+- Internal restructuring (turn-step helpers, shared app-server line handling, rate-limit mapping) with more tests around it; no change in behavior is intended.
+- Documentation corrections:
+  - A model chosen with `/model-mod:model`, and the switch made by the automatic `fallbackModel` fallback, are saved by Claude Code as the default model for new sessions. A session started while the fallback is active starts on the fallback model; if you close the session that switched before the limit resets, choose your usual model with `/model`.
+  - With an empty `imageModel`, an image model found and kept by an earlier session is used first, then `gpt-image-2`, then the first `gpt-image*` the upstream lists.
+  - When the job limit of 50 is reached, the oldest finished job is removed first, except that records marked `possible_leftover` are removed last. Finished records older than seven days are removed when the background broker starts and about hourly while it runs.
+  - Changes to a tracked file are in the review gate diff even if an ignore rule also matches the file. A `generate_image` file saved in a Git repository is untracked and binary, so the gates return `unknown` until it is deleted or ignored.
+  - The conversation text sent to your upstream, and on the Codex login path to OpenAI, can include account details that Claude Code adds, such as your email address, together with the working directory and git status.
+  - Uninstall steps now include removing upstreams and accounts in `/model-mod:setup` first and removing the marketplace afterwards. After a plugin update, a background broker that is already running keeps the old helper code until it exits or is stopped.
+
+### Fixed
+- A background job command (`/model-mod:review --background`, `/model-mod:rescue --background`, `/model-mod:jobs`, `/model-mod:result`, `/model-mod:cancel`) used after the background broker exited from idleness (30 minutes) failed with "Background broker socket is unavailable"; the helper client now starts the broker again and retries once.
+- `/model-mod:setup` for Codex login reports "codex unavailable; install Codex or configure codexBin" when the `codex` executable cannot be started, instead of failing with an unexplained error.
+- `/model-mod:doctor` still prints its report when the tool list cannot be read.
+- Stopping the Codex helper's process group no longer fails when the operating system refuses the signal; the helper process is stopped directly if it is still running.
+
+### Not verified
+- Codex login paths with these changes against a real Codex login (the tests use a fake `codex`): in particular that `project_doc_max_bytes=0` stops Codex from reading project documents, and the review and Stop gates against a real login.
+- Ignore handling for the gates with Git versions other than the one used in testing, with ignore files that are not regular files, in linked worktrees and submodules, and on Windows.
+- That values stored from the 20-option install form of earlier versions are kept by the client after the update to the 8-option form.
+- The 8-option install form, the cleared retry status line and the unprefixed command results in Remote Control, desktop and VS Code sessions and on Windows.
+- Whether a session started while the automatic fallback is active switches back after the reset.
+
 ## 0.2.4 - 2026-11-08
 
 ### Changed
