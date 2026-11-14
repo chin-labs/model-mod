@@ -2,7 +2,7 @@
 
 All notable changes to this project are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Every release that changes plugin code or manifest files raises the `version` in `.claude-plugin/plugin.json`; installed clients only pick up a release whose version differs from the one they have.
 
-## 0.2.5 - 2026-11-13
+## 0.2.5 - 2026-11-14
 
 ### Removed
 - `/model-mod:refresh` and the `refresh` key of a configuration file are removed. Restart Claude Code to read the prompt files again; in plugin-options mode it also reads the upstream model list again, while file mode (`MODEL_MOD_CONFIG`) never fetches it and uses the models in the file. Or run `/model-mod:setup` to change the model selection. A restart does not capture tool schemas: the command that `refresh` could run to rewrite `toolsFile` has no replacement, and `toolsFile` itself is read as before.
@@ -37,12 +37,20 @@ All notable changes to this project are listed here. The format follows [Keep a 
 - `/model-mod:doctor` still prints its report when the tool list cannot be read.
 - Stopping the process group of a Codex child process (`codex app-server`, device login) no longer fails when the operating system refuses the signal; the child is stopped directly if it is still running.
 
+### Verified against a real Codex login
+Checked on the tree of this release with Codex logins, Claude Code 2.1.325 and codex-cli 0.167.2, in an isolated Claude Code configuration:
+- The review gate returned `pass` for a repository that held only fake content.
+- The Stop gate blocked once on a deliberately wrong uncommitted change: the model continued after the block, and the status line then showed the after-block notice ("changes were not re-reviewed after the block"). The text of the block reason and the number of model requests were not recorded.
+- A conversation turn in a directory whose `AGENTS.md` held a code word did not repeat the code word (`project_doc_max_bytes=0`). This shows that the answer did not contain it, not that Codex never read the file.
+- A turn that made one tool call (Read) on a second Codex login completed.
+
 ### Not verified
-- Codex login paths with these changes against a real Codex login (the tests use a fake `codex`): in particular that `project_doc_max_bytes=0` stops Codex from reading project documents, and the review and Stop gates against a real login.
+- Other Codex login paths with these changes beyond the checks listed above (the tests use a fake `codex`).
 - Ignore handling for the gates with Git versions other than the one used in testing, with ignore files that are not regular files, in linked worktrees and submodules, and on Windows.
 - The 8-option install form, the cleared retry status line and the unprefixed command results in Remote Control, desktop and VS Code sessions and on Windows.
 - Whether a session started while the automatic fallback is active switches back after the reset.
-- The text values `off`, `false` and `0` for `keepThinking`, `localTitle` and `localContext` in a configuration file (not covered by the tests).
+- The text values `off`, `false` and `0` for `keepThinking`, `localTitle` and `localContext` in a configuration file are not covered by the tests. In a terminal session against a local test upstream, `keepThinking` and `localContext` behaved as off for these values and for the JSON number `0`, and no local title request was sent for `localTitle`; the title request to the official side was not observed.
+- The isolated checks did not block the network at system level, so they do not independently show that no outside connection was made.
 
 ## 0.2.4 - 2026-11-08
 
