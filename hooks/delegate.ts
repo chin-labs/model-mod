@@ -156,7 +156,7 @@ export async function delegate($: EngineInterface, kind: 'review' | 'rescue', ar
     return { text: formatOutput(selected, model, reply.text ?? 'Delegation failed.', options.write) }
   } catch (error) {
     const message = error instanceof Error && /^(Unclosed quote|Unknown flag|Repeated flag|Missing value|Invalid effort|A task|Native review|Review focus|Gate accepts)/.test(error.message) ? error.message : gateMode ? 'Gate verdict: unknown. Not verified; human review required.' : 'Delegation failed or was cancelled; the result is incomplete. Use --background for longer jobs.'
-    return { text: 'model-mod: ' + message + (writeStarted ? ' Changes may already have been made in the working directory; check them before running it again.' : '') }
+    return { text: 'model-mod: ' + message + (writeStarted ? ' Changes may already have been made in the working directory; check git status and git diff before running it again.' : '') }
   } finally {
     if (lockedSession) gateRunning.delete(lockedSession)
   }
@@ -389,7 +389,7 @@ export async function backgroundCommand($: EngineInterface, command: 'jobs' | 'r
     const reply = await client($, c, method, payload)
     if (!reply.ok) {
       const status = method === 'result' && reply.error === 'No result is available.' ? await client($, c, 'status', { id }) : undefined
-      const reminder = status?.job?.mode === 'write' && ['failed', 'cancelled', 'interrupted', 'unknown'].includes(status.job.state) ? ' Changes may already have been made in the working directory; check them before running it again.' : ''
+      const reminder = status?.job?.mode === 'write' && ['failed', 'cancelled', 'interrupted', 'unknown'].includes(status.job.state) ? ' Changes may already have been made in the working directory; check git status and git diff before running it again.' : ''
       return { text: 'model-mod: ' + cleanDisplay(reply.error ?? 'Background request failed.') + reminder }
     }
     if (method === 'list') return { text: reply.jobs?.length ? reply.jobs.map(jobLine).join('\n') : 'No jobs found.' }

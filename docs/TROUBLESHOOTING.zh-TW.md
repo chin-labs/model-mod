@@ -31,7 +31,7 @@
 | Doctor 回報 429 或 5xx | API 受限流或伺服器發生錯誤 | 稍後再試。 |
 | Doctor 回報模型清單無效或為空 | 伺服器可能不相容 OpenAI | 檢查上游伺服器及其模型端點。 |
 | `model is not in the allowlist` | 該 ID 不在 `models` 內 | 選擇允許的 ID，或更新清單。 |
-| 背景工作顯示 `No result is available.` | 工作尚未完成，或已失敗、被取消；只有完成的工作才有結果 | 用 `/model-mod:jobs` 檢查其狀態。 |
+| 背景工作顯示 `No result is available.` | 工作尚未完成，或已失敗、被取消；只有完成的工作才有結果 | 用 `/model-mod:jobs` 檢查其狀態。失敗或逾時的 `--write` 執行可能已變更工作目錄；請檢查 `git status` 與 `git diff`。 |
 | `This model step did not finish` | 該步驟失敗，model-mod 不會自動重試；任何先前的自動重試都已發生。 | 檢查最後一則訊息，必要時再次送出。 |
 | 選了模型後出現錯誤 | 模型不可用、上游停機或金鑰被拒絕 | 修正上游、模型或金鑰，再重新啟動 Claude Code。不會退回訂閱。 |
 | effort 後綴被拒絕 | 上游不認得 `model(level)` | 把進階選項 `effortMode` 設為 `none`。 |

@@ -352,7 +352,7 @@ test('background commands validate IDs and sanitize display and errors', async (
   expect(result).not.toContain('\x01')
   response = { ok: true, job: { ...job, state: 'failed', mode: 'write' } }
   const $failed = { ...$, process: { run: async (argv: string[]) => ({ stdout: JSON.stringify(argv.at(-1) === 'status' ? response : { ok: false, error: 'No result is available.' }) }) } } as unknown as EngineInterface
-  expect((await backgroundCommand($failed, 'result', 'abcd', config)).text).toContain('Changes may already have been made in the working directory; check them before running it again.')
+  expect((await backgroundCommand($failed, 'result', 'abcd', config)).text).toContain('Changes may already have been made in the working directory; check git status and git diff before running it again.')
 })
 
 test('notification polling deduplicates, stops on terminal or error and times out', async () => {
