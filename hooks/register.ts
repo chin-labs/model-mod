@@ -256,7 +256,7 @@ async function configurePicker($: EngineInterface, c: { baseUrl: string; key?: s
 }
 
 type CodexAccount = { account: string; model: string; directory: string; window?: number }
-type Config = { codex?: Map<string, CodexAccount>; pythonBin?: string; codexBin?: string; accountsDir?: string; apiInvalid?: boolean; prompts: Prompts; promptsDir?: string; baseUrl: string; headerFile?: string; key?: string; models: string[]; toolsFile?: string; defaultWindow?: number; contextWindowExplicit?: boolean; explicitModels?: boolean; excluded?: Set<string>; codexDirectoryUnavailable?: Set<string>; imageAuto?: boolean; source?: 'options' | 'file'; maxTokens: number; effortMode: 'suffix' | 'none'; imageModel?: string; contextWindows?: Record<string, number>; sideModel?: string; keepThinking?: boolean; localTitle?: boolean; localContext?: boolean; toolSearch?: 'auto' | 'on' | 'off'; toolSearchPercent?: number; fallbackModel?: string; fallbackPercent?: number; workerModel?: string; codexServiceTier?: 'default' | 'priority'; codexServiceTierInvalid?: boolean; codexWebSearch?: 'on' | 'off'; codexWebSearchInvalid?: boolean; codexKeepReasoning?: 'on' | 'off'; codexKeepReasoningInvalid?: boolean; codexThreadReuse?: 'on' | 'off'; codexThreadReuseInvalid?: boolean }
+type Config = { codex?: Map<string, CodexAccount>; pythonBin?: string; codexBin?: string; accountsDir?: string; apiInvalid?: boolean; prompts: Prompts; baseUrl: string; headerFile?: string; key?: string; models: string[]; toolsFile?: string; defaultWindow?: number; contextWindowExplicit?: boolean; explicitModels?: boolean; excluded?: Set<string>; codexDirectoryUnavailable?: Set<string>; imageAuto?: boolean; source?: 'options' | 'file'; maxTokens: number; effortMode: 'suffix' | 'none'; imageModel?: string; contextWindows?: Record<string, number>; sideModel?: string; keepThinking?: boolean; localTitle?: boolean; localContext?: boolean; toolSearch?: 'auto' | 'on' | 'off'; toolSearchPercent?: number; fallbackModel?: string; fallbackPercent?: number; workerModel?: string; codexServiceTier?: 'default' | 'priority'; codexServiceTierInvalid?: boolean; codexWebSearch?: 'on' | 'off'; codexWebSearchInvalid?: boolean; codexKeepReasoning?: 'on' | 'off'; codexKeepReasoningInvalid?: boolean; codexThreadReuse?: 'on' | 'off'; codexThreadReuseInvalid?: boolean }
 type Tool = { name: string; description: string; input_schema: Record<string, unknown> }
 
 const threadSessions = new Map<string, Map<string, CodexAccount>>()
@@ -504,7 +504,7 @@ async function loadNow($: EngineInterface) {
       return undefined
     }
     const built: Config = { ...candidate, prompts: await loadPrompts($, candidate.promptsDir),
-      promptsDir: promptDir(candidate.promptsDir), baseUrl: url.origin + url.pathname.replace(/\/+$/, ''), maxTokens: candidate.maxTokens as number,
+      baseUrl: url.origin + url.pathname.replace(/\/+$/, ''), maxTokens: candidate.maxTokens as number,
       explicitModels: candidate.models.length > 0, imageAuto: fromOptions && candidate.imageAuto === true,
       source: fromOptions ? 'options' : 'file',
       defaultWindow: fromOptions && Number.isInteger(candidate.defaultWindow) && (candidate.defaultWindow as number) >= 32_000 &&
