@@ -658,7 +658,7 @@ def main():
         elif getattr(exc, 'code', '') == 'codex_unavailable': text = 'Codex is unavailable.'
         else: text = 'Delegation failed; result is incomplete.'
     if 'request' in locals() and request.get('options', {}).get('write') and locals().get('failed', False):
-        text += ' Changes may already have been made in the working directory; check them before running it again.'
+        text += ' Changes may already have been made in the working directory; check git status and git diff before running it again.'
     print(json.dumps({'text': text}, ensure_ascii=False), flush=True)
 
 
