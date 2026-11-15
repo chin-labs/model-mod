@@ -119,7 +119,7 @@ export async function delegate($: EngineInterface, kind: 'review' | 'rescue', ar
       const reply = await client($, c, 'submit', { request: { kind, options: jobOptions, account: selected, accountsDir: c.accountsDir, directory: account.directory, codexBin: c.codexBin ?? 'codex', model, cwd, ...(writeRoot ? { writeRoot } : {}) } })
       if (!reply.ok || !reply.job) return { text: 'model-mod: ' + cleanDisplay(reply.error ?? 'Background submission failed.') }
       const id = reply.job.id.slice(0, 12)
-      if (terminal.has(reply.job.state) && reply.job.state !== 'completed') return { text: `Nothing was started. ${jobLine(reply.job)}. See /model-mod:jobs.` }
+      if (terminal.has(reply.job.state)) return { text: `${reply.job.state === 'completed' ? 'Job finished.' : 'Nothing was started.'} ${jobLine(reply.job)}. See /model-mod:jobs.` }
       pollJob($, c, reply.job.id)
       return { text: `Started Codex job ${cleanDisplay(id)} (${cleanDisplay(selected)}, ${cleanDisplay(model)}). Check with /model-mod:jobs, read with /model-mod:result ${cleanDisplay(id)}.` }
     }
