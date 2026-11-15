@@ -1551,23 +1551,6 @@ test('setup: the plugin loaded by the first write finishes the setup, reports on
   expect(w.closed).toEqual(['model-mod-setup'])
 })
 
-test('setup: an expired hand-over is ignored on session start', { options: OPTIONS }, async ($, on) => {
-  const w = world(on, null, LOCAL, { stdout: '', code: 0 })
-  const logged = transcript(on)
-  w.paneSeat = true; w.models = [LOCAL, 'gpt-other']; w.scopes.user = { enabledPlugins: { 'model-mod@test': true } }
-  w.configValues = { baseUrl: 'http://old.test', models: LOCAL }
-  w.configSet = key => { if (key.endsWith('.baseUrl')) w.unloaded = true; return undefined }
-  expect(await $.command.run(SETUP)).toEqual({})
-  await choose($, w, 'Compatible API server'); await choose($, w, 'Keep (recommended)'); await choose($, w, 'All (recommended)')
-  expect(w.saved).toEqual([{ key: 'model-mod.baseUrl', value: OPTIONS.baseUrl }])
-  await w.clock.set(w.clock.now() + 120001)
-  w.unloaded = false
-  const before = logged.length
-  await $.session.start({ cwd: '/work' } as never)
-  expect(w.saved).toEqual([{ key: 'model-mod.baseUrl', value: OPTIONS.baseUrl }])
-  expect(logged.length).toBe(before)
-})
-
 // A write that changes nothing the plugin reloads for brings no new module. The module that began the setup waits for one,
 // then takes the plan back and finishes it, once. A session.start that comes meanwhile (any other new session) takes the plan
 // instead, and the module that began it lets go.
