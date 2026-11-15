@@ -2048,7 +2048,7 @@ test('Codex login: streaming and auxiliary requests use the helper without an AP
   expect(w.store.models).toBeUndefined()
 })
 
-for (const [contextWindow, expected] of [[undefined, 475000], [272000, 272000], ['272000', 272000]] as const) {
+for (const [contextWindow, expected] of [[undefined, 475000], [272000, 272000], ['272000', 272000], [5000000, 475000]] as const) {
   test('Codex login: catalog window and explicit override ' + JSON.stringify(contextWindow) + ' -> ' + String(expected), { options: { ...CODEX_OPTIONS, ...(contextWindow ? { contextWindow } : {}) } }, async ($, on) => {
     const w = world(on, null, CODEX_MODEL, { stdout: SSE_OK, code: 0 }, argv => argv.includes('windows')
       ? { exitCode: 0, stdout: '{"windows":{"gpt-6.1-terra":475000}}' } : { exitCode: 1, stdout: '' })

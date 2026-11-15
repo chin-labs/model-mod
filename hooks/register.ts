@@ -453,11 +453,13 @@ function optionsCandidate(o: PluginOptions): Record<string, unknown> | undefined
     const raw = o[name], value = typeof raw === 'string' && /^-?\d+(\.\d+)?(e[+-]?\d+)?$/i.test(raw.trim()) ? Number(raw) : raw
     return typeof value === 'number' && Number.isFinite(value) ? value : undefined
   }
+  const window = quoted('contextWindow')
+  const validWindow = Number.isInteger(window) && window! >= 32_000 && window! <= 4_000_000 ? window : undefined
   const side = text('sideModel')
   return { baseUrl: validKey ? baseUrl : DEFAULT_BASE_URL, key: validKey ? key : undefined, apiInvalid: hasKey && !validKey, accounts: codexValid ? accounts : [], codexModels: codexValid ? codexModels : [],
     accountsDir: dir || undefined, codexBin: bin, pythonBin: python, models: validKey ? text('models').split(/[\s,]+/).filter(Boolean) : [], maxTokens: quoted('maxTokens') ?? 32_000,
     effortMode: text('effortMode') === 'none' ? 'none' : 'suffix', imageModel: text('imageModel') !== 'none' ? text('imageModel') || undefined : undefined, imageAuto: text('imageModel') === '',
-    defaultWindow: quoted('contextWindow') ?? 272_000, contextWindowExplicit: quoted('contextWindow') !== undefined, sideModel: side === 'none' ? undefined : side || 'claude-haiku-5-5',
+    defaultWindow: validWindow ?? 272_000, contextWindowExplicit: validWindow !== undefined, sideModel: side === 'none' ? undefined : side || 'claude-haiku-5-5',
     keepThinking: !isOff(o.keepThinking), localTitle: !isOff(o.localTitle), localContext: !isOff(o.localContext),
     toolSearch: text('toolSearch') || 'auto', toolSearchPercent: number('toolSearchPercent', 10),
     codexWebSearch: ['off', 'false', '0'].includes(toggle('codexWebSearch')) ? 'off' : 'on', codexWebSearchInvalid: toggleInvalid('codexWebSearch'),
