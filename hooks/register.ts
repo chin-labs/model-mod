@@ -463,7 +463,7 @@ function optionsCandidate(o: PluginOptions): Record<string, unknown> | undefined
     codexWebSearch: ['off', 'false', '0'].includes(toggle('codexWebSearch')) ? 'off' : 'on', codexWebSearchInvalid: toggleInvalid('codexWebSearch'),
     codexKeepReasoning: ['off', 'false', '0'].includes(toggle('codexKeepReasoning')) ? 'off' : 'on', codexKeepReasoningInvalid: toggleInvalid('codexKeepReasoning'),
     codexThreadReuse: toggle('codexThreadReuse') === 'off' ? 'off' : 'on', codexThreadReuseInvalid: o.codexThreadReuse !== undefined && !['on', 'off'].includes(toggle('codexThreadReuse')),
-    codexServiceTier: text('codexServiceTier') === 'priority' ? 'priority' : 'default', codexServiceTierInvalid: !['default', 'priority', ''].includes(text('codexServiceTier')), fallbackModel: text('fallbackModel'), fallbackPercent: quoted('fallbackPercent') ?? 100, workerModel: text('workerModel'), promptsDir: text('promptsDir') }
+    codexServiceTier: text('codexServiceTier') === 'priority' ? 'priority' : 'default', codexServiceTierInvalid: o.codexServiceTier !== undefined && (typeof o.codexServiceTier !== 'string' || !['default', 'priority', ''].includes(text('codexServiceTier'))), fallbackModel: text('fallbackModel'), fallbackPercent: quoted('fallbackPercent') ?? 100, workerModel: text('workerModel'), promptsDir: text('promptsDir') }
 }
 
 // One load at a time: the options and the settings are read once and every caller gets the same answer.
@@ -576,7 +576,7 @@ async function loadNow($: EngineInterface) {
     if (fromOptions && built.codexWebSearchInvalid) $.ui.status('invalid codexWebSearch; using on.')
     if (fromOptions && built.codexKeepReasoningInvalid) $.ui.status('invalid codexKeepReasoning; using on.')
     if (fromOptions && built.codexThreadReuseInvalid) $.ui.status('invalid codexThreadReuse; using on.')
-    if (fromOptions && pluginOptions.codexServiceTier !== undefined && !['default', 'priority', ''].includes(String(pluginOptions.codexServiceTier))) $.ui.status('invalid codexServiceTier; using default.')
+    if (fromOptions && built.codexServiceTierInvalid) $.ui.status('invalid codexServiceTier; using default.')
     if (built.apiInvalid) $.ui.status('API server apiKey contains invalid characters; configure a valid key.')
     // The models the mod switches the session to when the subscription's limit is reached (`fallbackModel`) and runs the
     // `local-worker` agent type on (`workerModel`, else the fallback model). Options only; off when empty. Each must be
