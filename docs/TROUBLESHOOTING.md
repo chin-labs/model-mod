@@ -15,7 +15,7 @@ After `/model-mod:setup`:
 | Symptom | Likely cause | What to do |
 |---|---|---|
 | Status shows `inactive`, or no models are listed | No valid upstream configuration, a refused URL, or the plugin is not loaded | Configure Codex accounts and models or an API key and permitted URL, run `/reload-plugins`, then `/model-mod:setup`. |
-| An account block is marked `[LIMIT]` | A window is at 100% used, or the account reports a rate limit (the reason is on the block) | Wait for the reset time shown, or use another account or a `fallbackModel`. |
+| An account block is marked `[LIMIT]` | A window is at 100% used, or the account reports a rate limit (the reason is on the block); a model step that hits the limit does not complete | Wait for the reset time shown, or use another account or a `fallbackModel`. |
 | An account block shows `無法取得: …` | The quota query did not finish: not logged in, `codex` missing or a timeout | Read the reason, then the account's `login` and `codex` rows under DIAGNOSTICS; other accounts are unaffected. |
 | An API upstream shows `沒有額度資料` | API servers report no quota | Expected; nothing to fix. |
 | The setup pane says `Keyboard not captured` | The pane does not hold the keyboard | Press Ctrl+X, then Tab. |

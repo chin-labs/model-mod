@@ -2574,7 +2574,7 @@ export const register: Register = (on, options) => {
             }
             if (decision.kind === 'not-logged-in') throw new Error('Codex account unavailable')
             if (codex && decision.limitFailed) codexLimitFailed.add(codex.directory)
-            return yield* failure(e, decision.reason, parser.nextIndex, !codex || decision.reason.includes('rate limited') || decision.reason.includes('app-server timed out') || decision.reason.includes('app-server request failed'))
+            return yield* failure(e, decision.reason, parser.nextIndex, !codex || decision.limitFailed || decision.reason.includes('rate limited') || decision.reason.includes('app-server timed out') || decision.reason.includes('app-server request failed'))
           }
           if (codex && reasoningRebuilt) {
             for (const message of messages) for (const block of message.content) {
