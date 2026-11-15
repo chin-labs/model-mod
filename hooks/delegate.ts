@@ -153,7 +153,7 @@ export async function delegate($: EngineInterface, kind: 'review' | 'rescue', ar
       if (verdict.verdict === 'pass') gateWarning = undefined
       return { text: formatOutput(selected, model, gateDisplay(verdict)) }
     }
-    return { text: formatOutput(selected, model, reply.text ?? 'Delegation failed.', options.write) }
+    return { text: formatOutput(selected, model, (reply.text ?? 'Delegation failed.').replace('Changes may already have been made in the working directory; check them before running it again.', 'Changes may already have been made in the working directory; check git status and git diff before running it again.'), options.write) }
   } catch (error) {
     const message = error instanceof Error && /^(Unclosed quote|Unknown flag|Repeated flag|Missing value|Invalid effort|A task|Native review|Review focus|Gate accepts)/.test(error.message) ? error.message : gateMode ? 'Gate verdict: unknown. Not verified; human review required.' : 'Delegation failed or was cancelled; the result is incomplete. Use --background for longer jobs.'
     return { text: 'model-mod: ' + message + (writeStarted ? ' Changes may already have been made in the working directory; check git status and git diff before running it again.' : '') }
