@@ -20,7 +20,7 @@ export type QuotaBlock = {
   // Set when the account may not be used now: the reason from rateLimitReachedType, or '' when there is none.
   limit?: string
   allowedButFull?: boolean
-  // Why the numbers could not be read; the block then shows a fixed "無法取得" line.
+  // Why the numbers could not be read; the block shows "無法取得" and the reason.
   failed?: string
   // An upstream that reports no quota (an API server).
   noData?: boolean

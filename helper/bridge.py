@@ -2,7 +2,7 @@
 """Isolated Codex app-server Messages bridge.
 
 Exit codes: 0 success, 1 request failure, 65 incompatible protocol,
-66 codex unavailable, 67 codex too old, 68 not logged in, 69 invalid home,
+66 codex unavailable, 67 codex too old, 68 not logged in, 69 invalid home, 70 credentials remain,
 78 Python too old. Before updating MIN_TESTED_VERSION, run the manual live
 contract test against that version and update the tested version record.
 """

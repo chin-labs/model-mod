@@ -404,8 +404,8 @@ async function refreshModels($: EngineInterface, c: Config): Promise<void> {
 }
 
 // The configuration the plugin's `userConfig` fields give (set through `claude plugin install --config`, `claude plugin
-// configure` or the configuration dialog). undefined: no key is set; null: a key is set but cannot be used, which
-// leaves the mod inert (it does not fall back to a configuration file).
+// configure` or the configuration dialog), plus advanced fields from the settings file. Returns an object for a valid
+// API key or Codex login; null means an unusable key without a valid Codex login, and undefined means no configuration.
 function invalidCodexFields(o: PluginOptions): string[] {
   const text = (name: string) => typeof o[name] === 'string' ? (o[name] as string).trim() : ''
   const accounts = text('codexAccounts').split(',').map(s => s.trim()).filter(Boolean)
@@ -1300,11 +1300,11 @@ async function autoFallback($: EngineInterface, c: Config): Promise<string | und
     ` (${new Date(until).toISOString().slice(0, 16).replace('T', ' ')} UTC). Your messages and project files are sent to the upstream while it does.`
 }
 
-// The paged ask menu, three models a page; undefined when nothing was chosen (cancelled or no way to ask).
 function modelLabel(c: Config, id: string): string {
   const item = c.codex?.get(id)
   return item ? `${item.model} @ ${item.account} (Codex login)` : c.codex?.size && c.models.includes(id) && (c.key !== undefined || c.headerFile !== undefined) ? `${id} (API)` : id
 }
+// The paged ask menu, three models a page; undefined when nothing was chosen (cancelled or no way to ask).
 async function menuPick($: EngineInterface, c: Config, current: string): Promise<string | undefined> {
   try { return await pickModel($, c.models, current, id => modelLabel(c, id)) } catch { return undefined }
 }
@@ -2343,7 +2343,7 @@ export const register: Register = (on, options) => {
   })
   on('command.run', { command: 'model-mod:status' }, ($, e) => admin($, e, 'status').then(commandText))
   on('command.run', { command: 'model-mod:doctor' }, ($, e) => admin($, e, 'doctor').then(commandText))
-  // The delegate texts carry their own "model-mod: " prefix on errors; success texts never start with it.
+  // Delegate errors may carry a "model-mod: " prefix; background start and not-started texts do not.
   on('command.run', { command: 'model-mod:review' }, async ($, e, next) => commandText(await delegate($, 'review', e.args, await load($), next.signal)))
   on('command.run', { command: 'model-mod:rescue' }, async ($, e, next) => commandText(await delegate($, 'rescue', e.args, await load($), next.signal, e.origin.kind === 'composer' || e.origin.kind === 'bridge')))
   on('command.run', { command: 'model-mod:transfer' }, async ($, e, next) => commandText(await transfer($, e.args, await load($), transcript, next.signal, e.origin.kind === 'composer' || e.origin.kind === 'bridge')))

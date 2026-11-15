@@ -1,4 +1,4 @@
-"""Private, versioned records for read-only background delegation."""
+"""Private, versioned records for background delegation."""
 import contextlib
 import fcntl
 import hashlib
