@@ -2038,7 +2038,7 @@ export const register: Register = (on, options) => {
       const schemas = new Map((await capturedTools($, c) ?? []).map(tool => [tool.name, tool]))
       const pool = new Map<string, Tool>()
       for (const tool of await $.tool.list()) {
-        if (!tool.mcp || tool.name.startsWith('mcp__model-mod__')) continue
+        if (!tool.mcp || tool.name.startsWith('mcp__model-mod__') || !/^[A-Za-z0-9_-]{1,64}$/.test(tool.name)) continue
         pool.set(tool.name, schemas.get(tool.name) ??
           { name: tool.name, description: tool.description, input_schema: { type: 'object', additionalProperties: true } })
       }
