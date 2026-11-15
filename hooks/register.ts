@@ -1117,7 +1117,8 @@ function codexRunError(c: Config, item: CodexAccount, run: { stdout: string; std
   if (code === 'codex_not_logged_in' || run.exitCode === 68) return prefix + `not logged in; run ${loginCommand(c, item)} in your terminal`
   if (code === 'invalid_home' || run.exitCode === 69) return prefix + 'account directory missing; run /model-mod:setup'
   if (run.exitCode === 78) return prefix + 'Python too old; install Python 3.9 or newer'
-  if (/model-mod-http:429\b/.test(run.stderr)) return prefix + 'rate limited; try again later'
+  if (/model-mod-http:429\b/.test(run.stderr)) return prefix + 'rate limited; check the account quota or try again later'
+  if (/model-mod-http:504\b/.test(run.stderr)) return prefix + 'app-server timed out; try again in a moment'
   return prefix + 'app-server request failed; check Codex and try again'
 }
 async function messagesOnce($: EngineInterface, c: Config, model: string, body: object, maxTime: string, timeoutMs: number) {
