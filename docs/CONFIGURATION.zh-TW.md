@@ -84,7 +84,7 @@ Codex effort 依模型宣告的等級夾值：`max` 取支援的最高等級；�
 | `promptsDir` | 存放自訂 `compact.md`、`title.md`、`subagent-note.md`、`worker.md` 的絕對路徑目錄。空白：使用插件內的 `prompts/`。 | 空白 |
 | `codexAccountsDir` | 絕對目錄；每個帳號使用獨立子目錄。 | `~/.config/model-mod/accounts`，Windows 為 `%APPDATA%\model-mod\accounts`（未驗證） |
 | `pythonBin` | 執行檔名稱或絕對路徑。Windows 請設為 `python`（未驗證）。 | `python3` |
-| `codexThreadReuse` | `on` 或 `off`，不分大小寫；無效值視為 `on` 並顯示於 status。關閉時使用 ephemeral thread，不存取父 thread 登錄；見[隱私與清理](LIMITATIONS.zh-TW.md#父-thread-隱私與清理)。 | `on` |
+| `codexThreadReuse` | `on`、`true`、`1` 或 `off`、`false`、`0`（文字不分大小寫）；無效值視為 `on` 並顯示於 status。關閉時使用 ephemeral thread，不存取父 thread 登錄；見[隱私與清理](LIMITATIONS.zh-TW.md#父-thread-隱私與清理)。 | `on` |
 | `codexKeepReasoning` | `on` 或 `off`；無效值視為 `on` 並顯示於 status。使用實驗性 API；真實 Codex 重放尚未驗證。thread 重用的 fork 請求不保留 reasoning；若要保留，請將 `codexThreadReuse` 設為 `off`。 | `on` |
 | `codexServiceTier` | `default` 或 `priority`；實際服務層級與計費尚未驗證。 | `default` |
 | `codexWebSearch` | `on` 或 `off`；無效值視為 `on` 並顯示於 status。工作階段工具清單沒有 WebSearch 時會停用搜尋。 | `on` |

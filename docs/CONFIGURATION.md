@@ -84,7 +84,7 @@ Numbers are written as JSON numbers. For `maxTokens`, `contextWindow` and `fallb
 | `promptsDir` | Absolute directory with your own `compact.md`, `title.md`, `subagent-note.md` and `worker.md`. Empty: the plugin's `prompts/` directory. | empty |
 | `codexAccountsDir` | Absolute directory; each account has a separate subdirectory. | `~/.config/model-mod/accounts`, or `%APPDATA%\model-mod\accounts` on Windows (unverified) |
 | `pythonBin` | Executable name or absolute path. On Windows use `python` (unverified). | `python3` |
-| `codexThreadReuse` | `on` or `off`, case-insensitive; invalid values use `on` and appear in status. Off uses ephemeral threads and does not access the parent registry; see [privacy and cleanup](LIMITATIONS.md#parent-thread-privacy-and-cleanup). | `on` |
+| `codexThreadReuse` | `on`, `true`, `1` or `off`, `false`, `0` (case-insensitive for text); invalid values use `on` and appear in status. Off uses ephemeral threads and does not access the parent registry; see [privacy and cleanup](LIMITATIONS.md#parent-thread-privacy-and-cleanup). | `on` |
 | `codexKeepReasoning` | `on` or `off`; invalid values use `on` and appear in status. Uses experimental APIs; real Codex replay is unverified. Reasoning is not retained on forked requests with thread reuse; set `codexThreadReuse` to `off` to allow retention. | `on` |
 | `codexServiceTier` | `default` or `priority`; actual service tier and billing are unverified. | `default` |
 | `codexWebSearch` | `on` or `off`; invalid values use `on` and appear in status. Search is disabled when WebSearch is absent from the session tool list. | `on` |
