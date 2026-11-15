@@ -385,11 +385,11 @@ async function seedModels($: EngineInterface, c: Config): Promise<void> {
 
 // Asks the upstream which models it serves (OpenAI-style /v1/models) and keeps the chat ones. A failure changes
 // nothing: the models already known stay the bridge's own.
-async function refreshModels($: EngineInterface, c: Config): Promise<string> {
-  if (c.key === undefined) return 'no key in the options'
+async function refreshModels($: EngineInterface, c: Config): Promise<void> {
+  if (c.key === undefined) return
   try {
     const fetched = await modelList($, c.baseUrl, c.key)
-    if ('error' in fetched) return fetched.error
+    if ('error' in fetched) return
     const { ids } = fetched
     const retired = new Set(await retiredModels($))
     const chat = fetched.chat.filter(id => !retired.has(id))
@@ -401,10 +401,7 @@ async function refreshModels($: EngineInterface, c: Config): Promise<string> {
       c.imageModel = ids.find(id => id === 'gpt-image-2') ?? ids.find(id => /^gpt-image/.test(id))
       if (c.imageModel !== undefined) await $.store.set('imageModel', c.imageModel)
     }
-    return `${chat.length} models`
-  } catch {
-    return 'unreachable'
-  }
+  } catch { /* leave existing models unchanged */ }
 }
 
 // The configuration the plugin's `userConfig` fields give (set through `claude plugin install --config`, `claude plugin
