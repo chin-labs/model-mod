@@ -216,7 +216,6 @@ async function configurePicker($: EngineInterface, c: { baseUrl: string; key?: s
       }
       break
     }
-    if (!selected.length) return 'model-mod: none of the saved models remain in the API list; allowlist unchanged.'
     // Resolve config rows before changing anything; set options last because the module reloads.
     const rows = await $.config.list()
     const rowFor = (field: string) => rows.find(row => row.key.endsWith('.' + field) && row.provider.plugin.split('@')[0] === $.plugin.name.split('@')[0])
@@ -1620,7 +1619,7 @@ async function manageUpstreams($: EngineInterface, c: Config): Promise<string> {
     const count = [...(c.codex?.values() ?? [])].filter(m => m.account === item.account).length
     entries.push({ label: scrub(c, `Codex ${item.account}; dir=${item.directory}; login=${login}; models=${count}`, false), item })
   }
-  if (c.key || c.headerFile) entries.push({ label: scrub(c, `API ${new URL(c.baseUrl).hostname}; models=${c.models.filter(id => !c.codex?.has(id)).length}; key=${c.key || c.headerFile ? 'configured' : 'not configured'}${c.source === 'file' ? '; from configuration file' : ''}`, false) })
+  if (c.key || c.headerFile) entries.push({ label: scrub(c, `API ${new URL(c.baseUrl).hostname}; models=${c.models.filter(id => !c.codex?.has(id)).length}; key=configured${c.source === 'file' ? '; from configuration file' : ''}`, false) })
   if (!entries.length) return 'model-mod: no configured upstreams.'
   const answer = await pick($, 'Manage configured upstreams. Choose one?', [...entries.map(entry => entry.label), 'Back'], { header: 'Upstreams' })
   const chosen = entries.find(entry => entry.label === answer)
