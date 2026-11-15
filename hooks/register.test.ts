@@ -1896,6 +1896,17 @@ test('Codex fallback: a 429 bypasses the five-minute throttle', { options: { ...
   expect(w.modelRuns).toEqual(['gpt-fb'])
 })
 
+for (const [tier, expected, invalid] of [[' priority ', 'priority', false], [123, 'default', true]] as const) {
+  test(`Codex service tier: ${tier}`, { options: { ...CODEX_OPTIONS, codexServiceTier: tier } }, async ($, on) => {
+    const notes = quotaLine(on)
+    world(on, null, CODEX_MODEL, { stdout: SSE_OK, code: 0 })
+    const status = await $.command.run({ command: 'model-mod:status', args: '', origin: { kind: 'composer' } } as never)
+    expect(statusRow(status.text, 'serviceTier')).toContain(expected)
+    expect(status.text.includes('invalid setting')).toBe(invalid)
+    expect(notes.statuses.some(s => s?.includes('invalid codexServiceTier'))).toBe(invalid)
+  })
+}
+
 test('Codex status: windows, credits and plan show remaining quota', { options: { ...CODEX_OPTIONS, codexServiceTier: 'priority' } }, async ($, on) => {
   quotaLine(on)
   const w = world(on, null, CODEX_MODEL, { stdout: SSE_OK, code: 0 }, argv => {
@@ -2825,4 +2836,15 @@ test('setup: a menu with more than four rows is asked page by page and Back stay
   expect(w.questions[1]!.labels).toHaveLength(4); expect(w.questions[1]!.labels.at(-1)).toBe('More…')
   expect(w.questions[2]!.labels).toContain('Back'); expect(w.questions[2]!.labels.at(-1)).toBe('More…')
   expect(w.questions[3]!.labels).toEqual(w.questions[1]!.labels)
+})
+
+
+test('tool search excludes invalid MCP names', { options: { ...OPTIONS, models: LOCAL } }, async ($, on) => {
+  const w = world(on, null, LOCAL, { stdout: SSE_OK, code: 0 })
+  w.toolsList = ['mcp__sample__valid', 'mcp__sample__bad.name']
+  for (const query of ['sample', 'select:mcp__sample__valid,mcp__sample__bad.name']) {
+    const result = JSON.stringify(await $.tool.call({ tool: 'mcp__model-mod__tool_search', query } as never))
+    expect(result).toContain('mcp__sample__valid')
+    expect(result).not.toContain('name\\":\\"mcp__sample__bad.name')
+  }
 })
