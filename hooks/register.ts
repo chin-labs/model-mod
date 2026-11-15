@@ -464,7 +464,7 @@ function optionsCandidate(o: PluginOptions): Record<string, unknown> | undefined
     toolSearch: text('toolSearch') || 'auto', toolSearchPercent: number('toolSearchPercent', 10),
     codexWebSearch: ['off', 'false', '0'].includes(toggle('codexWebSearch')) ? 'off' : 'on', codexWebSearchInvalid: toggleInvalid('codexWebSearch'),
     codexKeepReasoning: ['off', 'false', '0'].includes(toggle('codexKeepReasoning')) ? 'off' : 'on', codexKeepReasoningInvalid: toggleInvalid('codexKeepReasoning'),
-    codexThreadReuse: toggle('codexThreadReuse') === 'off' ? 'off' : 'on', codexThreadReuseInvalid: o.codexThreadReuse !== undefined && !['on', 'off'].includes(toggle('codexThreadReuse')),
+    codexThreadReuse: isOff(o.codexThreadReuse) ? 'off' : 'on', codexThreadReuseInvalid: toggleInvalid('codexThreadReuse'),
     codexServiceTier: text('codexServiceTier') === 'priority' ? 'priority' : 'default', codexServiceTierInvalid: o.codexServiceTier !== undefined && (typeof o.codexServiceTier !== 'string' || !['default', 'priority', ''].includes(text('codexServiceTier'))), fallbackModel: text('fallbackModel'), fallbackPercent: quoted('fallbackPercent') ?? 100, workerModel: text('workerModel'), promptsDir: text('promptsDir') }
 }
 

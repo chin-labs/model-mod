@@ -2197,20 +2197,20 @@ for (const [setting, hasWebSearch, enabled, status] of [
   })
 }
 
-for (const setting of ['on', 'OFF', 'invalid', 'false'] as const) {
+for (const setting of ['on', 'OFF', 'invalid', 'false', 0, false, true, 1] as const) {
   test(`Codex thread reuse: ${setting}`, { options: { ...CODEX_OPTIONS, codexThreadReuse: setting } }, async ($, on) => {
     quotaLine(on)
     const w = world(on, null, CODEX_MODEL, { stdout: SSE_OK, code: 0 })
     on('session.id', async () => ({ value: 'test-session' }))
     on('session.end', async (_$, e) => ({ sessionId: e.sessionId }))
     await drain($.turn.step(STEP(CODEX_MODEL)))
-    expect(w.spawned[0]!.argv.includes('--reuse-session')).toBe(setting !== 'OFF')
+    expect(w.spawned[0]!.argv.includes('--reuse-session')).toBe(!['OFF', 'false', 0, false].includes(setting as never))
     const status = await $.command.run({ command: 'model-mod:status', args: '', origin: { kind: 'composer' } } as never)
-    expect(statusRow(status.text, 'threadReuse')).toMatch(new RegExp('^' + (setting === 'OFF' ? 'off' : 'on')))
-    expect(status.text.includes('not kept on reused threads')).toBe(setting !== 'OFF')
-    if (setting === 'invalid' || setting === 'false') expect(status.text).toContain('invalid setting; using on')
+    expect(statusRow(status.text, 'threadReuse')).toMatch(new RegExp('^' + (['OFF', 'false', 0, false].includes(setting as never) ? 'off' : 'on')))
+    expect(status.text.includes('not kept on reused threads')).toBe(!['OFF', 'false', 0, false].includes(setting as never))
+    if (setting === 'invalid') expect(status.text).toContain('invalid setting; using on')
     await $.session.end({ sessionId: 'test-session', reason: 'other' } as never)
-    expect(w.ran.some(argv => argv.includes('cleanup-threads'))).toBe(setting !== 'OFF')
+    expect(w.ran.some(argv => argv.includes('cleanup-threads'))).toBe(!['OFF', 'false', 0, false].includes(setting as never))
   })
 }
 
