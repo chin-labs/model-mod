@@ -2,6 +2,41 @@
 
 All notable changes to this project are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Every release that changes plugin code or manifest files raises the `version` in `.claude-plugin/plugin.json`; installed clients only pick up a release whose version differs from the one they have.
 
+## 0.2.6 - 2026-11-20
+
+### Changed
+- `codexThreadReuse` in the plugin options accepts the same values as `codexWebSearch` and `codexKeepReasoning`: `on`, `true`, `1`, `off`, `false`, `0` (text is case-insensitive) and the JSON values `true`, `false`, `1` and `0`. Until now `false`, `0`, `true` and `1` were reported as invalid and reuse stayed on; the warning `invalid codexThreadReuse; using on.` now appears only for a value that is none of these.
+- A model step that fails with a Codex rate limit always says that it did not finish and will not be retried automatically; before, this depended on the wording of the reason.
+- A failed side question (`/btw`) or compaction summary on a Codex login model reports a rate limit as "rate limited; check the account quota or try again later" and a timeout (HTTP 504 from the helper) as "app-server timed out; try again in a moment"; the timeout used to be reported as "app-server request failed".
+- A failed or cancelled `--write` delegation tells you to check `git status` and `git diff` before running it again, in the foreground reply and in `/model-mod:result` for a background job; it used to say "check them".
+- A background job (`/model-mod:review --background`, `/model-mod:rescue --background`) that is already finished when it is submitted now answers "Job finished." with its job line and a pointer to `/model-mod:jobs`; it used to report that the job had started.
+- The permission prompt for `web_fetch` offers "Yes, and do not ask again this session"; the answer now covers the host of the URL asked about, not the tool, so a fetch of another host asks again. Redirects are not asked about, as before. For `web_search` it still covers the tool, and for `generate_image` the tool and the route (Codex login or API upstream), as before. The prompt shows the URL as the URL parser reads it (tabs and newlines in the typed text are dropped), and a URL longer than 300 characters is cut with a count of the characters not shown.
+- Tool search ignores MCP tools whose names are not 1 to 64 characters of letters, digits, `_` and `-`.
+- Documentation: `codexKeepReasoning`, `codexWebSearch` and `codexThreadReuse` list the accepted values; a model newly offered by Codex must be added to `codexModels` before it can be selected (new Troubleshooting row); Troubleshooting says that a model step that hits a quota limit does not complete and that a failed or timed-out `--write` job may already have changed the working directory; the features guide says what the "do not ask again" answer remembers, that built-in tool schemas come from `toolsFile` when configured, that the doctor groups Tools and Prompts appear only with an API upstream, and which `--effort` values the review and rescue commands accept.
+- Internal: unused code removed (a model refresh result, a prompt directory field, two unreachable branches), comments and module descriptions corrected, and tests added or adjusted; no change in behavior is intended.
+
+### Fixed
+- A `maxTokens` of `0`, a negative number or a fraction in the plugin options turned the whole mod off. It now falls back to 32000, as non-numeric text already did. A configuration file (`MODEL_MOD_CONFIG`) still requires a positive whole number.
+- A `contextWindow` in the plugin options that is not a whole number from 32,000 to 4,000,000 is ignored. Before, it replaced the context window of a Codex login model with 128,000 tokens.
+- A `codexServiceTier` that is not text (for example a number) is now shown as invalid in `/model-mod:status` and `/model-mod:doctor`, as it already was in the status line when the plugin loads; the default tier is used as before.
+
+### Verified against a real Codex login
+Checked on 2026-11-16 on the plugin tree `420b5d4` with Codex CLI 0.169.0, by calling the bridge helper directly (not through a Claude Code session, and not on Windows):
+- The checks made 8 model requests, with no rate-limit error and no retry.
+- Image generation returned an inline PNG (`result` present, no `fileId`) and the helper reported success.
+- The five checks of `helper/live_contract.py` passed: sleep tool disabled, text and effort, history, tool use and write tool use.
+- A request with thread reuse started a fork (`thread/fork`), but no reasoning item was received before the fork, so whether reasoning survives a fork is still not verified.
+
+### Not verified
+- Codex CLI 0.169.0 through a full Claude Code session and on Windows.
+- Whether reasoning is kept after a fork.
+- Models other than the ones the checks above used.
+- Other Codex login paths with these changes beyond the checks listed above (the tests use a fake `codex`).
+- Ignore handling for the gates with Git versions other than the one used in testing, with ignore files that are not regular files, in linked worktrees and submodules, and on Windows.
+- The 8-option install form, the cleared retry status line and the unprefixed command results in Remote Control, desktop and VS Code sessions and on Windows.
+- Whether a session started while the automatic fallback is active switches back after the reset.
+- The text values `off`, `false` and `0` for `keepThinking`, `localTitle` and `localContext` in a configuration file are not covered by the tests. In a terminal session against a local test upstream, `keepThinking` and `localContext` behaved as off for these values and for the JSON number `0`, and no local title request was sent for `localTitle`; the title request to the official side was not observed.
+
 ## 0.2.5 - 2026-11-14
 
 ### Removed
