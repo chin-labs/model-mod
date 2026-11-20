@@ -193,6 +193,8 @@ test('cancelling an active gate terminates its helper and releases the lock when
   const exited = new Promise<{ code: null; signal: 'SIGTERM' }>(resolve => {
     release = () => resolve({ code: null, signal: 'SIGTERM' })
   })
+  let rejectResult: (error: Error) => void = () => {}
+  const result = new Promise<never>((_, reject) => { rejectResult = reject })
   const signals: string[] = []
   const $ = { plugin: { root: '/plugin' }, session: { model: async () => 'test/chat' },
     clock: { after: () => ({ cancel: () => {} }) }, ui: { status: (s: string) => { warning = s }, toast: async () => {} },
@@ -204,8 +206,8 @@ test('cancelling an active gate terminates its helper and releases the lock when
       },
       spawn: () => ({
         async next() { started(); await exited; return { done: true } },
-        async return(exit: { signal: string }) { signals.push(exit.signal); await exited; return { done: true } },
-        result: exited,
+        async return(exit: { signal: string }) { signals.push(exit.signal); rejectResult(new Error('stream closed')); await exited; return { done: true } },
+        result,
       }),
     } } as unknown as EngineInterface
   const c = { codex: new Map([['test/chat', { account: 'test', model: 'chat', directory: '/accounts/test' }]]), accountsDir: '/accounts' }
@@ -216,8 +218,9 @@ test('cancelling an active gate terminates its helper and releases the lock when
   await ready; controller.abort(); expect((await pending).block).toBeUndefined()
   expect(warning).toContain('not verified')
   const next = async () => ({ block: 'downstream' })
-  await runStopGate($, event, next, opts, config, new AbortController().signal)
+  expect((await runStopGate($, event, next, opts, config, new AbortController().signal)).block).toBe('downstream')
   expect(warning).toContain('previous gate still running')
+  await new Promise<void>(resolve => setTimeout(resolve, 0))
   release()
   await new Promise<void>(resolve => setTimeout(resolve, 0))
   warning = ''

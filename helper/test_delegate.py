@@ -180,33 +180,36 @@ class DelegateTest(unittest.TestCase):
 
     @unittest.skipUnless(os.name == 'posix', 'process groups require POSIX')
     def test_image_cancellation(self):
-        self.mode('stubborn')
-        request = dict(self.request, prompt='red dot', size='auto', quality='low')
-        script = str(Path(__file__).with_name('image.py').resolve())
-        proc = subprocess.Popen([sys.executable, script], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
-        proc.stdin.write(json.dumps(request))
-        proc.stdin.close()
-        for _ in range(150):
-            if any(r.get('method') == 'turn/start' for r in self.records()): break
-            time.sleep(0.02)
-        records = self.records()
-        parent = next(r['pid'] for r in records if 'pid' in r)
-        child = next(r['child'] for r in records if 'child' in r)
-        try:
-            proc.send_signal(signal.SIGHUP if hasattr(signal, 'SIGHUP') else signal.SIGTERM)
-            self.assertIn('cancelled', proc.stdout.read().lower())
-            self.assertEqual(proc.wait(timeout=10), 0)
-            for pid in (parent, child):
-                for _ in range(100):
-                    try: os.kill(pid, 0)
-                    except ProcessLookupError: break
+        for sig in (signal.SIGTERM, *([signal.SIGHUP] if hasattr(signal, 'SIGHUP') else [])):
+            with self.subTest(signal=sig.name):
+                if self.log.exists(): self.log.unlink()
+                self.mode('stubborn')
+                request = dict(self.request, prompt='red dot', size='auto', quality='low')
+                script = str(Path(__file__).with_name('image.py').resolve())
+                proc = subprocess.Popen([sys.executable, script], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+                proc.stdin.write(json.dumps(request))
+                proc.stdin.close()
+                for _ in range(150):
+                    if any(r.get('method') == 'turn/start' for r in self.records()): break
                     time.sleep(0.02)
-                else: self.fail('process survived cancellation')
-        finally:
-            proc.stdout.close()
-            if proc.poll() is None: proc.kill()
-            try: os.killpg(parent, signal.SIGKILL)
-            except ProcessLookupError: pass
+                records = self.records()
+                parent = next(r['pid'] for r in records if 'pid' in r)
+                child = next(r['child'] for r in records if 'child' in r)
+                try:
+                    proc.send_signal(sig)
+                    self.assertIn('cancelled', proc.stdout.read().lower())
+                    self.assertEqual(proc.wait(timeout=10), 0)
+                    for pid in (parent, child):
+                        for _ in range(100):
+                            try: os.kill(pid, 0)
+                            except ProcessLookupError: break
+                            time.sleep(0.02)
+                        else: self.fail('process survived cancellation')
+                finally:
+                    proc.stdout.close()
+                    if proc.poll() is None: proc.kill()
+                    try: os.killpg(parent, signal.SIGKILL)
+                    except ProcessLookupError: pass
 
     def test_api_image_pipeline(self):
         source = Path(__file__).resolve().parent.parent.joinpath('hooks', 'register.ts').read_text()
@@ -519,18 +522,20 @@ class DelegateTest(unittest.TestCase):
             delegate.IDLE_SECONDS = old
         pid = next(r['pid'] for r in self.records() if 'pid' in r)
         with self.assertRaises(ProcessLookupError): os.kill(pid, 0)
-        self.log.unlink()
-        proc = subprocess.Popen(['python3', HELPER], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
-        proc.stdin.write(json.dumps(self.request)); proc.stdin.close()
-        for _ in range(100):
-            if any(r.get('method') == 'turn/start' for r in self.records()): break
-            time.sleep(0.02)
-        pid = next(r['pid'] for r in self.records() if 'pid' in r)
-        proc.send_signal(signal.SIGHUP if hasattr(signal, 'SIGHUP') else signal.SIGTERM)
-        self.assertIn('Cancelled', proc.stdout.read())
-        self.assertEqual(proc.wait(timeout=5), 0)
-        proc.stdout.close()
-        with self.assertRaises(ProcessLookupError): os.kill(pid, 0)
+        for sig in (signal.SIGTERM, *([signal.SIGHUP] if hasattr(signal, 'SIGHUP') else [])):
+            with self.subTest(signal=sig.name):
+                self.log.unlink()
+                proc = subprocess.Popen(['python3', HELPER], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+                proc.stdin.write(json.dumps(self.request)); proc.stdin.close()
+                for _ in range(100):
+                    if any(r.get('method') == 'turn/start' for r in self.records()): break
+                    time.sleep(0.02)
+                pid = next(r['pid'] for r in self.records() if 'pid' in r)
+                proc.send_signal(sig)
+                self.assertIn('Cancelled', proc.stdout.read())
+                self.assertEqual(proc.wait(timeout=5), 0)
+                proc.stdout.close()
+                with self.assertRaises(ProcessLookupError): os.kill(pid, 0)
 
     def test_git_isolation(self):
         flag = self.root / 'flag'

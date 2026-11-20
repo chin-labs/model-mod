@@ -188,6 +188,7 @@ export async function automaticGate($: EngineInterface, c: DelegateConfig | unde
       directory: selected.directory, accountsDir: c.accountsDir, model: selected.model, codexBin: c.codexBin ?? 'codex' }
     if (signal.aborted) return unknown
     const child = $.process.spawn({ argv, cwd, input: JSON.stringify(request) })
+    void child.result.catch(() => {})
     let stopped: Promise<unknown> | undefined, stdout = ''
     const stop = () => { stopped ??= child.return({ code: null, signal: 'SIGTERM' }).catch(() => {}) }
     const timer = $.clock.after(105_000, stop)
