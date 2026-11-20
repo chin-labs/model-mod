@@ -304,9 +304,11 @@ test('generate_image: the prompt names the path and pipeline refusals reach the 
 // What generate_image answers, exactly: a refusal is `{ deny }`, a success `{ result }`. The tests below keep each text and the
 // order of the checks (arguments, then the permission verdict, then anything that runs) from changing unnoticed.
 const IMAGE_CALL = 'mcp__model-mod__generate_image'
-for (const [name, config] of [['no configuration', null], ['no image model', baseConfig]] as const) {
+for (const [name, config] of [['no configuration', null], ['no image model', baseConfig], ['image model disabled in file', { ...baseConfig, imageModel: 'none' }]] as const) {
   test(`generate_image: ${name} is refused and nothing is asked or run`, async ($, on) => {
     const w = world(on, config, LOCAL, { stdout: '', code: 0 })
+    await $.session.start({ cwd: '/work' } as never)
+    expect(w.toolDescriptions.generate_image).toBeUndefined()
     expect(await $.tool.call({ tool: IMAGE_CALL, prompt: 'red dot' } as never)).toEqual({ deny: 'Image generation is not configured.' })
     expect(w.questions).toEqual([])
     expect(w.spawned).toEqual([])
@@ -2463,7 +2465,7 @@ test('Codex login: status and setup preserve the separate upstream', { options: 
   w.chooseUpstream = true
   w.answers = ['Codex login (recommended)', 'main', 'All (recommended)']
   const setup = await $.command.run(SETUP)
-  expect(setup.text).toContain('1 models configured; dir=/fake-home/.config/model-mod/accounts/main')
+  expect(setup.text).toContain('1 models configured; dir=/fake-home/.config/model-mod/accounts/main. Use /model-mod:model to choose one. Parent thread reuse')
   expect(w.questions[0]!.labels).toEqual(['Codex login (recommended)', 'Compatible API server', 'Manage configured upstreams'])
   expect(w.saved).toEqual([{ key: 'model-mod.codexModels', value: 'gpt-6.1-terra' }, { key: 'model-mod.codexAccounts', value: 'main' }])
   w.saved = []

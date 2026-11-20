@@ -515,7 +515,7 @@ async function loadNow($: EngineInterface) {
       toolsFile: typeof candidate.toolsFile === 'string' ? candidate.toolsFile : undefined,
       effortMode: candidate.effortMode === 'suffix' ? 'suffix' : 'none',
       models: [],
-      imageModel: typeof candidate.imageModel === 'string' && /^[A-Za-z0-9._-]{1,64}$/.test(candidate.imageModel) &&
+      imageModel: typeof candidate.imageModel === 'string' && candidate.imageModel !== 'none' && /^[A-Za-z0-9._-]{1,64}$/.test(candidate.imageModel) &&
         !/claude|anthropic/i.test(candidate.imageModel) ? candidate.imageModel : undefined,
       toolSearch: ['auto', 'on', 'off'].includes(candidate.toolSearch) ? candidate.toolSearch : 'auto',
       toolSearchPercent: Number.isInteger(candidate.toolSearchPercent) && candidate.toolSearchPercent >= 1 &&
@@ -1468,7 +1468,7 @@ async function setupCodex($: EngineInterface, c?: Config): Promise<string> {
           failed: 'model-mod: Codex login: account configuration refused; previous settings restored.',
           rollbackFailed: 'model-mod: Codex login: account configuration failed and rollback failed; restore the previous settings in /plugin.' }),
       ],
-      ok: `model-mod: Codex login (${account}): ${selected.length} models configured; dir=${accountHome}. Parent thread reuse defaults to on; turn it off for ephemeral threads only with codexThreadReuse ${IN_SETTINGS_FILE}.`,
+      ok: `model-mod: Codex login (${account}): ${selected.length} models configured; dir=${accountHome}. Use /model-mod:model to choose one. Parent thread reuse defaults to on; turn it off for ephemeral threads only with codexThreadReuse ${IN_SETTINGS_FILE}.`,
     }, setupFlow?.detached === true)
     return done.text
   } catch (err) {
