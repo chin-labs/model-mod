@@ -2125,7 +2125,8 @@ export const register: Register = (on, options) => {
         if (PRIVATE_HOST.test(host) || (literal && privateAddress(host.replace(/^\[|\]$/g, '')))) return answer(PRIVATE_FETCH, true)
         if (redirects === 0) {
           // "Do not ask again" remembers the host, not the tool: a page must not be able to send the next fetch to another host unasked.
-          const shown = url.length > 300 ? `${url.slice(0, 300)}... (${url.length - 300} more characters)` : url
+          // Shown from the parsed URL: the parser drops tabs and newlines, so the raw text could push the real host out of view.
+          const shown = parsed.href.length > 300 ? `${parsed.href.slice(0, 300)}... (${parsed.href.length - 300} more characters)` : parsed.href
           const refused = await permitted($, e, WEB_FETCH_TOOL, `Fetch ${shown}?`, `${WEB_FETCH_TOOL}:${host}`)
           if (refused) return answer(refused, true)
         }

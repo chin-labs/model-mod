@@ -1200,7 +1200,9 @@ for (const system of ['Linux', 'Darwin']) {
     verdict = { decision: 'ask' }
     const host = (name: string) => `${name}-${system.toLowerCase()}.example`
     const long = `https://${host('b')}/${'a'.repeat(400)}`
-    w.answers = ['Yes, and do not ask again this session', 'Yes', 'Yes']
+    // The parser drops tabs, so 300 of them must not push the fetched host out of the text the user approves.
+    const padded = `https://${'\t'.repeat(300)}${host('c')}/path`
+    w.answers = ['Yes, and do not ask again this session', 'Yes', 'Yes', 'Yes']
     expect(await fetchOutcome($, `https://${host('a')}/one`)).toContain('Public page')
     expect(await fetchOutcome($, `https://${host('a')}/two?q=1`)).toContain('Public page')
     expect(w.questions.map(q => q.question)).toEqual([`Fetch https://${host('a')}/one?`])
@@ -1208,6 +1210,12 @@ for (const system of ['Linux', 'Darwin']) {
     expect(await fetchOutcome($, long)).toContain('Public page')
     expect(w.questions.map(q => q.question).slice(1)).toEqual([
       `Fetch https://${host('b')}/?`, `Fetch ${long.slice(0, 300)}... (${long.length - 300} more characters)?`])
+    const curlCount = w.ran.filter(argv => argv[0] === 'curl').length
+    expect(await fetchOutcome($, padded)).toContain('Public page')
+    expect(w.questions.map(q => q.question).slice(3)).toEqual([`Fetch https://${host('c')}/path?`])
+    const lastCurl = w.ran.filter(argv => argv[0] === 'curl')
+    expect(lastCurl.length).toBe(curlCount + 1)
+    expect(lastCurl[lastCurl.length - 1]!.at(-1)).toBe(`https://${host('c')}/path`)
   })
 
   test(`web_fetch (${system}): a sixth redirect is refused without fetching its destination`, async ($, on) => {
