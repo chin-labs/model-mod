@@ -810,7 +810,7 @@ test('options: the key never enters an argument vector, models come from the ups
 })
 
 // maxTokens, contextWindow and fallbackPercent are written by hand in the settings file: a quoted number is read as that number.
-for (const [maxTokens, expected] of [['16000', 16000], ['lots', 32000]] as const) {
+for (const [maxTokens, expected] of [['16000', 16000], ['lots', 32000], [0, 32000], [-5, 32000], [1.5, 32000]] as const) {
   test(`options: maxTokens ${JSON.stringify(maxTokens)} is sent as ${expected}`, { options: { ...OPTIONS, maxTokens } }, async ($, on) => {
     const w = world(on, null, LOCAL, { stdout: SSE_OK, code: 0 }, { exitCode: 22, stdout: '' })
     w.store.models = [LOCAL]
@@ -2220,6 +2220,7 @@ for (const setting of ['on', 'OFF', 'invalid', 'false', 0, false, true, 1] as co
     expect(statusRow(status.text, 'threadReuse')).toMatch(new RegExp('^' + (['OFF', 'false', 0, false].includes(setting as never) ? 'off' : 'on')))
     expect(status.text.includes('not kept on reused threads')).toBe(!['OFF', 'false', 0, false].includes(setting as never))
     if (setting === 'invalid') expect(status.text).toContain('invalid setting; using on')
+    else expect(status.text).not.toContain('invalid setting')
     await $.session.end({ sessionId: 'test-session', reason: 'other' } as never)
     expect(w.ran.some(argv => argv.includes('cleanup-threads'))).toBe(!['OFF', 'false', 0, false].includes(setting as never))
   })
