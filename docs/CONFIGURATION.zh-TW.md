@@ -46,7 +46,7 @@ API 伺服器路徑會把工作階段送往接受 Messages 風格串流請求（
 | 選項 | 格式與預設值 |
 |---|---|
 | `codexAccounts` | 以逗號分隔帳號名稱，預設空白。每個名稱 1–32 字元，首字元為 `[a-z0-9]`，其餘使用 `[a-z0-9-]`。由 `/model-mod:setup` 寫入。 |
-| `codexModels` | 以逗號分隔模型名稱，預設空白。每個名稱 1–64 字元，首字元為 `[A-Za-z0-9]`，其餘使用 `[A-Za-z0-9._-]`；含 `claude` 或 `anthropic` 的名稱不分大小寫均會拒絕。由 `/model-mod:setup` 寫入。 |
+| `codexModels` | 以逗號分隔模型名稱，預設空白。每個名稱 1–64 字元，首字元為 `[A-Za-z0-9]`，其餘使用 `[A-Za-z0-9._-]`；含 `claude` 或 `anthropic` 的名稱不分大小寫均會拒絕。由 `/model-mod:setup` 寫入。Codex 新提供的模型必須先將 ID 加到此清單才能選用；可直接加入，或重新執行 `/model-mod:setup` 並選取完整的模型清單（setup 會取代整份清單）。 |
 | `codexBin` | 執行檔名稱或絕對路徑；預設 `codex`。 |
 
 Codex effort 依模型宣告的等級夾值：`max` 取支援的最高等級；不支援的明設等級取不高於它的最高支援等級，若沒有較低等級則取最低。絕不送出 `minimal`。未明設時，需要調整會採用模型支援的預設值。
@@ -85,9 +85,9 @@ Codex effort 依模型宣告的等級夾值：`max` 取支援的最高等級；�
 | `codexAccountsDir` | 絕對目錄；每個帳號使用獨立子目錄。 | `~/.config/model-mod/accounts`，Windows 為 `%APPDATA%\model-mod\accounts`（未驗證） |
 | `pythonBin` | 執行檔名稱或絕對路徑。Windows 請設為 `python`（未驗證）。 | `python3` |
 | `codexThreadReuse` | `on`、`true`、`1` 或 `off`、`false`、`0`（文字不分大小寫）；無效值視為 `on` 並顯示於 status。關閉時使用 ephemeral thread，不存取父 thread 登錄；見[隱私與清理](LIMITATIONS.zh-TW.md#父-thread-隱私與清理)。 | `on` |
-| `codexKeepReasoning` | `on` 或 `off`；無效值視為 `on` 並顯示於 status。使用實驗性 API；真實 Codex 重放尚未驗證。thread 重用的 fork 請求不保留 reasoning；若要保留，請將 `codexThreadReuse` 設為 `off`。 | `on` |
+| `codexKeepReasoning` | `on`、`true`、`1` 或 `off`、`false`、`0`（文字不分大小寫）；無效值視為 `on` 並顯示於 status。使用實驗性 API；真實 Codex 重放尚未驗證。thread 重用的 fork 請求不保留 reasoning；若要保留，請將 `codexThreadReuse` 設為 `off`。 | `on` |
 | `codexServiceTier` | `default` 或 `priority`；實際服務層級與計費尚未驗證。 | `default` |
-| `codexWebSearch` | `on` 或 `off`；無效值視為 `on` 並顯示於 status。工作階段工具清單沒有 WebSearch 時會停用搜尋。 | `on` |
+| `codexWebSearch` | `on`、`true`、`1` 或 `off`、`false`、`0`（文字不分大小寫）；無效值視為 `on` 並顯示於 status。工作階段工具清單沒有 WebSearch 時會停用搜尋。 | `on` |
 | `codexStopGate` | `off` 或 `on`，不分大小寫；無效值視為 `off` 並顯示於 status。開啟後可能在主工作階段回合結束時啟動唯讀 Codex 審查、把 diff 與未追蹤且未被忽略的檔案全文送往 OpenAI 並阻擋結束（Git 忽略的未追蹤檔案不會送出，例外見[委派與資料流](FEATURES.zh-TW.md#委派與資料流)）。 | `off` |
 | `codexStopGateBlocks` | 每個工作階段最多阻擋 `1` 次或 `2` 次；其他無效值視為 `1` 並顯示於 status。達上限後未通過的結果會放行並提示人工審查。 | `1` |
 | `maxTokens` | 以 `max_tokens` 送出。 | `32000` |

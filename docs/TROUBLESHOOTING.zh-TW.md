@@ -33,6 +33,7 @@
 | `model is not in the allowlist` | 該 ID 不在 `models` 內 | 選擇允許的 ID，或更新清單。 |
 | 背景工作顯示 `No result is available.` | 工作尚未完成，或已失敗、被取消；只有完成的工作才有結果 | 用 `/model-mod:jobs` 檢查其狀態。失敗或逾時的 `--write` 執行可能已變更工作目錄；請檢查 `git status` 與 `git diff`。 |
 | `This model step did not finish` | 該步驟失敗，model-mod 不會自動重試；任何先前的自動重試都已發生。 | 檢查最後一則訊息，必要時再次送出。 |
+| Claude Code 回報所選模型有問題（通常是 Codex 新推出的模型） | 模型 ID 不在 `codexModels` 內 | 將 ID 加入清單，或重新執行 `/model-mod:setup` 並選取完整的模型清單（setup 會取代整份清單）。 |
 | 選了模型後出現錯誤 | 模型不可用、上游停機或金鑰被拒絕 | 修正上游、模型或金鑰，再重新啟動 Claude Code。不會退回訂閱。 |
 | effort 後綴被拒絕 | 上游不認得 `model(level)` | 把進階選項 `effortMode` 設為 `none`。 |
 | 圖片工具不存在或被拒絕 | 未選本地模型、API 圖片模型未設定、權限遭拒，或 Codex 登入、額度或圖片功能不可用 | 選擇已設定的模型並允許請求。API 模型需設定 `imageModel`（[進階選項](CONFIGURATION.zh-TW.md#進階選項)）；Codex 使用內建圖片模型。Codex 失敗時請檢查登入、額度與 CLI 版本。圖片超過 20 MiB 時請求較小的圖片；輸出路徑已存在或位於工作目錄外時請換路徑。 |

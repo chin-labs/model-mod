@@ -46,7 +46,7 @@ The mod activates with either a valid `apiKey` or a valid combination of `codexA
 | Option | Format and default |
 |---|---|
 | `codexAccounts` | Comma-separated account names; empty by default. Each is 1–32 characters, starts with `[a-z0-9]`, and otherwise uses `[a-z0-9-]`. `/model-mod:setup` writes this value. |
-| `codexModels` | Comma-separated model names; empty by default. Each is 1–64 characters, starts with `[A-Za-z0-9]`, and otherwise uses `[A-Za-z0-9._-]`; names containing `claude` or `anthropic` are rejected, case-insensitively. `/model-mod:setup` writes this value. |
+| `codexModels` | Comma-separated model names; empty by default. Each is 1–64 characters, starts with `[A-Za-z0-9]`, and otherwise uses `[A-Za-z0-9._-]`; names containing `claude` or `anthropic` are rejected, case-insensitively. `/model-mod:setup` writes this value. A model newly offered by Codex cannot be selected until its ID is in this list; add the ID here, or run `/model-mod:setup` again and reselect the full set (setup replaces the entire list). |
 | `codexBin` | Executable name or absolute path; default `codex`. |
 
 Codex effort is clamped to levels declared by the model: `max` selects the highest supported level; an unsupported explicit level selects the highest supported level at or below it, or the lowest if none is lower. `minimal` is never sent. If no explicit level is given, the supported model default is used when needed.
@@ -85,9 +85,9 @@ Numbers are written as JSON numbers. For `maxTokens`, `contextWindow` and `fallb
 | `codexAccountsDir` | Absolute directory; each account has a separate subdirectory. | `~/.config/model-mod/accounts`, or `%APPDATA%\model-mod\accounts` on Windows (unverified) |
 | `pythonBin` | Executable name or absolute path. On Windows use `python` (unverified). | `python3` |
 | `codexThreadReuse` | `on`, `true`, `1` or `off`, `false`, `0` (case-insensitive for text); invalid values use `on` and appear in status. Off uses ephemeral threads and does not access the parent registry; see [privacy and cleanup](LIMITATIONS.md#parent-thread-privacy-and-cleanup). | `on` |
-| `codexKeepReasoning` | `on` or `off`; invalid values use `on` and appear in status. Uses experimental APIs; real Codex replay is unverified. Reasoning is not retained on forked requests with thread reuse; set `codexThreadReuse` to `off` to allow retention. | `on` |
+| `codexKeepReasoning` | `on`, `true`, `1` or `off`, `false`, `0` (case-insensitive for text); invalid values use `on` and appear in status. Uses experimental APIs; real Codex replay is unverified. Reasoning is not retained on forked requests with thread reuse; set `codexThreadReuse` to `off` to allow retention. | `on` |
 | `codexServiceTier` | `default` or `priority`; actual service tier and billing are unverified. | `default` |
-| `codexWebSearch` | `on` or `off`; invalid values use `on` and appear in status. Search is disabled when WebSearch is absent from the session tool list. | `on` |
+| `codexWebSearch` | `on`, `true`, `1` or `off`, `false`, `0` (case-insensitive for text); invalid values use `on` and appear in status. Search is disabled when WebSearch is absent from the session tool list. | `on` |
 | `codexStopGate` | `off` or `on`, case-insensitive; invalid values use `off` and appear in status. On may start a read-only Codex review after a main-session turn, send the diff and full contents of untracked, non-ignored files to OpenAI and block ending (untracked files that Git ignores are not sent, with the exceptions described in [Delegation and data flow](FEATURES.md#delegation-and-data-flow)). | `off` |
 | `codexStopGateBlocks` | Maximum blocks per session: `1` or `2`; other invalid values use `1` and appear in status. Once the limit is reached, an unpassed result allows ending with a human-review warning. | `1` |
 | `maxTokens` | Sent as `max_tokens`. | `32000` |
