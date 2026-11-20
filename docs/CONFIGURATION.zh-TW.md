@@ -90,7 +90,7 @@ Codex effort 依模型宣告的等級夾值：`max` 取支援的最高等級；�
 | `codexWebSearch` | `on`、`true`、`1` 或 `off`、`false`、`0`（文字不分大小寫）；無效值視為 `on` 並顯示於 status。工作階段工具清單沒有 WebSearch 時會停用搜尋。 | `on` |
 | `codexStopGate` | `off` 或 `on`，不分大小寫；無效值視為 `off` 並顯示於 status。開啟後可能在主工作階段回合結束時啟動唯讀 Codex 審查、把 diff 與未追蹤且未被忽略的檔案全文送往 OpenAI 並阻擋結束（Git 忽略的未追蹤檔案不會送出，例外見[委派與資料流](FEATURES.zh-TW.md#委派與資料流)）。 | `off` |
 | `codexStopGateBlocks` | 每個工作階段最多阻擋 `1` 次或 `2` 次；其他無效值視為 `1` 並顯示於 status。達上限後未通過的結果會放行並提示人工審查。 | `1` |
-| `maxTokens` | 以 `max_tokens` 送出。 | `32000` |
+| `maxTokens` | 以 `max_tokens` 送出。若不是正整數（`0`、負數或小數）會被忽略並使用預設值。 | `32000` |
 | `effortMode` | 僅適用 API 路徑：`suffix` 依目前 effort 等級送出 `model(level)`；`none` 送純模型 ID，適用於拒絕後綴的上游。 | `suffix` |
 | `sideModel` | 選了你的模型時，Claude Code 自己的側請求所用的官方模型。`none` 不設定；環境中已有的值優先。 | `claude-haiku-5-5` |
 | `keepThinking` | 僅在 API 路徑的工具迴圈內交回 Codex 形式的加密推理簽章。上游不接受時設為 `false`（或 `off`、`0`）。 | `true` |

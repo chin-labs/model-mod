@@ -22,7 +22,7 @@ Codex reasoning 保留為實驗性功能：簽章依前綴過濾，快取以第�
 
 ## 父 thread 隱私與清理
 
-`codexThreadReuse` 開啟時，符合條件的請求從短期父 thread 建立 ephemeral fork，並重放完整歷史。一台 Mac 上的小樣本測試觀察到快取重用改善，但不保證命中。`codexThreadReuse` 開啟時，帳號目錄中的父 rollout 含固定合成回合與工具定義（可能含 MCP 工具名稱），不含對話與系統提示；另含依網頁搜尋設定選定的固定 developer instructions。2026 年 11 月 1 日在一台 Mac 檢查帳號目錄內的 rollout、SQLite 與 log 檔，未發現對話、歷史或覆寫的 instructions；這不保證本機一定不留痕跡。內容仍會送到 OpenAI，與關閉此功能時相同。帳號目錄為私密目錄（0700）。每個工作階段的每個父 thread 都多一個短合成回合；切換設定可能建立另一個。登錄只含雜湊、thread ID、時間與數字形式的父 thread 用量，不含對話內容。不同工具清單可各有父 thread；每個工作階段與帳號最多保留四個 active 父 thread，超過時先刪除最久未使用者。閒置六小時的 TTL 由後續請求順手檢查；換父及工作階段結束時也會嘗試 `thread/delete`。這不是精確定時，也不保證刪除：失敗會在該帳號後續請求重試，已移除的帳號無法自動清理。不支援的平台或重用失敗時，bridge 會改用新的 ephemeral thread。將 `codexThreadReuse` 設為 `off` 可只使用 ephemeral thread 並避免存取登錄。
+`codexThreadReuse` 開啟時，符合條件的請求從短期父 thread 建立 ephemeral fork，並重放完整歷史。一台 Mac 上的小樣本測試觀察到快取重用改善，但不保證命中。`codexThreadReuse` 開啟時，帳號目錄中的父 rollout 含固定合成回合，以及工具名稱、描述與輸入 schema（這些可能含專案或使用者特有的文字，例如 MCP 工具描述），不含對話與系統提示；另含依網頁搜尋設定選定的固定 developer instructions。2026 年 11 月 1 日在一台 Mac 檢查帳號目錄內的 rollout、SQLite 與 log 檔，未發現對話、歷史或覆寫的 instructions；這不保證本機一定不留痕跡。內容仍會送到 OpenAI，與關閉此功能時相同。帳號目錄為私密目錄（0700）。每個工作階段的每個父 thread 都多一個短合成回合；切換設定可能建立另一個。登錄只含雜湊、thread ID、時間與數字形式的父 thread 用量，不含對話內容。不同工具清單可各有父 thread；每個工作階段與帳號最多保留四個 active 父 thread，超過時先刪除最久未使用者。閒置六小時的 TTL 由後續請求順手檢查；換父及工作階段結束時也會嘗試 `thread/delete`。這不是精確定時，也不保證刪除：失敗會在該帳號後續請求重試，已移除的帳號無法自動清理。不支援的平台或重用失敗時，bridge 會改用新的 ephemeral thread。將 `codexThreadReuse` 設為 `off` 可只使用 ephemeral thread 並避免存取登錄。
 
 ## 已測試版本
 
@@ -36,7 +36,7 @@ Marketplace 安裝已用本機 clone 與使用標準 HTTP 協定的 Git 伺服�
 
 ## Codex 登入的限制
 
-- 最近實測的 Codex CLI 版本為 **0.166.0**；最低版本為 **0.165.0**，更舊的版本會被拒絕。較新版本會照常執行，但未逐版驗證。更新已測版本紀錄前，應對新版本執行手動 live 契約測試。
+- 已檢查的最新 Codex CLI 版本為 **0.169.0**，且僅限圖片生成與手動 live 契約測試的五項檢查，這些是直接呼叫 bridge helper 執行的（未經 Claude Code 工作階段）。審查 gate、單次工具回合與 Stop gate 以真實登入在 **0.167.2** 檢查過，手動端到端檢查（Claude Code 2.1.316）則使用 **0.166.0**。最低版本為 **0.165.0**，更舊的版本會被拒絕。較新版本會照常執行，但未逐版驗證。更新已測版本紀錄前，應對新版本執行手動 live 契約測試；0.169.0 已執行過。
 - 這是**軟隔離，不是嚴格的工具白名單**。helper 使用專用家目錄、唯讀 sandbox、不允許核准並關閉部分功能，但兩個 MCP 資源清單工具仍可能執行。執行期項目檢查在中斷回合之前、或與等待項目同批到達時遇到不允許或未知的項目，會終止回合並顯示 `Codex used a built-in tool that model-mod does not support (<type>); try again, and report it if it keeps happening` 訊息。若停用功能後仍出現 `sleep` 或 `collabAgentToolCall` 項目，helper 會中斷並正常結束回合，其後的非工具項目會被丟棄，已識別的動態工具呼叫則會保留。開始 thread 前，`config/read` 會檢查有效設定；新版若改變設定或協定，helper 會採保守拒絕。協定不相容時會顯示 `incompatible app-server protocol; update or check Codex`。重試前請檢查設定與 Codex 相容性。
 - Codex 內建 shell、網路與瀏覽器工具、sleep、子代理、apps、plugins 和 goals 均已停用。patch 與檔案操作會被唯讀 sandbox 與項目白名單阻擋；項目處理方式如上述檢查所示。動態工具來自客戶端，另有上述 MCP 資源清單例外。模型會收到簡短的 developer instructions，要求只使用提供的函式工具、不使用內建 sleep、等待、協作及子代理工具，等待背景工作時結束回合；唯讀隔離的細節不會告知模型。
 - Codex 保留 `mcp__` 開頭的名稱並限制工具名稱。bridge 以 `bridge_` 加雜湊作為受影響名稱的別名，回傳時還原原名。

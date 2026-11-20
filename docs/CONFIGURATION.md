@@ -90,7 +90,7 @@ Numbers are written as JSON numbers. For `maxTokens`, `contextWindow` and `fallb
 | `codexWebSearch` | `on`, `true`, `1` or `off`, `false`, `0` (case-insensitive for text); invalid values use `on` and appear in status. Search is disabled when WebSearch is absent from the session tool list. | `on` |
 | `codexStopGate` | `off` or `on`, case-insensitive; invalid values use `off` and appear in status. On may start a read-only Codex review after a main-session turn, send the diff and full contents of untracked, non-ignored files to OpenAI and block ending (untracked files that Git ignores are not sent, with the exceptions described in [Delegation and data flow](FEATURES.md#delegation-and-data-flow)). | `off` |
 | `codexStopGateBlocks` | Maximum blocks per session: `1` or `2`; other invalid values use `1` and appear in status. Once the limit is reached, an unpassed result allows ending with a human-review warning. | `1` |
-| `maxTokens` | Sent as `max_tokens`. | `32000` |
+| `maxTokens` | Sent as `max_tokens`. A value that is not a positive whole number (`0`, a negative number or a fraction) is ignored and the default is used. | `32000` |
 | `effortMode` | API path only: `suffix` sends `model(level)` for the effort level in use; `none` sends the plain model ID, for an upstream that rejects the suffix. | `suffix` |
 | `sideModel` | Official model for Claude Code's own side requests while one of your models is selected. `none` leaves it alone; a value already in your environment wins. | `claude-haiku-5-5` |
 | `keepThinking` | On the API path, hands Codex-style encrypted reasoning back within a tool loop. Set `false` (or `off`, `0`) for an upstream that does not accept it. | `true` |
