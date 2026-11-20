@@ -1171,7 +1171,8 @@ for (const system of ['Linux', 'Darwin']) {
           'HTTP/2 200\r\nContent-Type: text/html\r\nX-Test: header only\r\n\r\n<p>Public page</p>') }
     })
     w.system = system
-    on('tool.check', async () => ({ decision: 'allow' as const }))
+    let verdict: { decision: 'allow' | 'ask' } = { decision: 'allow' }
+    on('tool.check', { tool: 'mcp__model-mod__web_fetch' }, async () => verdict)
     const outcome = await fetchOutcome($, urls[0]!)
     expect(outcome).toContain('Public page')
     expect(outcome).not.toMatch(/header only|redirect body|Continue/)
@@ -1194,6 +1195,19 @@ for (const system of ['Linux', 'Darwin']) {
       expect(argv[argv.indexOf('--noproxy') + 1]).toBe('*')
       expect(argv[argv.length - 2]).toBe('--')
     }
+
+    // "Do not ask again" remembers the host: another path on it is fetched unasked, another host and a long URL are asked about.
+    verdict = { decision: 'ask' }
+    const host = (name: string) => `${name}-${system.toLowerCase()}.example`
+    const long = `https://${host('b')}/${'a'.repeat(400)}`
+    w.answers = ['Yes, and do not ask again this session', 'Yes', 'Yes']
+    expect(await fetchOutcome($, `https://${host('a')}/one`)).toContain('Public page')
+    expect(await fetchOutcome($, `https://${host('a')}/two?q=1`)).toContain('Public page')
+    expect(w.questions.map(q => q.question)).toEqual([`Fetch https://${host('a')}/one?`])
+    expect(await fetchOutcome($, `https://${host('b')}/`)).toContain('Public page')
+    expect(await fetchOutcome($, long)).toContain('Public page')
+    expect(w.questions.map(q => q.question).slice(1)).toEqual([
+      `Fetch https://${host('b')}/?`, `Fetch ${long.slice(0, 300)}... (${long.length - 300} more characters)?`])
   })
 
   test(`web_fetch (${system}): a sixth redirect is refused without fetching its destination`, async ($, on) => {
