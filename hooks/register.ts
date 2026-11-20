@@ -337,7 +337,7 @@ let pluginOptions: PluginOptions = {}
 // The window of a bridge model: the configured one, else the known one, else the default of the options.
 export function windowOf(c: Config, model: string): number | undefined {
   const codex = c.codex?.get(model)
-  return c.contextWindows?.[model] ?? (codex ? (c.contextWindowExplicit ? c.defaultWindow : codex.window) ?? 128_000 : c.defaultWindow === undefined ? undefined : KNOWN_WINDOWS[model] ?? c.defaultWindow)
+  return c.contextWindows?.[model] ?? (codex ? (c.contextWindowExplicit ? c.defaultWindow : codex.window) ?? 128_000 : c.defaultWindow === undefined ? undefined : (c.contextWindowExplicit ? c.defaultWindow : KNOWN_WINDOWS[model] ?? c.defaultWindow))
 }
 function addModels(c: Pick<Config, 'models'>, ids: readonly unknown[], validateId = true): void {
   for (const id of ids) {
@@ -1781,10 +1781,19 @@ function codexMatches(c: Config, id: string): string[] {
   return [...(c.codex?.keys() ?? [])].filter(model => model.endsWith('/' + id) && c.models.includes(model))
 }
 
+function addDoctorSettingsChecks(checks: Check[], c?: Config): void {
+  const invalid = invalidCodexFields(pluginOptions)
+  if (invalid.length) checks.push({ mark: '!', what: 'Codex settings', cause: `Invalid ${invalid.join(', ')}.`, next: 'Correct these fields in plugin settings.' })
+  for (const [name, bad] of [['codexWebSearch', c?.codexWebSearchInvalid], ['codexKeepReasoning', c?.codexKeepReasoningInvalid], ['codexThreadReuse', c?.codexThreadReuseInvalid], ['codexServiceTier', c?.codexServiceTierInvalid], ['Codex Stop gate', stopGateSettings(pluginOptions).invalid]] as const) {
+    if (bad) checks.push({ mark: '!', what: name, cause: 'This setting is invalid; the default is in use.', next: 'Correct the setting in plugin settings.' })
+  }
+}
+
 async function doctorReport($: EngineInterface, c: Config | undefined, columns?: number): Promise<string> {
   const checks: Check[] = []
   if (!c) {
     checks.push(optionsCandidate(pluginOptions) === null ? { mark: '!', what: 'Plugin configuration', cause: 'The apiKey option holds characters that cannot be used.', next: 'Re-enter the key in plugin settings.' } : { mark: '!', what: 'Plugin configuration', cause: 'The picker is inactive.', next: await configHint($) })
+    addDoctorSettingsChecks(checks)
     return renderDoctor(checks, columns)
   }
   checks.push({ mark: 'OK', what: 'Plugin active and configuration loaded' })
@@ -1798,11 +1807,7 @@ async function doctorReport($: EngineInterface, c: Config | undefined, columns?:
     if (!await $.fs.exists(c.headerFile)) checks.push({ mark: '!', what: 'API header file', cause: 'The configured header file was not found.', next: 'Check the headerFile path.' })
     checks.push({ mark: '--', what: 'header-file upstream: not checked by doctor', next: 'use /model-mod:status and a chat request' })
   }
-  const invalid = invalidCodexFields(pluginOptions)
-  if (invalid.length) checks.push({ mark: '!', what: 'Codex settings', cause: `Invalid ${invalid.join(', ')}.`, next: 'Correct these fields in plugin settings.' })
-  for (const [name, bad] of [['codexWebSearch', c.codexWebSearchInvalid], ['codexKeepReasoning', c.codexKeepReasoningInvalid], ['codexThreadReuse', c.codexThreadReuseInvalid], ['codexServiceTier', c.codexServiceTierInvalid], ['Codex Stop gate', stopGateSettings(pluginOptions).invalid]] as const) {
-    if (bad) checks.push({ mark: '!', what: name, cause: 'This setting is invalid; the default is in use.', next: 'Correct the setting in plugin settings.' })
-  }
+  addDoctorSettingsChecks(checks, c)
   for (const name of ['workerModel', 'fallbackModel'] as const) {
     if (typeof pluginOptions[name] === 'string' && String(pluginOptions[name]).trim() && !c[name]) {
       const id = String(pluginOptions[name]).trim()
@@ -1857,12 +1862,19 @@ async function admin($: EngineInterface, e: { origin: { kind: string }; presenta
       if (choice === 'Manage configured upstreams' && c) return { text: await manageUpstreams($, c) }
       if (choice === 'Codex login (recommended)') return { text: await setupCodex($, c) }
       if (choice !== 'Compatible API server') return { text: 'model-mod: setup cancelled, nothing changed' }
-      if (!String(pluginOptions.baseUrl ?? '').trim() && pluginOptions.apiKey) {
+      const storedUrl = typeof pluginOptions.baseUrl === 'string' ? pluginOptions.baseUrl.trim() : ''
+      let refusedUrl = false
+      if (!c && storedUrl) {
+        try { endpoint(storedUrl) } catch { refusedUrl = true }
+      }
+      if ((!storedUrl || refusedUrl) && pluginOptions.apiKey) {
         const candidate = optionsCandidate({ ...pluginOptions, baseUrl: DEFAULT_BASE_URL })
-        if (!candidate || !candidate.key) return { text: 'model-mod: configure a valid API key in /plugin before setup.' }
-        const baseUrl = candidate.baseUrl as string
-        if (!await confirmStoredKey($, baseUrl)) return { text: storedKeyCancelled }
-        return { text: await configurePicker($, { baseUrl, key: candidate.key as string, models: [], codex: c?.codex }, interactive, status, new URL(baseUrl).hostname) }
+        if (candidate?.key) {
+          const baseUrl = candidate.baseUrl as string
+          if (!await confirmStoredKey($, baseUrl)) return { text: storedKeyCancelled }
+          return { text: await configurePicker($, { baseUrl, key: candidate.key as string, models: [], codex: c?.codex }, interactive, status, new URL(baseUrl).hostname) }
+        }
+        if (!storedUrl) return { text: 'model-mod: configure a valid API key in /plugin before setup.' }
       }
       return { text: await configurePicker($, c ?? { baseUrl: typeof pluginOptions.baseUrl === 'string' && pluginOptions.baseUrl.trim() || DEFAULT_BASE_URL, models: [] }, interactive, status) }
     } catch { return { text: 'model-mod: setup cancelled, nothing changed' } }

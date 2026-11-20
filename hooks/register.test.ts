@@ -1823,6 +1823,14 @@ test('doctor: ambiguous bare Codex model lists candidates', { options: { ...CODE
   expect(text).toContain('Use <account>/<model>.')
 })
 
+test('doctor: inactive Codex settings name the invalid model and Stop gate', { options: { ...CODEX_OPTIONS, codexModels: 'claude', codexStopGate: 'bad' } }, async ($, on) => {
+  fbWorld(on)
+  const text = (await $.command.run({ command: 'model-mod:doctor', args: '', origin: { kind: 'composer' } } as never)).text
+  expect(text).toContain('The picker is inactive.')
+  expect(text).toContain('Invalid codexModels.')
+  expect(text).toContain('Codex Stop gate')
+})
+
 test('doctor: missing quota usage is a problem', { options: CODEX_OPTIONS }, async ($, on) => {
   quotaLine(on)
   world(on, null, CODEX_MODEL, { stdout: '', code: 0 }, argv => argv.includes('rate-limits') ? { exitCode: 0, stdout: JSON.stringify({ primary: { resetsAt: 3600 } }) } : { exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) })
@@ -2092,6 +2100,13 @@ for (const [contextWindow, expected] of [[undefined, 475000], [272000, 272000], 
     expect(w.envSet).toContainEqual(['CLAUDE_CODE_MAX_CONTEXT_TOKENS', String(expected)])
     expect(w.ran.filter(argv => argv.includes('windows')).length).toBe(1)
     expect(w.spawned[0]!.argv).toContain(String(expected))
+  })
+}
+
+for (const [model, known] of [['gpt-5.6-sol', 372000], ['gpt-5.6-terra', 921000]] as const) {
+  test(`API: known window and explicit override for ${model}`, () => {
+    expect(windowOf({ defaultWindow: 272000 } as never, model)).toBe(known)
+    expect(windowOf({ defaultWindow: 200000, contextWindowExplicit: true } as never, model)).toBe(200000)
   })
 }
 
@@ -2694,6 +2709,20 @@ for (const [name, answer] of [['cancel', 'Cancel, set a new key in /plugin first
     expect(w.store).toEqual({})
   })
 }
+
+test('setup: a refused API URL can be replaced only after stored-key confirmation', { options: { ...OPTIONS, baseUrl: 'http://invalid.example?bad=1' } }, async ($, on) => {
+  const w = world(on, null, LOCAL, { stdout: '', code: 0 })
+  w.models = [LOCAL]
+  w.answers = ['Use stored key', 'Change', 'http://localhost:9999/new', 'Use stored key', 'All (recommended)']
+  expect((await $.command.run(SETUP)).text).toContain('1 local models selected')
+  expect(w.questions[0]!.question).toContain('stored by the client')
+  expect(w.questions[0]!.question).toContain('127.0.0.1')
+  expect(w.questions[1]!.question).toContain('Keep the API endpoint')
+  expect(w.questions[3]!.question).toContain('stored by the client')
+  expect(w.questions[3]!.question).toContain('localhost')
+  expect(w.questions[3]!.fetchedCount).toBe(0)
+  expect(w.fetched.map(({ url, matchesKey }) => ({ url, matchesKey }))).toEqual([{ url: 'http://localhost:9999/new/v1/models', matchesKey: true }])
+})
 
 test('setup: a changed destination requires another confirmation before any request', { options: { ...OPTIONS, baseUrl: '' } }, async ($, on) => {
   const w = world(on, null, LOCAL, { stdout: '', code: 0 })
