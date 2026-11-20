@@ -638,6 +638,7 @@ def transfer(request):
 def main():
     signal.signal(signal.SIGTERM, cancel)
     signal.signal(signal.SIGINT, cancel)
+    if hasattr(signal, 'SIGHUP'): signal.signal(signal.SIGHUP, cancel)
     try:
         request = json.load(sys.stdin)
         if request.get('kind') == 'snapshot':

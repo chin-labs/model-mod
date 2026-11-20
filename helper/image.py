@@ -175,6 +175,7 @@ def write_image(request):
 def main():
     signal.signal(signal.SIGTERM, cancel)
     signal.signal(signal.SIGINT, cancel)
+    if hasattr(signal, 'SIGHUP'): signal.signal(signal.SIGHUP, cancel)
     try:
         writing = sys.argv[1:] == ['--write']
         checking = sys.argv[1:] == ['--check']

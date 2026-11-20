@@ -186,9 +186,33 @@ export async function automaticGate($: EngineInterface, c: DelegateConfig | unde
     if (!selected) return { ...unknown, reason: 'Codex account is unavailable or ambiguous; select an account for a manual review.' }
     const request = { kind: 'review', options: { gate: true, text: '' }, sessionId, cwd, account: selected.account,
       directory: selected.directory, accountsDir: c.accountsDir, model: selected.model, codexBin: c.codexBin ?? 'codex' }
-    const run = await $.process.run(argv, { cwd, stdin: JSON.stringify(request), timeoutMs: 105_000 })
-    if (run.exitCode !== 0 || signal.aborted) return unknown
-    const reply = JSON.parse(run.stdout) as { text?: string }
+    if (signal.aborted) return unknown
+    const child = $.process.spawn({ argv, cwd, input: JSON.stringify(request) })
+    let stopped: Promise<unknown> | undefined, stdout = ''
+    const stop = () => { stopped ??= child.return({ code: null, signal: 'SIGTERM' }).catch(() => {}) }
+    const timer = $.clock.after(105_000, stop)
+    signal.addEventListener('abort', stop, { once: true })
+    if (signal.aborted) stop()
+    try {
+      while (!stopped) {
+        const step = await child.next()
+        if (step.done || stopped) break
+        if (step.value.stream === 'stdout') stdout += step.value.text
+        if (stdout.length > 150_000) stop()
+      }
+      if ((await child.result).code !== 0 || stopped || signal.aborted) return unknown
+    } catch (error) {
+      stop()
+      throw error
+    } finally {
+      timer.cancel()
+      signal.removeEventListener('abort', stop)
+      if (stopped) {
+        await stopped
+        await child.result.catch(() => {})
+      }
+    }
+    const reply = JSON.parse(stdout) as { text?: string }
     const result = readGate(reply.text ?? '')
     if (result.fingerprint !== snapshot.fingerprint) return unknown
     if (result.verdict === 'pass') gatePasses.set(sessionId, result.fingerprint!)

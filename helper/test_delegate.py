@@ -193,7 +193,7 @@ class DelegateTest(unittest.TestCase):
         parent = next(r['pid'] for r in records if 'pid' in r)
         child = next(r['child'] for r in records if 'child' in r)
         try:
-            proc.send_signal(signal.SIGTERM)
+            proc.send_signal(signal.SIGHUP if hasattr(signal, 'SIGHUP') else signal.SIGTERM)
             self.assertIn('cancelled', proc.stdout.read().lower())
             self.assertEqual(proc.wait(timeout=10), 0)
             for pid in (parent, child):
@@ -526,7 +526,7 @@ class DelegateTest(unittest.TestCase):
             if any(r.get('method') == 'turn/start' for r in self.records()): break
             time.sleep(0.02)
         pid = next(r['pid'] for r in self.records() if 'pid' in r)
-        proc.send_signal(signal.SIGTERM)
+        proc.send_signal(signal.SIGHUP if hasattr(signal, 'SIGHUP') else signal.SIGTERM)
         self.assertIn('Cancelled', proc.stdout.read())
         self.assertEqual(proc.wait(timeout=5), 0)
         proc.stdout.close()
