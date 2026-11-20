@@ -79,7 +79,7 @@ Codex effort 依模型宣告的等級夾值：`max` 取支援的最高等級；�
 | 進階選項 | 用途 | 預設值 |
 |---|---|---|
 | `imageModel` | API 路徑的 `generate_image` 圖片模型。空白：先前的 session 找到並保存的圖片模型，沒有的話用 `gpt-image-2`，或上游列出的第一個 `gpt-image*`。`none` 關閉 API 圖片路徑；Codex 使用內建圖片模型，不受此設定影響。 | 空白 |
-| `contextWindow` | 對未知視窗大小的模型所假設的輸入 token 數（最小 32000）。明設的值會覆寫內建 API 視窗及 Codex 模型目錄視窗（見[限制](LIMITATIONS.zh-TW.md#codex-登入的限制)）。 | `272000`（API）；目錄有效視窗或 128,000（Codex） |
+| `contextWindow` | 對未知視窗大小的模型所假設的輸入 token 數（限 32,000 至 4,000,000 的整數，其他值會忽略）。明設的值會覆寫內建 API 視窗及 Codex 模型目錄視窗（見[限制](LIMITATIONS.zh-TW.md#codex-登入的限制)）。 | `272000`（API）；目錄有效視窗或 128,000（Codex） |
 | `fallbackPercent` | rate-limit 視窗用量達多少比例（50–100）時切換。僅在設定 `fallbackModel` 時有效。 | `100` |
 | `promptsDir` | 存放自訂 `compact.md`、`title.md`、`subagent-note.md`、`worker.md` 的絕對路徑目錄。空白：使用插件內的 `prompts/`。 | 空白 |
 | `codexAccountsDir` | 絕對目錄；每個帳號使用獨立子目錄。 | `~/.config/model-mod/accounts`，Windows 為 `%APPDATA%\model-mod\accounts`（未驗證） |
@@ -101,7 +101,7 @@ Codex effort 依模型宣告的等級夾值：`max` 取支援的最高等級；�
 
 `/model-mod:status` 以 `model-mod <version>: picker=active` 開頭（有警告時附警告數），接著依序是 QUOTA、CURRENT PATH 與 DIAGNOSTICS。`rate-limits` 提供各視窗比例、重置時間與 credits；`account-info` 在可取得時提供方案。
 
-每個 Codex 帳號區塊會就各 rate-limit 視窗（通常是 5 小時與每週）顯示用量條、已用百分比與重置時間（相對時間，括號內為本地時間），另有 credits、方案及 `ordinaryUsageAllowed`；取得不到的欄位顯示 unavailable。讀不到的帳號顯示 `無法取得` 與原因，其他帳號不受影響。Codex 額度最多每帳號五分鐘查一次，額度錯誤可立即查詢；沒有可用的未來重置時間時不自動切換。API 上游沒有官方 rateLimits，不適用此機制。額度用完不會自動輪流換帳號，可設定不同上游或帳號的 `fallbackModel`。
+每個 Codex 帳號區塊會就各 rate-limit 視窗（通常是 5 小時與每週）顯示用量條、已用百分比與重置時間（相對時間，括號內為本地時間），另有 credits、方案及 `ordinaryUsageAllowed`；取得不到的欄位顯示 unavailable。讀不到的帳號顯示 `無法取得` 與原因，其他帳號不受影響。自動備援最多每帳號五分鐘查一次 Codex 額度，額度錯誤後會立即查詢；沒有可用的未來重置時間時不自動切換。`/model-mod:status` 與 `/model-mod:doctor` 每次執行時都會讀取當前數值。API 上游沒有官方 rateLimits，不適用此機制。額度用完不會自動輪流換帳號，可設定不同上游或帳號的 `fallbackModel`。
 
 `codexServiceTier` 可設 `default`（預設）或 `priority`；非法值視為 `default`。`priority` 需要 Codex 方案支援，可能較快回應但較快耗用額度；實際層級與計費是否生效未驗證。
 
