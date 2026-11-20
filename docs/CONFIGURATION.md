@@ -37,7 +37,7 @@ The mod activates with either a valid `apiKey` or a valid combination of `codexA
 |---|---|---|
 | `baseUrl` | Base URL of your upstream, without `/v1`. HTTP or HTTPS only; URLs with credentials, queries or fragments, and `anthropic.com` or `claude.ai` hosts, are refused. | `http://127.0.0.1:8317` |
 | `apiKey` | Your API upstream's key (secret). Required for the API path. | none |
-| `models` | Comma-separated model IDs the mod answers for. Empty: every chat model the upstream lists. | empty |
+| `models` | Comma-separated model IDs the mod answers for. Empty: every chat model the upstream lists. A model ID in this option containing `claude` or `anthropic` prevents the entire configuration from loading, including Codex login. | empty |
 | `fallbackModel` | Model to switch to when a subscription or Codex login quota is reached; no account rotation, and the same account cannot be the fallback. Empty: off. The client saves the switch as its default model for new sessions. | empty |
 | `workerModel` | Model for the `model-mod:local-worker` agent type. Empty: the fallback model; if both are empty there is no worker type. | empty |
 
@@ -45,7 +45,7 @@ The mod activates with either a valid `apiKey` or a valid combination of `codexA
 
 | Option | Format and default |
 |---|---|
-| `codexAccounts` | Comma-separated account names; empty by default. Each is 1–32 characters, starts with `[a-z0-9]`, and otherwise uses `[a-z0-9-]`. `/model-mod:setup` writes this value. |
+| `codexAccounts` | Comma-separated account names; empty by default. Each is 1–32 characters, starts with `[a-z0-9]`, and otherwise uses `[a-z0-9-]`. `/model-mod:setup` writes this value; setup can succeed for names containing `claude` or `anthropic`, but models for those accounts are silently omitted from the model list. |
 | `codexModels` | Comma-separated model names; empty by default. Each is 1–64 characters, starts with `[A-Za-z0-9]`, and otherwise uses `[A-Za-z0-9._-]`; names containing `claude` or `anthropic` are rejected, case-insensitively. `/model-mod:setup` writes this value. A model newly offered by Codex cannot be selected until its ID is in this list; add the ID here, or run `/model-mod:setup` again and reselect the full set (setup replaces the entire list). |
 | `codexBin` | Executable name or absolute path; default `codex`. |
 

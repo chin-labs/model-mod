@@ -26,7 +26,7 @@ Codex reasoning 保留為實驗性功能：簽章依前綴過濾，快取以第�
 
 ## 已測試版本
 
-Codex 登入與 API 上游已在 **Claude Code 2.1.314** 測試。API 上游也曾在 2.1.299 至 2.1.310 測試；在 2.1.310 檢查了插件載入、單元測試、回合與更新路徑。另在一台 Mac 上以 Claude Code 2.1.316 搭配 Codex 0.166.0 做過手動端到端檢查（見[尚未驗證](#尚未驗證)）。其他版本未測，請勿假設可用。這些檢查使用測試用設定，而非一般的機密選項流程，因此無法說明你的金鑰如何儲存（見[尚未驗證](#尚未驗證)）。
+Codex 登入與 API 上游已在 **Claude Code 2.1.314** 測試。API 上游也曾在 2.1.299 至 2.1.310 測試；在 2.1.310 檢查了插件載入、單元測試、回合與更新路徑。另在一台 Mac 上以 Claude Code 2.1.316 搭配 Codex 0.166.0 做過手動端到端檢查（見[尚未驗證](#尚未驗證)）。Claude Code 2.1.319 的紀錄僅涵蓋下述 GitHub marketplace 安裝。0.2.5 在隔離設定下，以 Claude Code 2.1.325 和 Codex CLI 0.167.2 透過 Codex 登入檢查了 review gate、Stop gate、未重述專案文件中暗號的回合，以及第二個帳號的一次 Read 工具回合（見 [0.2.5 變更紀錄](../CHANGELOG.md)）。請勿將結果推及其他版本或路徑。這些檢查使用測試用設定，而非一般的機密選項流程，因此無法說明你的金鑰如何儲存（見[尚未驗證](#尚未驗證)）。
 
 Marketplace 安裝已用本機 clone 與使用標準 HTTP 協定的 Git 伺服器測試過。客戶端不支援從單純（dumb）HTTP 的 Git 伺服器安裝，且解除安裝後會留下插件快取。
 
@@ -61,7 +61,7 @@ Marketplace 安裝已用本機 clone 與使用標準 HTTP 協定的 Git 伺服�
 | setup 選單 | 在終端機輸入 `/model-mod:setup` 時，固定選單在同一個 pane 開啟。文字輸入、超過 12 項的選單、`-p`、bridge 工作階段與太小的 pane 使用對話框，每頁最多四個選項（`More…`）。輸入的答案不是列出的選項時會重新詢問，最多三次，之後取消 setup 且不更動設定。文字輸入對話框之後 pane 會關閉，其餘選單可能改為對話框。 | 放寬終端機視窗，或在對話框中作答。 |
 | 失敗處理 | 尚未有任何輸出前，HTTP 429、502、503、504、529 與可辨識的暫時性錯誤（含早期的 `overloaded_error` 事件）會在 2、6、15 秒後重試（最多三次）。整數 `Retry-After` 為 0–15 秒時，下一次等待至少採用該值；超過 15 秒則立即以 HTTP 狀態與要求的等待秒數結束回合。無效值與 HTTP 日期一律忽略。輸出開始後串流中斷，該回合直接結束，不會重播。失敗的回合不會改用其他模型或訂閱重試。 | 重新送出訊息，或用 `/model` 換模型。 |
 | 壓縮 | 只使用 `prompts/` 內的提示檔；缺檔時略過本地壓縮。摘要品質取決於模型。送去摘要的逐字稿有上限（總計 600000 字元、每則 20000、每個工具結果 1500）。代理內的壓縮尚未驗證。 | 重要事項寫進專案指示，不要只留在對話裡。 |
-| 工具 | 工具 schema 為開放式（只有名稱與描述）。在 API 模型上，`web_search`、`web_fetch` 取代原生 WebSearch、WebFetch；Codex 模型保留 `web_fetch`，並以原生搜尋取代 mod 的 `web_search`，且 `web_fetch` 回傳頁面內容，不做模型摘要。四個 mod 工具（`web_search`、`web_fetch`、`generate_image`、`tool_search`）在訂閱模型下拒絕呼叫，請改用內建工具。`web_fetch` 會拒絕所有 IPv6 literal 網址（包含公開位址）；請改用主機名稱。 | 改用其他網址形式，或用其他工具擷取。 |
+| 工具 | 未設定 `toolsFile` 時，內建工具只提供名稱、描述及開放式輸入 schema；設定後則使用檔案中的 schema。在 API 模型上，`web_search`、`web_fetch` 取代原生 WebSearch、WebFetch；Codex 模型保留 `web_fetch`，並以原生搜尋取代 mod 的 `web_search`，且 `web_fetch` 回傳頁面內容，不做模型摘要。四個 mod 工具（`web_search`、`web_fetch`、`generate_image`、`tool_search`）在訂閱模型下拒絕呼叫，請改用內建工具。`web_fetch` 會拒絕所有 IPv6 literal 網址（包含公開位址）；請改用主機名稱。 | 改用其他網址形式，或用其他工具擷取。 |
 | 子代理與 Workflow | 子代理取得工作階段系統提示加上委派備註。訂閱工作階段的 Agent 呼叫不能直接指定你的模型 ID；請用 `model-mod:local-worker` 代理類型或 Workflow agent。context 視窗覆寫跟隨主工作階段。 | 設定 `workerModel` 並使用 `model-mod:local-worker`。 |
 | 圖片與 PDF | 圖片可用。單頁 PDF 會轉成圖片。原生 document 區塊與多頁 PDF 尚未驗證。 | 把頁面轉成圖片。 |
 | 用量顯示 | 送往你上游的請求不會更新訂閱用量顯示，CLIProxyAPI 的回覆也不帶 rate-limit 欄位。 | 查看上游自己的用量頁面。 |
@@ -115,7 +115,7 @@ SDK 與 `-p` 的呼叫端必須檢查結果文字是否以 `model-mod:` 開頭�
 
 ## 審查關卡限制
 
-Stop gate 預設關閉。結構化裁定的品質、漏判情況，以及真實 Codex 是否遵守 `outputSchema` 均未驗證；此功能不是安全或合規保證。與官方 Codex gate 並存時的順序尚未驗證。因阻擋而繼續的回合不會再次審查：狀態會顯示變更未經重新審查，因此上限設為 2 次並不代表修正會被第二次審查。在 gate 審查中按 Esc 會結束 helper，並以未驗證警告放行。Pass 只在記憶體中對相符的工作階段與指紋有效；模組重新載入會清除 pass 快取與 gate 阻擋計數。目前目錄及其祖先均無 `.git` 時，自動 gate 會靜默跳過；儲存庫尚無 HEAD 或 Git 發生錯誤時會顯示未驗證警告。自動 gate 沒有 base ref，若回合內已提交變更，可能靜默跳過。二進位或無法讀取的未追蹤檔案、有未提交變更的 submodule，以及過大的 diff，無法由此 gate 審查。工作區變更後需重新審查；快照檢查後仍可能發生並行變更。Unknown、錯誤與逾時會放行並提示人工審查；阻擋達設定的 1 或 2 次後，再次 block 也會在未通過下放行。
+Stop gate 預設關閉。結構化裁定的品質、漏判情況，以及真實 Codex 是否遵守 `outputSchema` 均未驗證；此功能不是安全或合規保證。與官方 Codex gate 並存時的順序尚未驗證。因阻擋而繼續的回合不會再次審查：狀態會顯示變更未經重新審查，因此上限設為 2 次並不代表修正會被第二次審查。在自動 gate 審查中按 Esc 會立即停止等待、向已啟動的 helper 送出 SIGTERM，並以未驗證警告放行。手動審查按 Esc 也會停止等待並向已啟動的 helper 送出 SIGTERM，但會取消工具呼叫，不會產生 gate 警告。Pass 只在記憶體中對相符的工作階段與指紋有效；模組重新載入會清除 pass 快取與 gate 阻擋計數。目前目錄及其祖先均無 `.git` 時，自動 gate 會靜默跳過；儲存庫尚無 HEAD 或 Git 發生錯誤時會顯示未驗證警告。自動 gate 沒有 base ref，若回合內已提交變更，可能靜默跳過。二進位或無法讀取的未追蹤檔案、有未提交變更的 submodule，以及過大的 diff，無法由此 gate 審查。工作區變更後需重新審查；快照檢查後仍可能發生並行變更。Unknown、錯誤與逾時會放行並提示人工審查；阻擋達設定的 1 或 2 次後，再次 block 也會在未通過下放行。
 
 Transfer 僅支援預設 Claude 設定目錄（`~/.claude`）；離線實測 Codex 0.166 的匯入偵測只搜尋 `HOME/.claude`，不搜尋自訂 `CLAUDE_CONFIG_DIR`。
 

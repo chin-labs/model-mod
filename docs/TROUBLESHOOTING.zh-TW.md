@@ -29,9 +29,11 @@
 | Doctor 對不支援的模型清單顯示 `[--]` | 明確設定 `models` 時，404、405、501 或非 JSON 回應僅供參考，不計為問題 | 使用已設定的模型。 |
 | Doctor 回報 404 | API 基礎網址可能包含 `/v1` 或錯誤的路徑前綴 | 將基礎網址設為不含 `/v1` 的形式。 |
 | Doctor 回報 429 或 5xx | API 受限流或伺服器發生錯誤 | 稍後再試。 |
-| Doctor 回報模型清單無效或為空 | 伺服器可能不相容 OpenAI | 檢查上游伺服器及其模型端點。 |
+| `invalid codexThreadReuse; using on.` 或類似的 `invalid …; using …` 警告 | 選項的值不在允許範圍內 | 系統改用警告所示的預設值；可在[進階選項](CONFIGURATION.zh-TW.md#進階選項)查到允許的值。 |
+| `no tool schemas; toolsFile could not be read.` | 無法從 `toolsFile` 載入工具 schema；模型回合不會收到由 model-mod 提供的工具定義 | 確認 `toolsFile` 指向存在且可讀的 JSON 檔，且內含 `tools` 陣列。 |
+| Doctor 回報模型清單無效或為空 | 伺服器未回傳有效且非空的模型清單 | 確認伺服器提供 `/v1/models` 清單，或明確設定 `models`。 |
 | `model is not in the allowlist` | 該 ID 不在 `models` 內 | 選擇允許的 ID，或更新清單。 |
-| 背景工作顯示 `No result is available.` | 工作尚未完成，或已失敗、被取消；只有完成的工作才有結果 | 用 `/model-mod:jobs` 檢查其狀態。失敗或逾時的 `--write` 執行可能已變更工作目錄；請檢查 `git status` 與 `git diff`。 |
+| 背景工作顯示 `No result is available.` | 工作尚未完成，或已失敗、被取消；只有完成的工作才有結果 | 用 `/model-mod:jobs` 檢查其狀態。失敗、逾時、取消或中斷的 `--write` 工作可能已變更工作目錄；請檢查 `git status` 與 `git diff`。 |
 | 更新或移除外掛後，背景工作立即失敗 | 舊版的 broker 仍在執行 | 在 macOS 或 Linux 上執行 `python3 /path/to/updated/plugin/helper/delegate.py client shutdown <<<'{}'`，並使用舊 broker 的 `XDG_STATE_HOME` 設定（若原本使用預設位置，就維持未設定）。等該狀態目錄下的 `model-mod/delegate/v1/broker.pid` 消失後再重試。這會中斷舊 broker 仍在執行的工作。 |
 | `This model step did not finish` | 該步驟失敗，model-mod 不會自動重試；任何先前的自動重試都已發生。 | 檢查最後一則訊息，必要時再次送出。 |
 | Claude Code 回報所選模型有問題（通常是 Codex 新推出的模型） | 模型 ID 不在 `codexModels` 內 | 將 ID 加入清單，或重新執行 `/model-mod:setup` 並選取完整的模型清單（setup 會取代整份清單）。 |
@@ -52,7 +54,7 @@
 | Codex 版本過舊 | 將官方 CLI 升級至至少 0.165.0，再重試。 |
 | helper 無法啟動 | 安裝 Python 3.9 以上版本並檢查 `pythonBin` 與 `codexAccountsDir`（都是[進階選項](CONFIGURATION.zh-TW.md#進階選項)），也檢查 `codexBin` 路徑。執行檔須為命令名稱或絕對路徑。 |
 | `Codex used a built-in tool that model-mod does not support` | helper 遇到不支援的項目時會終止回合。重試前請檢查 Codex 版本及有效設定。見[限制說明](LIMITATIONS.zh-TW.md#codex-登入的限制)。 |
-| `incompatible app-server protocol; update or check Codex` | 升級或檢查 Codex 及其有效設定後再重試。 |
+| `incompatible app-server protocol; update or check Codex` | 升級或檢查 Codex 及其有效設定後再重試。若已使用最新版 Codex，請確認 model-mod 也是最新版；若仍不相容，請將 [`codexBin`](CONFIGURATION.zh-TW.md#codex-登入選項) 指向較舊但相容的 Codex（最低版本為 0.165.0）。 |
 | 工具名稱顯示為 `bridge_` 加雜湊 | `mcp__...` 等保留名稱及不符合 Codex 格式的名稱，在呼叫 Codex 時會轉成別名，回傳時還原。見[限制說明](LIMITATIONS.zh-TW.md#codex-登入的限制)。 |
 | 429、額度或速率限制 | 查看你的 Codex 訂閱額度與重置時間。尚未輸出前，重試會遵循最多 15 秒的 `Retry-After`；要求等待更久時直接結束回合。不會自動輪替帳號。 |
 | Transfer 拒絕自訂 `CLAUDE_CONFIG_DIR` | Transfer 僅支援預設 `~/.claude` 目錄；實測 Codex 0.166 匯入偵測搜尋 `HOME/.claude`。請取消自訂設定，並使用預設目錄中的工作階段。 |

@@ -25,7 +25,7 @@ Codex 模型的工具清單不包含 mod 的 `web_search`；原生搜尋無法�
 
 ## 委派與資料流
 
-`/model-mod:review` 要求唯讀的原生 Codex 審查；`--base REF` 指定 base。`--adversarial` 送出範圍內的 diff，允許在 `--` 後指定焦點並接受 `--effort`；它不含未追蹤檔案。使用 `--base REF` 時只送出已提交的變更 `REF...HEAD`，不含已暫存、未暫存或未追蹤的內容；未使用 `--base` 時送出相對於 `HEAD` 的 diff，包含已暫存與未暫存的修改。原生 review 不接受焦點文字或 `--effort`。`--gate` 要求下述結構化審查。`/model-mod:rescue -- TASK` 請 Codex 協助。兩者預設前景執行，並接受 `--account NAME` 與 `--model ID`。支援 `--effort` 的模式接受 `low`、`medium`、`high` 與 `xhigh`。Rescue 接受 `--effort`、`--background`、`--write`；原生 review 接受 `--base`、`--background`；adversarial review 接受 `--base`、`--effort`、`--background` 與焦點文字；gate 接受 `--base`、`--effort`，但不接受 `--background` 或焦點文字。Windows 不支援背景工作。
+`/model-mod:review` 要求唯讀的原生 Codex 審查；`--base REF` 指定 base。`--adversarial` 送出範圍內的 diff，允許在 `--` 後指定焦點並接受 `--effort`；它不含未追蹤檔案。使用 `--base REF` 時只送出已提交的變更 `REF...HEAD`，不含已暫存、未暫存或未追蹤的內容；未使用 `--base` 時送出相對於 `HEAD` 的 diff，包含已暫存與未暫存的修改。原生 review 不接受焦點文字或 `--effort`。`--gate` 要求下述結構化審查。`/model-mod:rescue -- TASK` 請 Codex 協助。兩者預設前景執行，並接受 `--account NAME` 與 `--model ID`。`--model` 填寫不含帳號前綴的 Codex 模型名稱，帳號由 `--account` 指定。支援 `--effort` 的模式接受 `low`、`medium`、`high` 與 `xhigh`。Rescue 接受 `--effort`、`--background`、`--write`；原生 review 接受 `--base`、`--background`；adversarial review 接受 `--base`、`--effort`、`--background` 與焦點文字；gate 接受 `--base`、`--effort`，但不接受 `--background` 或焦點文字。Windows 不支援背景工作。
 
 `/model-mod:rescue --write -- TASK` 需要互動確認工作目錄。它要求對該目錄使用 workspace-write 並關閉網路；命令可能有其他外部副作用。每個帳號最多一個未終態的背景 write 工作。review 與一般 rescue 使用唯讀 sandbox，限制寫入與網路，但**不限制讀取範圍**；命令可能讀取工作區外的檔案。這與 Messages bridge 停用內建 shell 不同。見[限制說明](LIMITATIONS.zh-TW.md#背景委派限制)。
 

@@ -37,7 +37,7 @@ API 伺服器路徑會把工作階段送往接受 Messages 風格串流請求（
 |---|---|---|
 | `baseUrl` | 你的上游基底網址，不含 `/v1`。僅限 HTTP／HTTPS；含帳密、查詢參數、fragment 的網址，以及 `anthropic.com`、`claude.ai` 主機會被拒絕。 | `http://127.0.0.1:8317` |
 | `apiKey` | API 上游的金鑰（機密）。API 路徑需要此欄位。 | 無 |
-| `models` | 以逗號分隔的模型 ID，mod 只接管這些。空白：上游列出的所有 chat 模型。 | 空白 |
+| `models` | 以逗號分隔的模型 ID，mod 只接管這些。空白：上游列出的所有 chat 模型。若此選項的模型 ID 含 `claude` 或 `anthropic`，整份設定（含 Codex 登入）都不會載入。 | 空白 |
 | `fallbackModel` | 訂閱或 Codex 登入額度達上限時切換的模型；不會輪流換帳號，同帳號不可作為備援。空白：不自動切換。客戶端會把這次切換存成新工作階段的預設模型。 | 空白 |
 | `workerModel` | `model-mod:local-worker` 代理類型使用的模型。空白：用 fallback 模型；兩者都空白則不提供 worker 代理類型。 | 空白 |
 
@@ -45,7 +45,7 @@ API 伺服器路徑會把工作階段送往接受 Messages 風格串流請求（
 
 | 選項 | 格式與預設值 |
 |---|---|
-| `codexAccounts` | 以逗號分隔帳號名稱，預設空白。每個名稱 1–32 字元，首字元為 `[a-z0-9]`，其餘使用 `[a-z0-9-]`。由 `/model-mod:setup` 寫入。 |
+| `codexAccounts` | 以逗號分隔帳號名稱，預設空白。每個名稱 1–32 字元，首字元為 `[a-z0-9]`，其餘使用 `[a-z0-9-]`。由 `/model-mod:setup` 寫入；含 `claude` 或 `anthropic` 的帳號名稱仍可設定成功，但該帳號的模型會從清單中靜默排除。 |
 | `codexModels` | 以逗號分隔模型名稱，預設空白。每個名稱 1–64 字元，首字元為 `[A-Za-z0-9]`，其餘使用 `[A-Za-z0-9._-]`；含 `claude` 或 `anthropic` 的名稱不分大小寫均會拒絕。由 `/model-mod:setup` 寫入。Codex 新提供的模型必須先將 ID 加到此清單才能選用；可直接加入，或重新執行 `/model-mod:setup` 並選取完整的模型清單（setup 會取代整份清單）。 |
 | `codexBin` | 執行檔名稱或絕對路徑；預設 `codex`。 |
 
