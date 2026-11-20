@@ -17,11 +17,11 @@ All notable changes to this project are listed here. The format follows [Keep a 
 
 ### Fixed
 - A `maxTokens` of `0`, a negative number or a fraction in the plugin options turned the whole mod off. It now falls back to 32000, as non-numeric text already did. A configuration file (`MODEL_MOD_CONFIG`) still requires a positive whole number.
-- A `contextWindow` in the plugin options that is not a whole number from 32,000 to 4,000,000 is ignored. Before, it replaced the context window of a Codex login model with 128,000 tokens.
+- A `contextWindow` in the plugin options that is not a whole number from 32,000 to 4,000,000 is ignored. Before, the value was dropped but still counted as an explicit setting, so a Codex login model got 128,000 tokens instead of the window Codex reports for it.
 - A `codexServiceTier` that is not text (for example a number) is now shown as invalid in `/model-mod:status` and `/model-mod:doctor`, as it already was in the status line when the plugin loads; the default tier is used as before.
 
 ### Verified against a real Codex login
-Checked on 2026-11-16 on the plugin tree `420b5d4` with Codex CLI 0.169.0, by calling the bridge helper directly (not through a Claude Code session, and not on Windows):
+Checked on 2026-11-16 on commit `420b5d4` with Codex CLI 0.169.0, by calling the bridge helper directly (not through a Claude Code session, and not on Windows):
 - The checks made 8 model requests, with no rate-limit error and no retry.
 - Image generation returned an inline PNG (`result` present, no `fileId`) and the helper reported success.
 - The five checks of `helper/live_contract.py` passed: sleep tool disabled, text and effort, history, tool use and write tool use.
@@ -31,6 +31,7 @@ Checked on 2026-11-16 on the plugin tree `420b5d4` with Codex CLI 0.169.0, by ca
 - Codex CLI 0.169.0 through a full Claude Code session and on Windows.
 - Whether reasoning is kept after a fork.
 - Models other than the ones the checks above used.
+- The changes made after commit `420b5d4` (the `maxTokens` fallback and the `web_fetch` approval and prompt) were checked by the test suite only, not with a real login.
 - Other Codex login paths with these changes beyond the checks listed above (the tests use a fake `codex`).
 - Ignore handling for the gates with Git versions other than the one used in testing, with ignore files that are not regular files, in linked worktrees and submodules, and on Windows.
 - The 8-option install form, the cleared retry status line and the unprefixed command results in Remote Control, desktop and VS Code sessions and on Windows.
