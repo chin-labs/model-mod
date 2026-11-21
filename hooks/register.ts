@@ -871,12 +871,12 @@ function stashThinking(toolId: string | undefined, blocks: Thinking[], codex: bo
 }
 const approvedTools = new Set<string>()
 async function permitted($: EngineInterface, e: { tool: string }, tool: string, what: string, approvalKey = tool): Promise<string | undefined> {
-  if (approvedTools.has(approvalKey)) return undefined
   const { tool: _name, tool_use_id: _id, agentId: _agent, ...input } = e as unknown as Record<string, unknown>
   let verdict: { decision: string; reason?: string } = { decision: 'ask' }
-  try { verdict = await $.tool.check({ tool, input } as never) } catch { /* ask the person */ }
+  try { verdict = await $.tool.check({ tool, input } as never) } catch { /* Fall back to the ask decision. */ }
   if (verdict.decision === 'allow') return undefined
   if (verdict.decision === 'deny') return verdict.reason ?? `${tool} is not permitted.`
+  if (approvedTools.has(approvalKey)) return undefined
   const always = 'Yes, and do not ask again this session'
   try {
     const answer = await $.ui.ask(what, ['Yes', always, 'No'])
