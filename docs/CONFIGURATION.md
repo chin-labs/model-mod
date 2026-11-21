@@ -79,7 +79,7 @@ Numbers are written as JSON numbers. For `maxTokens`, `contextWindow` and `fallb
 | Advanced option | What it does | Default |
 |---|---|---|
 | `imageModel` | API image model for `generate_image`. Empty: the image model an earlier session found and kept, otherwise `gpt-image-2`, or the first `gpt-image*` the upstream lists. `none` disables the API image path. Codex uses its built-in image model independently of this setting. | empty |
-| `contextWindow` | Input tokens assumed for a model whose window is unknown (minimum 32000). An explicit value overrides the Codex catalog window (see [Limitations](LIMITATIONS.md#codex-login-limitations)). | `272000` (API); catalog effective window or 128,000 (Codex) |
+| `contextWindow` | Input tokens assumed for a model whose window is unknown (minimum 32000). An explicit value overrides both the built-in API window and the Codex catalog window (see [Limitations](LIMITATIONS.md#codex-login-limitations)). | `272000` (API); catalog effective window or 128,000 (Codex) |
 | `fallbackPercent` | Used share of a rate-limit window (50–100) at which the switch happens. Only read when `fallbackModel` is set. | `100` |
 | `promptsDir` | Absolute directory with your own `compact.md`, `title.md`, `subagent-note.md` and `worker.md`. Empty: the plugin's `prompts/` directory. | empty |
 | `codexAccountsDir` | Absolute directory; each account has a separate subdirectory. | `~/.config/model-mod/accounts`, or `%APPDATA%\model-mod\accounts` on Windows (unverified) |

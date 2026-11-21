@@ -79,7 +79,7 @@ Codex effort 依模型宣告的等級夾值：`max` 取支援的最高等級；�
 | 進階選項 | 用途 | 預設值 |
 |---|---|---|
 | `imageModel` | API 路徑的 `generate_image` 圖片模型。空白：先前的 session 找到並保存的圖片模型，沒有的話用 `gpt-image-2`，或上游列出的第一個 `gpt-image*`。`none` 關閉 API 圖片路徑；Codex 使用內建圖片模型，不受此設定影響。 | 空白 |
-| `contextWindow` | 對未知視窗大小的模型所假設的輸入 token 數（最小 32000）。明設的值會覆寫 Codex 模型目錄視窗（見[限制](LIMITATIONS.zh-TW.md#codex-登入的限制)）。 | `272000`（API）；目錄有效視窗或 128,000（Codex） |
+| `contextWindow` | 對未知視窗大小的模型所假設的輸入 token 數（最小 32000）。明設的值會覆寫內建 API 視窗及 Codex 模型目錄視窗（見[限制](LIMITATIONS.zh-TW.md#codex-登入的限制)）。 | `272000`（API）；目錄有效視窗或 128,000（Codex） |
 | `fallbackPercent` | rate-limit 視窗用量達多少比例（50–100）時切換。僅在設定 `fallbackModel` 時有效。 | `100` |
 | `promptsDir` | 存放自訂 `compact.md`、`title.md`、`subagent-note.md`、`worker.md` 的絕對路徑目錄。空白：使用插件內的 `prompts/`。 | 空白 |
 | `codexAccountsDir` | 絕對目錄；每個帳號使用獨立子目錄。 | `~/.config/model-mod/accounts`，Windows 為 `%APPDATA%\model-mod\accounts`（未驗證） |

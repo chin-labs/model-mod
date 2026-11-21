@@ -330,7 +330,7 @@ function flushResults(t: TrackedAgent): boolean {
   t.results = {}
   return true
 }
-// Context windows (input tokens) of Codex models the CLIProxyAPI registry lists; any other model gets `contextWindow`.
+// Built-in API context windows (input tokens), used when no explicit window is configured.
 const KNOWN_WINDOWS: Readonly<Record<string, number>> = { 'gpt-5.6-sol': 372_000, 'gpt-5.6-terra': 921_000 }
 let pluginOptions: PluginOptions = {}
 
