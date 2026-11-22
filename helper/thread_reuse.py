@@ -14,7 +14,6 @@ from cancellation import Cancelled
 TTL_SECONDS = 6 * 60 * 60
 MAX_SESSION_PARENTS = 4
 USAGE_FIELDS = ('inputTokens', 'cachedInputTokens', 'outputTokens', 'cacheWriteInputTokens')
-FORK_OVERRIDE_INSTRUCTIONS = True
 PARENT_INSTRUCTIONS = 'Respond briefly.'
 SYNTHETIC_INPUT = 'Reply with ok.'
 
@@ -120,8 +119,7 @@ def fork(app, args, session, params):
         tools_key = digest(params.get('dynamicTools', []))
         settings = dict(params)
         settings.pop('cwd', None)  # Per-request empty temporary working directory.
-        if FORK_OVERRIDE_INSTRUCTIONS:
-            settings.pop('baseInstructions', None)
+        settings.pop('baseInstructions', None)
         key = digest([session, account, settings, getattr(app, 'launch_args', []), app.web_search, args.no_keep_reasoning, args.service_tier, args.compact_window])
         path = os.path.join(root, group + '-' + key + '.json')
         now = time.time()
@@ -145,9 +143,7 @@ def fork(app, args, session, params):
                 _, old_path, old = min(candidates, key=lambda candidate: candidate[0])
                 candidates = [candidate for candidate in candidates if candidate[1] != old_path]
                 if not delete(app, old_path, old): return None
-            parent = dict(params, ephemeral=False)
-            if FORK_OVERRIDE_INSTRUCTIONS:
-                parent['baseInstructions'] = PARENT_INSTRUCTIONS
+            parent = dict(params, ephemeral=False, baseInstructions=PARENT_INSTRUCTIONS)
             result = app.request('thread/start', parent)
             thread = result['thread']['id']
             if not isinstance(thread, str) or str(uuid.UUID(thread)) != thread.lower(): return None
@@ -192,9 +188,7 @@ def fork(app, args, session, params):
             finally:
                 if idle is not None: app.idle_seconds = idle
                 if deadline is not None: app.deadline = deadline
-        fork_params = {'threadId': record['thread'], 'ephemeral': True, 'excludeTurns': True, 'cwd': params['cwd']}
-        if FORK_OVERRIDE_INSTRUCTIONS:
-            fork_params['baseInstructions'] = params['baseInstructions']
+        fork_params = {'threadId': record['thread'], 'ephemeral': True, 'excludeTurns': True, 'cwd': params['cwd'], 'baseInstructions': params['baseInstructions']}
         try:
             result = app.request('thread/fork', fork_params)
             child = result['thread']['id']

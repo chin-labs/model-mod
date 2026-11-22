@@ -16,6 +16,7 @@ import time
 from types import SimpleNamespace
 
 from bridge import COMMON_FEATURES, account_home, env, is_response, jsonrpc_line, note, verify_version
+from cancellation import Cancelled
 
 DELEGATE_ONLY_FEATURES = ('memories',)
 FEATURES = COMMON_FEATURES + DELEGATE_ONLY_FEATURES
@@ -72,10 +73,6 @@ class Failure(Exception):
     def __init__(self, message, code="delegation_failed"):
         super().__init__(message)
         self.code = code
-
-
-class Cancelled(Exception):
-    pass
 
 
 def cancel(signum, frame):

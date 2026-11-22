@@ -13,12 +13,12 @@ import time
 
 RETENTION_SECONDS = 7 * 24 * 60 * 60
 MAX_JOBS = 50
-TERMINAL = frozenset(('completed', 'failed', 'cancelled', 'interrupted', 'unknown'))
+TERMINAL = frozenset(('completed', 'failed', 'cancelled', 'interrupted'))
 TRANSITIONS = {
     'queued': frozenset(('starting', 'cancelled', 'interrupted')),
-    'starting': frozenset(('running', 'cancelling', 'failed', 'interrupted', 'unknown')),
-    'running': frozenset(('cancelling', 'completed', 'failed', 'interrupted', 'unknown')),
-    'cancelling': frozenset(('cancelled', 'completed', 'failed', 'interrupted', 'unknown')),
+    'starting': frozenset(('running', 'cancelling', 'failed', 'interrupted')),
+    'running': frozenset(('cancelling', 'completed', 'failed', 'interrupted')),
+    'cancelling': frozenset(('cancelled', 'completed', 'failed', 'interrupted')),
 }
 ID = re.compile(r'^[0-9a-f]{32}$')
 FIELDS = frozenset(('version', 'id', 'workspaceHash', 'account', 'model', 'effort', 'kind', 'mode',

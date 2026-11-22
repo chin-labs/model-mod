@@ -76,7 +76,7 @@ export function classifyStepFailure(input: StepFailureInput): StepDecision {
       const kind = /unsupported codex behavior: ([A-Za-z0-9_-]{1,64})/.exec(errorMessage)?.[1] ?? 'unknown'
       return { kind: 'failure', reason: prefix + `Codex used a built-in tool that model-mod does not support (${kind}); try again, and report it if it keeps happening`, limitFailed: false }
     }
-    if (errorCode === 'protocol' || errorCode === 'incompatible_protocol' || exitCode === 65) return { kind: 'failure', reason: prefix + 'incompatible app-server protocol; update or check Codex', limitFailed: false }
+    if (errorCode === 'protocol' || exitCode === 65) return { kind: 'failure', reason: prefix + 'incompatible app-server protocol; update or check Codex', limitFailed: false }
     if (errorCode === 'codex_unavailable' || exitCode === 66) return { kind: 'failure', reason: prefix + 'codex unavailable; install Codex or configure codexBin', limitFailed: false }
     if (errorCode === 'codex_too_old' || exitCode === 67) return { kind: 'failure', reason: prefix + 'codex too old; upgrade to 0.165.0 or newer', limitFailed: false }
     if (errorCode === 'codex_not_logged_in' || exitCode === 68) return { kind: 'not-logged-in' }

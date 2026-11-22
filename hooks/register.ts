@@ -98,12 +98,12 @@ async function askPaged($: EngineInterface, question: string, options: readonly 
 }
 
 // One of `options`, nothing else: text typed under Other is asked again instead of ending the setup.
-async function pick($: EngineInterface, question: string, options: readonly string[], opts: { header?: string; current?: string; initial?: string } = {}): Promise<string> {
+async function pick($: EngineInterface, question: string, options: readonly string[], opts: { header?: string; initial?: string } = {}): Promise<string> {
   await ensureOpen($)
   const flow = setupFlow
   if (flow?.pane && options.length <= PANE_MAX_OPTIONS) {
     // After a dialog the pane was closed; opening it again from the flow is usually not seated, and then dialogs stay.
-    const result = await menuInPane($, { question, options, current: opts.current, initial: opts.initial }, flow.detach)
+    const result = await menuInPane($, { question, options, initial: opts.initial }, flow.detach)
     if (result === 'closed') throw new Cancelled()
     if (result !== 'fallback') return result.picked
     flow.pane = false
@@ -1109,7 +1109,7 @@ function codexRunError(c: Config, item: CodexAccount, run: { stdout: string; std
   const prefix = `model-mod: Codex login (${item.account}): `
   if (code === 'codex_rejected_request') return prefix + 'request rejected by Codex; update model-mod or report this'
   if (code === 'unsupported_item') return prefix + `Codex used a built-in tool that model-mod does not support (${/unsupported codex behavior: ([A-Za-z0-9_-]{1,64})/.exec(message)?.[1] ?? 'unknown'}); try again, and report it if it keeps happening`
-  if (code === 'protocol' || code === 'incompatible_protocol' || run.exitCode === 65) return prefix + 'incompatible app-server protocol; update or check Codex'
+  if (code === 'protocol' || run.exitCode === 65) return prefix + 'incompatible app-server protocol; update or check Codex'
   if (code === 'codex_unavailable' || run.exitCode === 66) return prefix + 'codex unavailable; install Codex or configure codexBin'
   if (code === 'codex_too_old' || run.exitCode === 67) return prefix + 'codex too old; upgrade to 0.165.0 or newer'
   if (code === 'codex_not_logged_in' || run.exitCode === 68) return prefix + `not logged in; run ${loginCommand(c, item)} in your terminal`
@@ -1482,7 +1482,7 @@ async function setupCodex($: EngineInterface, c?: Config): Promise<string> {
 }
 
 type CodexWindow = { remainingPercent?: number | null; resetsAt?: number | null; windowDurationMins?: number | null }
-type CodexLimits = { primary?: CodexWindow | null; secondary?: CodexWindow | null; ordinaryUsageAllowed?: boolean | null; usageLimitExceeded?: boolean | null; rateLimitReachedType?: string | null; credits?: { hasCredits?: boolean; balance?: string | null; unlimited?: boolean } | null }
+type CodexLimits = { primary?: CodexWindow | null; secondary?: CodexWindow | null; ordinaryUsageAllowed?: boolean | null; rateLimitReachedType?: string | null; credits?: { hasCredits?: boolean; balance?: string | null; unlimited?: boolean } | null }
 
 async function codexWebSearchState($: EngineInterface, c: Config): Promise<'on' | 'off' | 'blocked-by-permissions'> {
   if (c.codexWebSearch === 'off') return 'off'
@@ -1658,7 +1658,6 @@ async function manageUpstreams($: EngineInterface, c: Config): Promise<string> {
   }
   await ensureOpen($)
   if (action === 'Log out') return await logout() ? `model-mod: Codex login (${item.account}): login=missing; settings and directory retained.` : 'model-mod: logout failed; settings and directory retained.'
-  if (action !== 'Remove') return 'model-mod: no changes.'
   const removeDir = await pick($, `Also delete the account directory ${item.directory}?`, ['Keep directory (recommended)', 'Delete directory'], { header: 'Upstreams' })
   let deleteDir = false
   if (removeDir === 'Delete directory') deleteDir = await pick($, `Permanently delete only ${item.directory}?`, ['Keep directory (recommended)', 'Confirm deletion'], { header: 'Upstreams' }) === 'Confirm deletion'
@@ -1884,7 +1883,6 @@ async function admin($: EngineInterface, e: { origin: { kind: string }; presenta
       const choice = await pick($, `Choose an upstream.${configured ? ' ' + configured + '.' : ''}`, choices, { header: 'Upstream' })
       if (choice === 'Manage configured upstreams' && c) return { text: await manageUpstreams($, c) }
       if (choice === 'Codex login (recommended)') return { text: await setupCodex($, c) }
-      if (choice !== 'Compatible API server') return { text: 'model-mod: setup cancelled, nothing changed' }
       const storedUrl = typeof pluginOptions.baseUrl === 'string' ? pluginOptions.baseUrl.trim() : ''
       let refusedUrl = false
       if (!c && storedUrl) {
@@ -1903,7 +1901,7 @@ async function admin($: EngineInterface, e: { origin: { kind: string }; presenta
     } catch { return { text: 'model-mod: setup cancelled, nothing changed' } }
   }
   if (arg === 'doctor') return { text: await doctorReport($, c, e.presentation?.columns) }
-  if (!c) return { text: `model-mod: inactive; picker=inactive; models=0. ${await configHint($)}${arg === 'status' ? codexWarning : ''}` }
+  if (!c) return { text: `model-mod: inactive; picker=inactive; models=0. ${await configHint($)}${codexWarning}` }
   return { text: await statusReport($, e, c) }
 }
 
@@ -2149,7 +2147,7 @@ export const register: Register = (on, options) => {
       if (!c) return answer('Web fetch is not configured.', true)
       if (await bridgeModel($, e, c) === undefined) return answer('web_fetch is only available while a local model is selected. With this model, use the built-in WebFetch tool instead.', true)
       let url = String((e as unknown as Record<string, unknown>).url ?? '').trim()
-      for (let redirects = 0; redirects <= 5; redirects++) {
+      for (let redirects = 0; ; redirects++) {
         let parsed: URL
         try { parsed = new URL(url) } catch { return answer('url is not a valid URL.', true) }
         if (url.length > 2000 || !['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) {
@@ -2189,7 +2187,6 @@ export const register: Register = (on, options) => {
         const text = htmlToText(response.body)
         return text ? answer(text) : answer('The page could not be fetched or had no text.', true)
       }
-      return answer('Too many redirects.', true)
     } catch (err) {
       return answer(`Fetch failed (${err instanceof Error ? err.name : 'error'}).`, true)
     }
@@ -2474,7 +2471,7 @@ export const register: Register = (on, options) => {
       }
       return { messages: [{ role: 'user' as const, toolUses: [], text }] }
     } catch (err) {
-      const item = model === undefined ? undefined : c.codex?.get(model)
+      const item = c.codex?.get(model)
       if (item) return { skip: `model-mod: Codex login (${item.account}): request could not complete; check Codex and try again` }
       const why = err instanceof Error ? `${err.name}: ${err.message}` : String(err)
       return { skip: `model-mod: summary failed (${scrub(c, why).slice(0, 160)})` }
@@ -2586,7 +2583,7 @@ export const register: Register = (on, options) => {
           if (parser.error || exit.code !== 0 || !parser.complete) {
             const decision = classifyStepFailure({ codex: codex ? { account: codex.account } : undefined,
               error: parser.error, exitCode: exit.code, httpStatus, rawError, retryAfter, streamed, sendThinking, attempt, retryDelays: RETRY_DELAYS })
-            if (decision.kind === 'not-logged-in' && codex) return yield* failure(e, `Codex login (${codex.account}): not logged in; run ${loginCommand(c, codex)} in your terminal`, parser.nextIndex)
+            if (decision.kind === 'not-logged-in') return yield* failure(e, `Codex login (${codex!.account}): not logged in; run ${loginCommand(c, codex!)} in your terminal`, parser.nextIndex)
             if (decision.kind === 'thinking') {
               sendThinking = false
               attempt--
@@ -2611,7 +2608,6 @@ export const register: Register = (on, options) => {
               }
               continue
             }
-            if (decision.kind === 'not-logged-in') throw new Error('Codex account unavailable')
             if (codex && decision.limitFailed) codexLimitFailed.add(codex.directory)
             return yield* failure(e, decision.reason, parser.nextIndex, !codex || decision.limitFailed || decision.reason.includes('rate limited') || decision.reason.includes('app-server timed out') || decision.reason.includes('app-server request failed'))
           }

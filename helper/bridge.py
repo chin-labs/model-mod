@@ -834,7 +834,7 @@ def main():
             try: r = subprocess.run([args.codex_bin, 'login', 'status'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True, timeout=15, env=env(args.codex_home))
             except (OSError, subprocess.TimeoutExpired): raise BridgeError('Codex login: unable to check login status', code='codex_unavailable')
             if r.returncode: raise BridgeError('Codex login: not logged in', 401, 'authentication_error', code='codex_not_logged_in')
-            print(json.dumps({'ok': True, 'codexVersion': version, 'versionStatus': version_status, 'loggedIn': True, 'pythonVersion': sys.version.split()[0], 'warnings': home_warnings + (['untested codex version'] if version_status == 'untested' else [])}))
+            print(json.dumps({'codexVersion': version, 'versionStatus': version_status, 'loggedIn': True, 'pythonVersion': sys.version.split()[0], 'warnings': home_warnings + (['untested codex version'] if version_status == 'untested' else [])}))
         else:
             with tempfile.TemporaryDirectory(prefix='model-mod-bridge-') as cwd:
                 with open(os.path.join(cwd, '.pid'), 'w', encoding='ascii') as f: f.write(str(os.getpid()))
@@ -853,7 +853,7 @@ def main():
                             if not isinstance(page, dict) or not isinstance(page.get('data'), list) or 'nextCursor' not in page: raise incompatible('model/list')
                             for model in page['data']:
                                 if not isinstance(model, dict) or not isinstance(model.get('id'), str) or not isinstance(model.get('displayName'), str): raise incompatible('model/list data')
-                                if not model.get('hidden') and not NOT_CHAT.search(model['id']): models.append({'id': model['id'], 'displayName': model['displayName'], 'efforts': model_efforts(model), 'defaultEffort': model.get('defaultReasoningEffort') if model.get('defaultReasoningEffort') in ('minimal',) + EFFORTS else None})
+                                if not model.get('hidden') and not NOT_CHAT.search(model['id']): models.append({'id': model['id']})
                             cursor = page['nextCursor']
                             if cursor is None: break
                             if not isinstance(cursor, str) or cursor in seen: raise incompatible('model/list cursor')
@@ -866,10 +866,9 @@ def main():
                     elif args.command == 'account-info':
                         account = app.request('account/read', {'refreshToken': False}).get('account')
                         account = account if isinstance(account, dict) else {}
-                        login = account.get('type')
                         plan = account.get('planType')
                         valid_plans = ('free', 'go', 'plus', 'pro', 'prolite', 'promax', 'team', 'self_serve_business_prolite', 'self_serve_business_usage_based', 'business', 'ent26', 'enterprise_cbp_automation', 'enterprise_cbp_usage_based', 'enterprise', 'edu', 'edu_plus', 'edu_pro', 'sci', 'sci_plus', 'unknown')
-                        print(json.dumps({'loginMethod': login if login in ('chatgpt', 'apiKey', 'amazonBedrock', 'gcp') else None, 'planType': plan if plan in valid_plans else None}), flush=True)
+                        print(json.dumps({'planType': plan if plan in valid_plans else None}), flush=True)
                     else:
                         # Track whether an SSE response has started.
                         if prepared['stream']:
@@ -914,7 +913,7 @@ def main():
         error = {'type': 'error', 'error': {'type': 'api_error' if started else e.kind, 'message': str(e), 'code': e.code}}
         if started: emit('error', error)
         elif args.command == 'check':
-            print(json.dumps({'ok': False, 'codexVersion': getattr(e, 'version', locals().get('version')), 'versionStatus': 'too_old' if e.code == 'codex_too_old' else locals().get('version_status'), 'loggedIn': False, 'pythonVersion': sys.version.split()[0], 'warnings': locals().get('home_warnings', []), 'error': str(e)}), flush=True)
+            print(json.dumps({'codexVersion': getattr(e, 'version', locals().get('version')), 'versionStatus': 'too_old' if e.code == 'codex_too_old' else locals().get('version_status'), 'loggedIn': False, 'pythonVersion': sys.version.split()[0], 'warnings': locals().get('home_warnings', [])}), flush=True)
         else: print(json.dumps(error, ensure_ascii=False), flush=True)
         if e.retry_after is not None: print('model-mod-retry-after:' + str(e.retry_after), file=sys.stderr)
     except (BrokenPipeError, Cancelled):

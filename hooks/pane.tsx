@@ -9,7 +9,7 @@ const REF = { plugin: 'model-mod', key: 'picker' } as const
 // The smallest body that holds the hint row, one model and the two "more" rows.
 const MIN_BODY_ROWS = 5
 
-export type PaneHandlers = {
+type PaneHandlers = {
   pick: (id: string) => Promise<void>
   // The pane turned out too small once drawn; the caller asks with the paged menu instead.
   fallback: () => Promise<void>
@@ -69,8 +69,8 @@ export async function openPane($: EngineInterface, input: { local: readonly stri
 const CHOICE = 'model-mod-setup'
 const MENU = atom({ plugin: 'model-mod', key: 'setupMenu' } as const, { busy: true } as SetupMenu, { shape: 'setup-menu-1' })
 const BUSY: SetupMenu = { busy: true }
-export type Choice = { question: string; options: readonly string[]; current?: string; initial?: string }
-export type ChoiceResult = { picked: string } | 'closed' | 'fallback'
+type Choice = { question: string; options: readonly string[]; initial?: string }
+type ChoiceResult = { picked: string } | 'closed' | 'fallback'
 let awaiting: ((result: ChoiceResult) => void) | undefined
 let seated = false
 // Set when something other than this plugin's own flow closes the setup pane (Esc, the close mark, an unload): the setup
@@ -200,7 +200,7 @@ export function registerPane(on: Parameters<Register>[0]): void {
             waiting({ picked: label })
           })
         }}>
-        {(label === state.current ? '✓ ' : '  ') + label}
+        {'  ' + label}
       </Button>)}
     </Box>
   })

@@ -18,8 +18,8 @@ export type FallbackMemo = { from?: string; to?: string; until?: number; suppres
 // The first row of the picker pane's scrolling window.
 export type PickerState = { offset: number }
 
-// What the setup pane shows: `busy` between menus, else one question with its fixed answers (`current` is marked, `initial` focused first).
-export type SetupMenu = { busy: true } | { question: string; options: string[]; current?: string; initial?: string }
+// What the setup pane shows: `busy` between menus, else one question with its fixed answers (`initial` focused first).
+export type SetupMenu = { busy: true } | { question: string; options: string[]; initial?: string }
 
 // The write phase of a setup, kept so that the plugin loaded by a reload (every changed option reloads it) can finish what
 // the module that began it cannot: see commit.ts. `previous` is what a step restores; the three texts are the answer when it

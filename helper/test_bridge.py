@@ -430,83 +430,75 @@ class Contract(unittest.TestCase):
             args = argparse.Namespace(codex_home='/account-a', no_keep_reasoning=False, service_tier='default', compact_window=128000, cleanup_model='model-a')
             params = {'model': 'model-a', 'cwd': '/empty', 'ephemeral': True, 'baseInstructions': 'private-one', 'developerInstructions': 'fixed', 'dynamicTools': [{'name': 'one'}]}
             def run(session='session-a', settings=None): return thread_reuse.fork(app, args, session, settings or params)
-            with patch.object(thread_reuse, 'FORK_OVERRIDE_INSTRUCTIONS', True):
-                self.assertIsNotNone(run())
-                entry = next(Path(tmp).rglob('*.json'))
-                saved = entry.read_text()
-                corrupted = json.loads(saved); corrupted['account'] = '0' * 64
-                entry.write_text(json.dumps(corrupted))
-                self.assertIsNone(run())
-                entry.write_text('{')
-                self.assertIsNone(run())
-                entry.write_text(saved)
-                self.assertIsNotNone(run(settings=dict(params, baseInstructions='private-two')))
-                self.assertEqual(sum(m == 'thread/start' for m, _ in app.rows), 1)
-                self.assertEqual([p['baseInstructions'] for m, p in app.rows if m == 'thread/fork'], ['private-one', 'private-two'])
-                parent = next(p for m, p in app.rows if m == 'thread/start')
-                self.assertNotIn('private-one', json.dumps(parent))
-                self.assertEqual(parent['developerInstructions'], 'fixed')
-                app.fail_delete = True
-                self.assertIsNotNone(run(settings=dict(params, developerInstructions='changed')))
-                entries = list(Path(tmp).rglob('*.json'))
-                self.assertEqual(sum(json.loads(p.read_text())['state'] == 'pending-delete' for p in entries), 1)
-                app.fail_delete = False
-                self.assertIsNotNone(run(settings=dict(params, developerInstructions='changed')))
-                self.assertEqual(len(list(Path(tmp).rglob('*.json'))), 1)
-                self.assertIsNotNone(run(session='session-b'))
-                self.assertIsNotNone(run(settings=dict(params, model='model-b')))
-                self.assertEqual(len(list(Path(tmp).rglob('*.json'))), 3)
-                import fcntl
-                fd = os.open(os.path.join(thread_reuse.root_path(), '.lock'), os.O_RDWR)
-                try:
-                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    before = len(app.rows)
-                    self.assertIsNone(run(session='contending'))
-                    self.assertEqual(len(app.rows), before)
-                finally: os.close(fd)
-                args.codex_home = '/account-b'
-                self.assertIsNotNone(run())
-                self.assertEqual(len(list(Path(tmp).rglob('*.json'))), 4)
-                args.codex_home = '/account-a'
-                app.fail_fork = True
-                self.assertIsNone(run(session='session-b'))
-                app.fail_fork = False
-                app.reuse_broken = False  # A real failed fork starts a fresh app-server.
-                with patch.object(thread_reuse, 'TTL_SECONDS', -1): self.assertIsNotNone(run(session='new-session'))
-                entries = list(Path(tmp).rglob('*.json'))
-                self.assertEqual(len(entries), 2)  # Other account remains untouched.
-                thread_reuse.end_session(app, args, 'new-session')
-                self.assertEqual(len(list(Path(tmp).rglob('*.json'))), 1)
-            with patch.object(thread_reuse, 'FORK_OVERRIDE_INSTRUCTIONS', False):
-                self.assertIsNotNone(run(session='inherit'))
-                self.assertIsNotNone(run(session='inherit', settings=dict(params, baseInstructions='changed')))
-                starts = [p for m, p in app.rows if m == 'thread/start']
-                self.assertEqual(starts[-2]['baseInstructions'], 'private-one')
-                self.assertEqual(starts[-1]['baseInstructions'], 'changed')
-                self.assertNotIn('baseInstructions', [p for m, p in app.rows if m == 'thread/fork'][-1])
-                app.invalid_id_method = 'thread/start'
-                self.assertIsNone(run(session='invalid-parent'))
-                app.invalid_id_method = None
-                self.assertIsNotNone(run(session='invalid-child'))
-                app.invalid_id_method = 'thread/fork'
-                self.assertIsNone(run(session='invalid-child'))
-                app.invalid_id_method = None
-                app.reuse_broken = False
-                self.assertIsNotNone(run(session='cancel-fork'))
-                app.cancel_method = 'thread/fork'
-                with self.assertRaises(bridge.Cancelled): run(session='cancel-fork')
-                app.cancel_method = None
-                app.reuse_broken = False
-                self.assertIsNotNone(run(session='cancel-delete'))
-                app.cancel_method = 'thread/delete'
-                with self.assertRaises(bridge.Cancelled):
-                    with patch.object(thread_reuse, 'TTL_SECONDS', -1): run(session='cancel-delete')
-                app.cancel_method = None
-                with patch.object(thread_reuse, 'MAX_SESSION_PARENTS', 2):
-                    for i in range(3):
-                        self.assertIsNotNone(run(session='bounded', settings=dict(params, dynamicTools=[{'name': str(i)}])))
-                    bounded = [json.loads(p.read_text()) for p in Path(tmp).rglob('*.json') if json.loads(p.read_text()).get('session') == thread_reuse.digest(['bounded', thread_reuse.digest('/account-a')])]
-                    self.assertEqual(len(bounded), 2)
+            self.assertIsNotNone(run())
+            entry = next(Path(tmp).rglob('*.json'))
+            saved = entry.read_text()
+            corrupted = json.loads(saved); corrupted['account'] = '0' * 64
+            entry.write_text(json.dumps(corrupted))
+            self.assertIsNone(run())
+            entry.write_text('{')
+            self.assertIsNone(run())
+            entry.write_text(saved)
+            self.assertIsNotNone(run(settings=dict(params, baseInstructions='private-two')))
+            self.assertEqual(sum(m == 'thread/start' for m, _ in app.rows), 1)
+            self.assertEqual([p['baseInstructions'] for m, p in app.rows if m == 'thread/fork'], ['private-one', 'private-two'])
+            parent = next(p for m, p in app.rows if m == 'thread/start')
+            self.assertNotIn('private-one', json.dumps(parent))
+            self.assertEqual(parent['developerInstructions'], 'fixed')
+            app.fail_delete = True
+            self.assertIsNotNone(run(settings=dict(params, developerInstructions='changed')))
+            entries = list(Path(tmp).rglob('*.json'))
+            self.assertEqual(sum(json.loads(p.read_text())['state'] == 'pending-delete' for p in entries), 1)
+            app.fail_delete = False
+            self.assertIsNotNone(run(settings=dict(params, developerInstructions='changed')))
+            self.assertEqual(len(list(Path(tmp).rglob('*.json'))), 1)
+            self.assertIsNotNone(run(session='session-b'))
+            self.assertIsNotNone(run(settings=dict(params, model='model-b')))
+            self.assertEqual(len(list(Path(tmp).rglob('*.json'))), 3)
+            import fcntl
+            fd = os.open(os.path.join(thread_reuse.root_path(), '.lock'), os.O_RDWR)
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                before = len(app.rows)
+                self.assertIsNone(run(session='contending'))
+                self.assertEqual(len(app.rows), before)
+            finally: os.close(fd)
+            args.codex_home = '/account-b'
+            self.assertIsNotNone(run())
+            self.assertEqual(len(list(Path(tmp).rglob('*.json'))), 4)
+            args.codex_home = '/account-a'
+            app.fail_fork = True
+            self.assertIsNone(run(session='session-b'))
+            app.fail_fork = False
+            app.reuse_broken = False  # A real failed fork starts a fresh app-server.
+            with patch.object(thread_reuse, 'TTL_SECONDS', -1): self.assertIsNotNone(run(session='new-session'))
+            entries = list(Path(tmp).rglob('*.json'))
+            self.assertEqual(len(entries), 2)  # Other account remains untouched.
+            thread_reuse.end_session(app, args, 'new-session')
+            self.assertEqual(len(list(Path(tmp).rglob('*.json'))), 1)
+            app.invalid_id_method = 'thread/start'
+            self.assertIsNone(run(session='invalid-parent'))
+            app.invalid_id_method = None
+            self.assertIsNotNone(run(session='invalid-child'))
+            app.invalid_id_method = 'thread/fork'
+            self.assertIsNone(run(session='invalid-child'))
+            app.invalid_id_method = None
+            app.reuse_broken = False
+            self.assertIsNotNone(run(session='cancel-fork'))
+            app.cancel_method = 'thread/fork'
+            with self.assertRaises(bridge.Cancelled): run(session='cancel-fork')
+            app.cancel_method = None
+            app.reuse_broken = False
+            self.assertIsNotNone(run(session='cancel-delete'))
+            app.cancel_method = 'thread/delete'
+            with self.assertRaises(bridge.Cancelled):
+                with patch.object(thread_reuse, 'TTL_SECONDS', -1): run(session='cancel-delete')
+            app.cancel_method = None
+            with patch.object(thread_reuse, 'MAX_SESSION_PARENTS', 2):
+                for i in range(3):
+                    self.assertIsNotNone(run(session='bounded', settings=dict(params, dynamicTools=[{'name': str(i)}])))
+                bounded = [json.loads(p.read_text()) for p in Path(tmp).rglob('*.json') if json.loads(p.read_text()).get('session') == thread_reuse.digest(['bounded', thread_reuse.digest('/account-a')])]
+                self.assertEqual(len(bounded), 2)
 
 
     def test_web_search_config(self):
@@ -861,13 +853,13 @@ class Contract(unittest.TestCase):
             requests = [json.loads(x) for x in log.read_text().splitlines()[before:]]
             self.assertFalse(any(row.get('method') == 'model/list' for row in requests))
             self.assertEqual(next(row for row in requests if row.get('method') == 'turn/start')['params']['effort'], 'high')
-            self.assertEqual(json.loads(run('models').stdout)['models'][0]['efforts'], ['minimal', 'medium', 'xhigh'])
+            self.assertEqual(json.loads(run('models').stdout), {'models': [{'id': 'gpt-6.1-terra'}]})
             result = json.loads(run('rate-limits').stdout)
             self.assertEqual(result['primary'], {'remainingPercent': 62, 'resetsAt': 123, 'windowDurationMins': 300})
             self.assertEqual(result['credits']['balance'], '5')
             self.assertFalse(result['ordinaryUsageAllowed'])
             account = run('account-info')
-            self.assertEqual(json.loads(account.stdout), {'loginMethod': 'chatgpt', 'planType': 'plus'})
+            self.assertEqual(json.loads(account.stdout), {'planType': 'plus'})
             self.assertNotIn('private@example.test', account.stdout + account.stderr)
 
     def test_rate_limit_result_mapping(self):
@@ -948,7 +940,7 @@ class Contract(unittest.TestCase):
             Path(home, 'fake_config.json').write_text(json.dumps({'mode': 'logged_out'}))
             r = subprocess.run(argv, text=True, capture_output=True)
             self.assertEqual(r.returncode, 68)
-            self.assertFalse(json.loads(r.stdout)['ok'])
+            self.assertFalse(json.loads(r.stdout)['loggedIn'])
             r = subprocess.run(argv[:4] + ['relative'] + argv[5:], text=True, capture_output=True)
             self.assertEqual(r.returncode, 69)
 

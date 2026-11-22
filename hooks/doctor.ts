@@ -1,6 +1,6 @@
 import { wrap } from './status.ts'
 
-export type NetworkCategory = 'refused' | 'dns' | 'timeout' | 'tls' | 'unreachable'
+type NetworkCategory = 'refused' | 'dns' | 'timeout' | 'tls' | 'unreachable'
 export type ModelResult = { category: NetworkCategory | 'not-json' | 'http'; status?: number } | { category: 'ok' }
 export type Check = { mark: 'OK' | '!' | 'LIMIT' | '--'; what: string; cause?: string; next?: string }
 

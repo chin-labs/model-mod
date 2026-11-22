@@ -9,7 +9,7 @@
 // moves to its own line, and wide terminals widen the bars and put the diagnostic groups in two columns instead of
 // stretching the rows.
 
-export type Mark = 'ok' | 'warn' | 'limit' | 'none'
+type Mark = 'ok' | 'warn' | 'limit' | 'none'
 export type QuotaWindow = { label: string; used: number | null; resetsAt: number | null }
 export type QuotaBlock = {
   title: string
@@ -28,7 +28,7 @@ export type QuotaBlock = {
 export type Row = { label: string; value: string; warn?: boolean }
 export type Group = { title: string; rows: Row[] }
 export type StatusView = { title: string; warnings: string[]; quota: QuotaBlock[]; path: Row[]; groups: Group[] }
-export type RenderOptions = {
+type RenderOptions = {
   // The terminal's width as the command runs (CommandPresentation.columns).
   columns: number
   // No box-drawing or block glyphs: `#`/`-` bars. Set when NO_COLOR is set or the terminal is dumb.
@@ -37,7 +37,7 @@ export type RenderOptions = {
   now: number
 }
 
-export const NEAR_LIMIT = 90
+const NEAR_LIMIT = 90
 
 const MARK_TEXT: Record<Mark, string> = { ok: '[OK]', warn: '[!]', limit: '[LIMIT]', none: '[--]' }
 const MARGIN = 8
@@ -107,12 +107,12 @@ export function resetText(resetsAt: number | null, now: number): string {
   return left <= 0 ? `reset due (${clock(resetsAt, now)})` : `resets in ${relative(left)} (${clock(resetsAt, now)})`
 }
 
-export function windowMark(window: QuotaWindow): Mark {
+function windowMark(window: QuotaWindow): Mark {
   if (window.used === null) return 'warn'
   return window.used >= 100 ? 'limit' : window.used >= NEAR_LIMIT ? 'warn' : 'ok'
 }
 
-export function blockMark(block: QuotaBlock): Mark {
+function blockMark(block: QuotaBlock): Mark {
   if (block.noData) return 'none'
   if (block.limit !== undefined || block.windows.some(w => windowMark(w) === 'limit')) return 'limit'
   if (block.failed !== undefined || block.windows.some(w => windowMark(w) === 'warn')) return 'warn'

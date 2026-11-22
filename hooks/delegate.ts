@@ -342,7 +342,7 @@ export async function transfer($: EngineInterface, args: string, c: DelegateConf
 
 type Job = { id: string; state: string; account: string; model: string; kind: string; mode?: string; createdAt: number; errorCode?: string | null }
 type Reply = { ok: boolean; error?: string; job?: Job; jobs?: Job[]; text?: string }
-const terminal = new Set(['completed', 'failed', 'cancelled', 'interrupted', 'unknown'])
+const terminal = new Set(['completed', 'failed', 'cancelled', 'interrupted'])
 const polling = new Set<string>()
 const errors: Record<string, string> = {
   timeout: 'total time limit reached', idle_timeout: 'inactivity time limit reached',
@@ -416,7 +416,7 @@ export async function backgroundCommand($: EngineInterface, command: 'jobs' | 'r
     const reply = await client($, c, method, payload)
     if (!reply.ok) {
       const status = method === 'result' && reply.error === 'No result is available.' ? await client($, c, 'status', { id }) : undefined
-      const reminder = status?.job?.mode === 'write' && ['failed', 'cancelled', 'interrupted', 'unknown'].includes(status.job.state) ? ' Changes may already have been made in the working directory; check git status and git diff before running it again.' : ''
+      const reminder = status?.job?.mode === 'write' && ['failed', 'cancelled', 'interrupted'].includes(status.job.state) ? ' Changes may already have been made in the working directory; check git status and git diff before running it again.' : ''
       return { text: 'model-mod: ' + cleanDisplay(reply.error ?? 'Background request failed.') + reminder }
     }
     if (method === 'list') return { text: reply.jobs?.length ? reply.jobs.map(jobLine).join('\n') : 'No jobs found.' }
