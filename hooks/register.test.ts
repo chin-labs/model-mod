@@ -1837,6 +1837,15 @@ test('doctor: inactive Codex settings name the invalid model and Stop gate', { o
   expect(text).toContain('Codex Stop gate')
 })
 
+test('status and doctor: reserved API model entry is explained without exposing the key', { options: { ...OPTIONS, models: 'claude-sonnet-5-5' } }, async ($, on) => {
+  world(on, null, LOCAL, { stdout: '', code: 0 })
+  for (const command of ['model-mod:status', 'model-mod:doctor']) {
+    const text = (await $.command.run({ command, args: '', origin: { kind: 'composer' } } as never)).text ?? ''
+    expect(text.replace(/\s+/g, ' ')).toContain('models contains a reserved name (claude/anthropic): remove it in /plugin → model-mod configure.')
+    expect(text).not.toContain(KEY)
+  }
+})
+
 test('doctor: missing quota usage is a problem', { options: CODEX_OPTIONS }, async ($, on) => {
   quotaLine(on)
   world(on, null, CODEX_MODEL, { stdout: '', code: 0 }, argv => argv.includes('rate-limits') ? { exitCode: 0, stdout: JSON.stringify({ primary: { resetsAt: 3600 } }) } : { exitCode: 0, stdout: JSON.stringify({ loggedIn: true }) })
@@ -2745,6 +2754,19 @@ test('setup: a configured base URL does not ask for stored-key confirmation', { 
   w.models = [LOCAL]
   expect((await $.command.run(SETUP)).text).toContain('1 local models selected')
   expect(w.questions.some(q => q.question.includes('stored by the client'))).toBe(false)
+})
+
+test('setup: reserved API model entry confirms the stored key and rewrites models', { options: { ...OPTIONS, models: 'claude-sonnet-5-5' } }, async ($, on) => {
+  const w = world(on, null, LOCAL, { stdout: '', code: 0 })
+  w.models = [LOCAL]
+  w.answers = ['Use stored key', 'Keep (recommended)', 'All (recommended)']
+  const text = (await $.command.run(SETUP)).text
+  expect(text).not.toContain('apiKey is not configured')
+  expect(text).toContain('1 local models selected')
+  expect(w.questions[0]!.question).toContain('stored by the client')
+  expect(w.questions[0]!.question).toContain('127.0.0.1')
+  expect(w.questions[0]!.fetchedCount).toBe(0)
+  expect(w.saved).toContainEqual({ key: 'model-mod.models', value: '' })
 })
 
 test('manage: a file-provided API requires manual removal', async ($, on) => {

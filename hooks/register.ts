@@ -1321,7 +1321,11 @@ export function loopbackHost(hostname: string): boolean {
 }
 
 async function configHint($: EngineInterface): Promise<string> {
-  return optionsCandidate(pluginOptions) === undefined && await $.env.get('MODEL_MOD_CONFIG')
+  const candidate = optionsCandidate(pluginOptions)
+  if (candidate && Array.isArray(candidate.models) && candidate.models.some(m => typeof m === 'string' && /claude|anthropic/i.test(m))) {
+    try { endpoint(String(candidate.baseUrl)); return 'models contains a reserved name (claude/anthropic): remove it in /plugin → model-mod configure.' } catch { /* refused URL */ }
+  }
+  return candidate === undefined && await $.env.get('MODEL_MOD_CONFIG')
     ? 'Check the JSON file named by MODEL_MOD_CONFIG (baseUrl, headerFile, models and maxTokens), then reload the plugin.'
     : 'Run /model-mod:setup for Codex login or configure apiKey through /plugin → model-mod configure.'
 }
@@ -1867,8 +1871,8 @@ async function admin($: EngineInterface, e: { origin: { kind: string }; presenta
       if (!c && storedUrl) {
         try { endpoint(storedUrl) } catch { refusedUrl = true }
       }
-      if ((!storedUrl || refusedUrl) && pluginOptions.apiKey) {
-        const candidate = optionsCandidate({ ...pluginOptions, baseUrl: DEFAULT_BASE_URL })
+      if ((!c || !storedUrl) && pluginOptions.apiKey) {
+        const candidate = optionsCandidate({ ...pluginOptions, baseUrl: !storedUrl || refusedUrl ? DEFAULT_BASE_URL : storedUrl })
         if (candidate?.key) {
           const baseUrl = candidate.baseUrl as string
           if (!await confirmStoredKey($, baseUrl)) return { text: storedKeyCancelled }

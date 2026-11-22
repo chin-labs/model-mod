@@ -14,7 +14,7 @@
 
 | 症狀 | 可能原因 | 處理方式 |
 |---|---|---|
-| 狀態顯示 `inactive`，或沒有列出模型 | 沒有有效的上游設定、網址被拒絕，或插件未載入 | 設定 Codex 帳號與模型，或設定 API 金鑰與允許的網址，執行 `/reload-plugins`，再執行 `/model-mod:setup`。 |
+| 狀態顯示 `inactive`，或沒有列出模型 | 沒有有效的上游設定、網址被拒絕、`models` 項目包含 claude/anthropic，或插件未載入 | 設定 Codex 帳號與模型，或設定 API 金鑰與允許的網址，執行 `/reload-plugins`，再執行 `/model-mod:setup`。 |
 | 帳號區塊標示 `[LIMIT]` | 某個視窗已用 100%，或帳號回報 rate limit（原因寫在該區塊）；觸及限制的模型步驟不會完成 | 等到顯示的重置時間，或改用其他帳號或 `fallbackModel`。 |
 | 帳號區塊顯示 `無法取得: …` | 額度查詢沒有完成：未登入、找不到 `codex` 或逾時 | 看原因，再看 DIAGNOSTICS 中該帳號的 `login` 與 `codex` 列；其他帳號不受影響。 |
 | API 上游顯示 `沒有額度資料` | API 伺服器不回報額度 | 屬正常現象，不需處理。 |
