@@ -2,6 +2,31 @@
 
 All notable changes to this project are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Every release that changes plugin code or manifest files raises the `version` in `.claude-plugin/plugin.json`; installed clients only pick up a release whose version differs from the one they have.
 
+## 0.2.8 - 2026-11-22
+
+### Removed
+- Options `codexStopGate`, `codexStopGateBlocks`, `toolsFile` and `codexKeepReasoning` are removed; leftover keys in the Claude Code settings file or in a configuration file (`MODEL_MOD_CONFIG`) are ignored silently without a warning (and are no longer checked by `/model-mod:doctor` or reported by `/model-mod:status`). The automatic Stop-gate review no longer runs, so anyone who had `codexStopGate` on no longer gets automatic review; the manual `/model-mod:review --gate` command and `/model-mod:transfer` are unchanged. Built-in and MCP tools are always offered with open object schemas, and the `no tool schemas; toolsFile could not be read.` warning is gone.
+- The Codex login path no longer keeps or replays opaque reasoning across requests (the `mmcx1:` signature, `--no-keep-reasoning`, `experimentalRawEvents` and the `invalid_encrypted_content` retry are removed). With the default `codexThreadReuse: on`, forked requests never kept reasoning, so only `codexThreadReuse: off` is affected; `keepThinking` on the API path is unchanged.
+- Legacy 0.1.x `/model` picker rows (`Local API via model-mod`) are no longer recognized as an ownership source; a model that is in no current list (allowlist, cached models or retired models) passes through to the client's upstream instead of being handled or refused locally.
+
+### Changed
+- `/model-mod:status`: the `Stop gate`, `keepReasoning` and `MCP without schema` rows are gone; the `Codex settings` group shows only when at least one Codex account is configured; the `tools` row is always `listed`.
+- Codex parent thread reuse: the record key no longer includes the removed reasoning option (`no_keep_reasoning` / `experimentalRawEvents`). After upgrading, the first Codex request creates a new parent thread and the existing cleanup deletes the previous record for the same session, account, model and tool list.
+- Internal: unused code paths and fields removed (helper JSON output reduced for `check`, `models` and `account-info`; unused job status `unknown` and `incompatible_protocol` error code removed; dedicated tests for removed features deleted), English and Traditional Chinese documentation updated to match, and on-disk formats left unchanged (`delegate/v1`, `threads/v1`, plugin store keys and `token.json`).
+
+### Verified against a real Codex login
+Checked on 2026-11-22 on commit `c8d86cf` with Codex CLI 0.171.0, by calling the bridge helper directly (not through a Claude Code session, and not on Windows): the five checks of `helper/live_contract.py` passed (sleep tool disabled, text and effort, history, tool use, write tool use); image generation returned a PNG and the helper reported success. The release commit changes only the version and this file.
+
+### Not verified
+- Codex CLI 0.171.0 through a full Claude Code session and on Windows.
+- Models other than the ones the checks above used.
+- The removals were checked by the test suite and by the checks above; the manual `--gate` review and `/model-mod:transfer` were not run against a real Codex login.
+- Other Codex login paths with these changes beyond the checks listed above (the tests use a fake `codex`).
+- Ignore handling for the review gate with Git versions other than the one used in testing, with ignore files that are not regular files, in linked worktrees and submodules, and on Windows.
+- The 8-option install form, the cleared retry status line and the unprefixed command results in Remote Control, desktop and VS Code sessions and on Windows.
+- Whether a session started while the automatic fallback is active switches back after the reset.
+- The text values `off`, `false` and `0` for `keepThinking`, `localTitle` and `localContext` in a configuration file are not covered by the tests. In a terminal session against a local test upstream, `keepThinking` and `localContext` behaved as off for these values and for the JSON number `0`, and no local title request was sent for `localTitle`; the title request to the official side was not observed.
+
 ## 0.2.7 - 2026-11-22
 
 ### Changed
