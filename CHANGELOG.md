@@ -2,6 +2,41 @@
 
 All notable changes to this project are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Every release that changes plugin code or manifest files raises the `version` in `.claude-plugin/plugin.json`; installed clients only pick up a release whose version differs from the one they have.
 
+## 0.2.7 - 2026-11-22
+
+### Changed
+- `/model-mod:setup` now refuses a Codex login label containing `claude` or `anthropic` before creating an account directory or starting login; labels must be 1–32 characters of lowercase letters, digits and hyphens (`a-z0-9-`, starting with a letter or digit).
+- After configuring a Codex login account, `/model-mod:setup` now tells you to use `/model-mod:model` to choose a model.
+- When `models` contains a reserved name (`claude` or `anthropic`), `/model-mod:status` and `/model-mod:doctor` now report that specific cause and tell you to remove it in `/plugin → model-mod configure`, and `/model-mod:setup` can recover by confirming the stored API key and rewriting `models`.
+- Manual Codex login commands shown in setup and error messages now include `--device-auth` (on both POSIX shells and PowerShell).
+- When removing a Codex account with directory deletion fails or is cancelled after logout has already succeeded, the reply now notes that the Codex login was already removed (instead of saying nothing changed).
+- When the 50-job limit is reached with no finished jobs to clear, the error now advises waiting for a job to finish or cancelling one with `/model-mod:cancel`; background job notices now say `ended` for non-completed jobs and point to `/model-mod:jobs <id>` (plus checking `git status` and `git diff` for `--write` jobs) instead of `/model-mod:result`.
+- `/model-mod:doctor`, `web_search` and Codex helper failure messages now point to the Claude Code settings file for advanced options (`codexAccountsDir`, `pythonBin`, `codexWebSearch`, `codexKeepReasoning`, `codexThreadReuse`, `codexServiceTier` and the Stop gate) and to `/plugin → model-mod configure` for install-form options.
+- Documentation: `web_fetch` redirect behavior is documented in How It Works and Compliance (up to five redirects; approval covers the initial URL only and a redirect can contact another host without another prompt); Troubleshooting documents stopping a previous background broker after a plugin update or removal, adds rows for invalid-option warnings and an unreadable `toolsFile`, updates guidance for failed, cancelled or interrupted `--write` jobs, incompatible app-server protocols, invalid or empty model lists, reserved `models` entries, rollback failure wording and running `/model-mod:doctor` first; Configuration clarifies the `contextWindow` range (32,000–4,000,000) and precedence over built-in API windows, that reserved `models` entries prevent loading the entire configuration, that setup refuses reserved Codex labels, and that status and doctor read live quota while automatic fallback polls at most every five minutes; Features and Limitations clarify interactive-only setup (and `-p` output), setup Esc cancellation order and three total dialog attempts, lowercase-only job IDs, bare `--model` names for review and rescue, `promptsDir` having no fallback to plugin prompts, `toolsFile` schemas, transfer thread retention, `Retry-After` failure wording, Esc handling for automatic versus manual gate reviews, and tested versions; the README clarifies hook-reload fallback, reusing the same account label on re-login, setting `codexBin` in `/plugin configure`, and plugin-hook test requirements.
+- Internal: tests added or adjusted (including restoring `SIGTERM` alongside `SIGHUP` cancellation coverage) and a comment updated; no change in behavior is intended for those.
+
+### Fixed
+- Pressing Esc during an automatic Stop gate review (or hitting its timeout) now terminates the spawned review helper with `SIGTERM` and waits for it to exit before releasing the gate's reentry lock, and handles an early helper-result rejection during cancellation without an unhandled rejection. On POSIX, `helper/delegate.py` and `helper/image.py` also treat `SIGHUP` as cancellation alongside `SIGTERM` and `SIGINT`.
+- Tool permission checks (`web_fetch`, `web_search`, `generate_image`) now check current permission rules before a remembered "Yes, and do not ask again this session" answer, so a current deny rule overrides the remembered approval while an allow rule still lets the call through.
+- `imageModel: "none"` in a configuration file (`MODEL_MOD_CONFIG`) now disables the API image path instead of being treated as a model ID, matching plugin options.
+- An explicit `contextWindow` now overrides the built-in API context window table (for models such as `gpt-5.6-sol` and `gpt-5.6-terra`), matching its existing precedence over the Codex catalog window.
+- `/model-mod:setup` can now repair an invalid or refused `baseUrl` when an API key is already stored: it falls back to the default endpoint, confirms sending the stored key before any request, and lets you enter a replacement URL.
+- `/model-mod:doctor` now also reports invalid Codex fields and invalid Stop gate settings when the plugin is inactive and returns early.
+
+### Verified against a real Codex login
+Checked on 2026-11-22 on commit `d0c83a7` with Codex CLI 0.171.0, by calling the bridge helper directly (not through a Claude Code session, and not on Windows): the five checks of `helper/live_contract.py` passed (sleep tool disabled, text and effort, history, tool use, write tool use); image generation returned an inline PNG (`result` present, no `fileId`) and the helper reported success. The release commit changes only the version and this file.
+
+### Not verified
+- Codex CLI 0.171.0 through a full Claude Code session and on Windows.
+- Whether reasoning is kept after a fork.
+- Models other than the ones the checks above used.
+- No behavior changes were made after commit `d0c83a7`; the wording and behavior changes in this release were checked by the test suite only.
+- Other Codex login paths with these changes beyond the checks listed above (the tests use a fake `codex`).
+- Ignore handling for the gates with Git versions other than the one used in testing, with ignore files that are not regular files, in linked worktrees and submodules, and on Windows.
+- The 8-option install form, the cleared retry status line and the unprefixed command results in Remote Control, desktop and VS Code sessions and on Windows.
+- Whether a session started while the automatic fallback is active switches back after the reset.
+- The text values `off`, `false` and `0` for `keepThinking`, `localTitle` and `localContext` in a configuration file are not covered by the tests. In a terminal session against a local test upstream, `keepThinking` and `localContext` behaved as off for these values and for the JSON number `0`, and no local title request was sent for `localTitle`; the title request to the official side was not observed.
+
 ## 0.2.6 - 2026-11-20
 
 ### Changed
