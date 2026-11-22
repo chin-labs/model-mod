@@ -2888,6 +2888,21 @@ test('Codex login: setup and status explain unsupported versions', { options: CO
   expect((await $.command.run(SETUP)).text).toContain(hint)
 })
 
+test('Codex login: setup refuses invalid and reserved labels before login', async ($, on) => {
+  const w = world(on, null, 'claude-sonnet-5-5', { stdout: '', code: 0 }, argv => {
+    if (argv[1] === '--version') return { exitCode: 0, stdout: argv[0] === 'python3' ? 'Python 3.12.0' : 'codex-cli 0.165.0' }
+    return { exitCode: 1, stdout: '' }
+  })
+  w.chooseUpstream = true
+  for (const label of ['Bad_Name', 'claude-work', 'my-anthropic']) {
+    w.answers = ['Codex login (recommended)', label]
+    expect((await $.command.run(SETUP)).text).toBe('Codex login: invalid label; use lowercase letters, digits and hyphens (up to 32), not containing claude or anthropic; nothing changed.')
+  }
+  expect(w.ran.some(argv => argv.includes('prepare-home') || argv.includes('check'))).toBe(false)
+  expect(w.spawned).toEqual([])
+  expect(w.saved).toEqual([])
+})
+
 test('/model: PostModelSwitch applies the local window and restores it for Claude', { options: { ...OPTIONS, models: LOCAL } }, async ($, on) => {
   const w = world(on, null, 'claude-sonnet-5-5', { stdout: '', code: 0 })
   await $.command.run({ ...MODEL, args: LOCAL })

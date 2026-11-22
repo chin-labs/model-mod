@@ -1422,7 +1422,7 @@ async function setupCodex($: EngineInterface, c?: Config): Promise<string> {
     if (Number(v[1]) === 0 && (Number(v[2]) < 165 || (Number(v[2]) === 165 && Number(v[3]) === 0 && v[4]))) return 'model-mod: Codex login: codex too old; upgrade to 0.165.0 or newer'
     const account = await ask($, 'Choose a local label for this login (any valid name works; default main), or enter one under Other.', ['main', 'Cancel'])
     if (account === 'Cancel') throw new Cancelled()
-    if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(account)) return 'model-mod: Codex login: invalid account name; nothing changed.'
+    if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(account) || /claude|anthropic/i.test(account)) return 'model-mod: Codex login: invalid label; use lowercase letters, digits and hyphens (up to 32), not containing claude or anthropic; nothing changed.'
     const home = await $.env.get('HOME'), appdata = await $.env.get('APPDATA')
     const configured = typeof pluginOptions.codexAccountsDir === 'string' ? pluginOptions.codexAccountsDir.trim() : ''
     const dir = configured || (appdata ? appdata.replace(/[\\/]+$/, '') + '\\model-mod\\accounts' : home ? home.replace(/\/+$/, '') + '/.config/model-mod/accounts' : '')

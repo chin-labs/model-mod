@@ -45,7 +45,7 @@ The mod activates with either a valid `apiKey` or a valid combination of `codexA
 
 | Option | Format and default |
 |---|---|
-| `codexAccounts` | Comma-separated account names; empty by default. Each is 1–32 characters, starts with `[a-z0-9]`, and otherwise uses `[a-z0-9-]`. `/model-mod:setup` writes this value; setup can succeed for names containing `claude` or `anthropic`, but models for those accounts are silently omitted from the model list. |
+| `codexAccounts` | Comma-separated account names; empty by default. Each is 1–32 characters, starts with `[a-z0-9]`, and otherwise uses `[a-z0-9-]`. `/model-mod:setup` writes this value and refuses labels containing `claude` or `anthropic`. |
 | `codexModels` | Comma-separated model names; empty by default. Each is 1–64 characters, starts with `[A-Za-z0-9]`, and otherwise uses `[A-Za-z0-9._-]`; names containing `claude` or `anthropic` are rejected, case-insensitively. `/model-mod:setup` writes this value. A model newly offered by Codex cannot be selected until its ID is in this list; add the ID here, or run `/model-mod:setup` again and reselect the full set (setup replaces the entire list). |
 | `codexBin` | Executable name or absolute path; default `codex`. |
 

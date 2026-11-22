@@ -45,7 +45,7 @@ API 伺服器路徑會把工作階段送往接受 Messages 風格串流請求（
 
 | 選項 | 格式與預設值 |
 |---|---|
-| `codexAccounts` | 以逗號分隔帳號名稱，預設空白。每個名稱 1–32 字元，首字元為 `[a-z0-9]`，其餘使用 `[a-z0-9-]`。由 `/model-mod:setup` 寫入；含 `claude` 或 `anthropic` 的帳號名稱仍可設定成功，但該帳號的模型會從清單中靜默排除。 |
+| `codexAccounts` | 以逗號分隔帳號名稱，預設空白。每個名稱 1–32 字元，首字元為 `[a-z0-9]`，其餘使用 `[a-z0-9-]`。由 `/model-mod:setup` 寫入，並拒絕含 `claude` 或 `anthropic` 的標籤。 |
 | `codexModels` | 以逗號分隔模型名稱，預設空白。每個名稱 1–64 字元，首字元為 `[A-Za-z0-9]`，其餘使用 `[A-Za-z0-9._-]`；含 `claude` 或 `anthropic` 的名稱不分大小寫均會拒絕。由 `/model-mod:setup` 寫入。Codex 新提供的模型必須先將 ID 加到此清單才能選用；可直接加入，或重新執行 `/model-mod:setup` 並選取完整的模型清單（setup 會取代整份清單）。 |
 | `codexBin` | 執行檔名稱或絕對路徑；預設 `codex`。 |
 
