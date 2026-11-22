@@ -37,7 +37,7 @@
 | 更新或移除外掛後，背景工作立即失敗 | 舊版的 broker 仍在執行 | 在 macOS 或 Linux 上執行 `python3 /path/to/updated/plugin/helper/delegate.py client shutdown <<<'{}'`，並使用舊 broker 的 `XDG_STATE_HOME` 設定（若原本使用預設位置，就維持未設定）。等該狀態目錄下的 `model-mod/delegate/v1/broker.pid` 消失後再重試。這會中斷舊 broker 仍在執行的工作。 |
 | `This model step did not finish` | 該步驟失敗，model-mod 不會自動重試；任何先前的自動重試都已發生。 | 檢查最後一則訊息，必要時再次送出。 |
 | Claude Code 回報所選模型有問題（通常是 Codex 新推出的模型） | 模型 ID 不在 `codexModels` 內 | 將 ID 加入清單，或重新執行 `/model-mod:setup` 並選取完整的模型清單（setup 會取代整份清單）。 |
-| 選了模型後出現錯誤 | 模型不可用、上游停機或金鑰被拒絕 | 修正上游、模型或金鑰，再重新啟動 Claude Code。不會退回訂閱。 |
+| 選了模型後出現錯誤 | 模型不可用、上游停機或金鑰被拒絕 | 先執行 `/model-mod:doctor`；修正上游、模型或金鑰，再重新啟動 Claude Code。不會退回訂閱。 |
 | effort 後綴被拒絕 | 上游不認得 `model(level)` | 把進階選項 `effortMode` 設為 `none`。 |
 | 圖片工具不存在或被拒絕 | 未選本地模型、API 圖片模型未設定、權限遭拒，或 Codex 登入、額度或圖片功能不可用 | 選擇已設定的模型並允許請求。API 模型需設定 `imageModel`（[進階選項](CONFIGURATION.zh-TW.md#進階選項)）；Codex 使用內建圖片模型。Codex 失敗時請檢查登入、額度與 CLI 版本。圖片超過 20 MiB 時請求較小的圖片；輸出路徑已存在或位於工作目錄外時請換路徑。 |
 | `web_fetch` 拒絕某網址 | 不是 HTTP(S)，或目的地是私網 | 改用公開的 HTTP(S) 網址。 |
@@ -58,7 +58,7 @@
 | 工具名稱顯示為 `bridge_` 加雜湊 | `mcp__...` 等保留名稱及不符合 Codex 格式的名稱，在呼叫 Codex 時會轉成別名，回傳時還原。見[限制說明](LIMITATIONS.zh-TW.md#codex-登入的限制)。 |
 | 429、額度或速率限制 | 查看你的 Codex 訂閱額度與重置時間。尚未輸出前，重試會遵循最多 15 秒的 `Retry-After`；要求等待更久時直接結束回合。不會自動輪替帳號。 |
 | Transfer 拒絕自訂 `CLAUDE_CONFIG_DIR` | Transfer 僅支援預設 `~/.claude` 目錄；實測 Codex 0.166 匯入偵測搜尋 `HOME/.claude`。請取消自訂設定，並使用預設目錄中的工作階段。 |
-| 帳號設定被拒且回復失敗 | 開啟 `/plugin configure model-mod@model-mod`，手動將 `codexModels` 還原成先前的值，也檢查 `codexAccounts`；需要時再執行 setup。 |
+| 帳號設定失敗且回復失敗 | 開啟 `/plugin configure model-mod@model-mod`，手動將 `codexModels` 還原成先前的值，也檢查 `codexAccounts`；需要時再執行 setup。 |
 
 若 setup 無法顯示裝置驗證網址與代碼，請依顯示的命令操作，或自行建立帳號目錄並執行 `CODEX_HOME=<codexAccountsDir>/<帳號> codex login --device-auth`。Windows 請在 PowerShell 設定各帳號專用的 `CODEX_HOME`。之後重新執行 setup。
 

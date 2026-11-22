@@ -129,7 +129,7 @@ class Store:
             if len(records) >= MAX_JOBS:
                 terminal = sorted((r for r in records if r['state'] in TERMINAL),
                                   key=lambda r: (r['errorCode'] == 'possible_leftover', r['createdAt']))
-                if not terminal: raise UserError('Job limit reached; clear completed jobs.')
+                if not terminal: raise UserError('Job limit reached; wait for a job to finish or cancel one with /model-mod:cancel.')
                 oldest = terminal[0]
                 for suffix in ('.json', '.result'):
                     try: os.unlink(self.path(oldest['id'], suffix))

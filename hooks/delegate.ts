@@ -380,7 +380,9 @@ export function pollJob($: EngineInterface, c: DelegateConfig | undefined, id: s
           if (terminal.has(reply.job.state)) {
             polling.delete(id)
             const short = cleanDisplay(id.slice(0, 12))
-            await $.ui.toast(`Codex job ${short} finished (${cleanDisplay(reply.job.state)}); run /model-mod:result ${short}`)
+            const done = reply.job.state === 'completed'
+            const nextStep = done ? `run /model-mod:result ${short}` : `run /model-mod:jobs ${short}${reply.job.mode === 'write' ? ' and check git status / git diff' : ''}`
+            await $.ui.toast(`Codex job ${short} ${done ? 'finished' : 'ended'} (${cleanDisplay(reply.job.state)}); ${nextStep}`)
           } else if (rounds >= 140) polling.delete(id)
           else tick()
         } catch { polling.delete(id) }

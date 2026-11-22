@@ -27,7 +27,7 @@ Codex 登入是主要路徑。先安裝 Python 3.9 以上版本與官方 `codex`
 
 安裝後可能開啟「Configure model-mod」表單；Codex 登入不需要填寫，按 Esc 跳過即可，API 路徑只需要 `baseUrl` 與 `apiKey`。
 
-若 `/model-mod:setup` 沒反應或提示 hooks 未載入，請先執行 `/reload-plugins`。接著執行：
+若 `/model-mod:setup` 沒反應或提示 hooks 未載入，請先執行 `/reload-plugins`（若仍無效，請重新啟動或更新 Claude Code；見[已測試版本](docs/LIMITATIONS.zh-TW.md#已測試版本)）。接著執行：
 
 ```text
 /model-mod:setup
@@ -43,8 +43,8 @@ Codex 登入是主要路徑。先安裝 Python 3.9 以上版本與官方 `codex`
 首次檢查：
 
 - hooks 未載入：執行 `/reload-plugins` 或重新啟動 Claude Code。
-- 尚未登入：重新執行 `/model-mod:setup` 完成裝置登入，或依錯誤訊息中的終端機指令登入。
-- `codex` 不在 `PATH`：安裝官方 CLI 或設定 `codexBin`，再重試 setup。
+- 尚未登入：重新執行 `/model-mod:setup` 並輸入原本的帳號標籤以完成裝置登入，或依錯誤訊息中的終端機指令登入。
+- `codex` 不在 `PATH`：安裝官方 CLI，或在 `/plugin configure model-mod@model-mod` 設定 `codexBin`（見[Codex 登入選項](docs/CONFIGURATION.zh-TW.md#codex-登入選項)），再重試 setup。
 - `model-mod: Codex login: device code expired; run /model-mod:setup again to get a new code.`：重新執行 setup。
 - `model-mod: no local models. Run /model-mod:setup to add them.`：執行 setup 並選模型；用 `/model-mod:status` 檢查是否啟用。
 
@@ -104,7 +104,7 @@ claude plugin validate .
 claude plugin test .
 ```
 
-測試使用假憑證，需搭配支援 mod 的 Claude Code。試用工作副本的方式見[開發說明](docs/HOW-IT-WORKS.zh-TW.md#開發)。
+測試使用假憑證，需搭配支援插件 hooks 的 Claude Code（見[需求](#需求)）。試用工作副本的方式見[開發說明](docs/HOW-IT-WORKS.zh-TW.md#開發)。
 
 ## 問題回報與安全
 

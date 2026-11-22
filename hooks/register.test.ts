@@ -2858,7 +2858,9 @@ test('Codex login: unavailable device output falls back to manual login', async 
   })
   w.chooseUpstream = true
   w.answers = ['Codex login (recommended)', 'main']
-  expect((await $.command.run(SETUP)).text).toContain('then run /model-mod:setup again')
+  const out = await $.command.run(SETUP)
+  expect(out.text).toContain('then run /model-mod:setup again')
+  expect(out.text).toContain("CODEX_HOME='/fake-home/.config/model-mod/accounts/main' 'codex' login --device-auth")
   expect(w.ran.some(argv => argv.includes('cleanup-home'))).toBe(true)
 })
 

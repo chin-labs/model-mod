@@ -1100,8 +1100,8 @@ async function helperRun($: EngineInterface, c: Config, command: string, home: s
 function shellQuote(value: string): string { return "'" + value.replace(/'/g, "'\\''") + "'" }
 function powershellQuote(value: string): string { return "'" + value.replace(/'/g, "''") + "'" }
 function loginCommand(c: Config, item: CodexAccount): string {
-  if (/^[A-Za-z]:[\\/]/.test(item.directory)) return `$env:CODEX_HOME = ${powershellQuote(item.directory)}; & ${powershellQuote(c.codexBin ?? 'codex')} login`
-  return `CODEX_HOME=${shellQuote(item.directory)} ${shellQuote(c.codexBin ?? 'codex')} login`
+  if (/^[A-Za-z]:[\\/]/.test(item.directory)) return `$env:CODEX_HOME = ${powershellQuote(item.directory)}; & ${powershellQuote(c.codexBin ?? 'codex')} login --device-auth`
+  return `CODEX_HOME=${shellQuote(item.directory)} ${shellQuote(c.codexBin ?? 'codex')} login --device-auth`
 }
 function codexRunError(c: Config, item: CodexAccount, run: { stdout: string; stderr: string; exitCode: number }): string {
   let code = '', message = ''
@@ -1581,18 +1581,19 @@ function codexQuota(r: CodexReading): QuotaBlock {
 
 // Clears the options in `changes`. `ok` is the text of a success (known before the writes: the writes reload this plugin, see
 // commit.ts); `after` runs once they are made.
-async function removeSettings($: EngineInterface, changes: Record<string, string>, removed: string[], ok: string, after?: Plan['after']): Promise<Committed> {
-  const refused = (text: string): Committed => ({ text: 'model-mod: ' + text, ok: false })
+async function removeSettings($: EngineInterface, changes: Record<string, string>, removed: string[], ok: string, after?: Plan['after'], failureNote = ''): Promise<Committed> {
+  const withNote = (text: string) => failureNote ? `${text.replace(/\.$/, '')}. ${failureNote}` : text
+  const refused = (text: string): Committed => ({ text: withNote('model-mod: ' + text), ok: false })
   const rows = await $.config.list()
   const entries = Object.entries(changes).map(([field, value]) => ({ field, value, row: rows.find(r => r.key.endsWith('.' + field) && r.provider.plugin.split('@')[0] === $.plugin.name.split('@')[0]) }))
-  if (entries.some(e => !e.row || e.row.isLocked)) return refused('writable plugin config unavailable; nothing changed')
+  if (entries.some(e => !e.row || e.row.isLocked)) return refused(`writable plugin config unavailable; ${failureNote ? 'settings unchanged' : 'nothing changed'}`)
   const oldRetired = await retiredModels($)
   const oldCache = await $.store.get('models')
   const custom = await $.env.get('ANTHROPIC_CUSTOM_MODEL_OPTION')
   const clearCustom = typeof custom === 'string' && removed.includes(custom)
   const kept = Array.isArray(oldCache) ? oldCache.filter(id => typeof id !== 'string' || !removed.includes(id)) : []
   const retired = [...new Set([...oldRetired, ...removed])]
-  if (retired.length > MODEL_CACHE_CAP) return refused('model ownership cache is full; nothing changed')
+  if (retired.length > MODEL_CACHE_CAP) return refused(`model ownership cache is full; ${failureNote ? 'settings unchanged' : 'nothing changed'}`)
   try {
     await $.store.set('retiredModels', retired)
     await $.store.set('models', kept)
@@ -1601,8 +1602,11 @@ async function removeSettings($: EngineInterface, changes: Record<string, string
     try { await $.store.set('retiredModels', oldRetired); await $.store.set('models', oldCache ?? []); if (clearCustom && (await $.env.set('ANTHROPIC_CUSTOM_MODEL_OPTION', custom))?.deny) throw new Error('environment rollback refused') } catch { return refused('model cache update failed and rollback failed') }
     return refused('model cache could not be updated; previous values restored')
   }
-  const failure = { denied: 'model-mod: configuration failed; previous settings restored', failed: 'model-mod: configuration failed; previous settings restored',
-    rollbackFailed: 'model-mod: configuration failed and rollback failed; restore the previous settings in /plugin' }
+  const failure = {
+    denied: withNote('model-mod: configuration failed; previous settings restored'),
+    failed: withNote('model-mod: configuration failed; previous settings restored'),
+    rollbackFailed: withNote('model-mod: configuration failed and rollback failed; restore the previous settings in /plugin'),
+  }
   const done = await commitSettings($, {
     steps: entries.map(entry => settingStep(entry.row!, entry.value, failure)),
     undo: { store: { retiredModels: oldRetired, models: Array.isArray(oldCache) ? oldCache : [] }, ...(clearCustom ? { customModelOption: custom } : {}) },
@@ -1611,6 +1615,8 @@ async function removeSettings($: EngineInterface, changes: Record<string, string
   if (done.ok) {
     pluginOptions = { ...pluginOptions, ...changes }
     config = undefined; loaded = false; loading = undefined
+  } else if (!done.handed && failureNote && !done.text.includes(failureNote)) {
+    return { ...done, text: withNote(done.text) }
   }
   return done
 }
@@ -1657,14 +1663,16 @@ async function manageUpstreams($: EngineInterface, c: Config): Promise<string> {
   let deleteDir = false
   if (removeDir === 'Delete directory') deleteDir = await pick($, `Permanently delete only ${item.directory}?`, ['Keep directory (recommended)', 'Confirm deletion'], { header: 'Upstreams' }) === 'Confirm deletion'
   let logoutFailed = false
+  let loggedOutNote = ''
   await ensureOpen($)
   if (deleteDir) {
     logoutFailed = !await logout()
+    if (!logoutFailed) loggedOutNote = 'The Codex login was already removed; log in again with /model-mod:setup if you still want it.'
     try {
       const check = await $.process.run(pathArgs('can-remove-home'), { timeoutMs: 15_000 })
-      if (check.exitCode === 70) return `model-mod: logout did not complete; directory retained. Run ${loginCommand(c, item).replace(/ login$/, ' logout')} for this account, then retry removal.`
-      if (check.exitCode !== 0) return 'model-mod: account directory could not be validated; settings unchanged.'
-    } catch { return 'model-mod: account directory could not be validated; settings unchanged.' }
+      if (check.exitCode === 70) return `model-mod: logout did not complete; directory retained. Run ${loginCommand(c, item).replace(/ login --device-auth$/, ' logout')} for this account, then retry removal.`
+      if (check.exitCode !== 0) return 'model-mod: account directory could not be validated; settings unchanged.' + (loggedOutNote ? ' ' + loggedOutNote : '')
+    } catch { return 'model-mod: account directory could not be validated; settings unchanged.' + (loggedOutNote ? ' ' + loggedOutNote : '') }
     // The logout above could not be stopped; the pane was closed meanwhile, so nothing else is removed.
     if (await setupPaneClosed($)) return 'model-mod: setup cancelled; the account was logged out, settings and directory unchanged.'
   }
@@ -1674,10 +1682,12 @@ async function manageUpstreams($: EngineInterface, c: Config): Promise<string> {
   if (!remaining.length) changes.codexModels = ''
   const cleared = ['fallbackModel', 'workerModel'].filter(field => removed.includes(String(pluginOptions[field] ?? '')))
   for (const field of cleared) changes[field] = ''
-  await ensureOpen($)
+  if (loggedOutNote) {
+    if (setupFlow && await setupPaneClosed($)) return 'model-mod: setup cancelled; the account was logged out, settings and directory unchanged.'
+  } else await ensureOpen($)
   const note = logoutFailed ? ' Logout failed; directory deletion was attempted.' : ''
   return (await removeSettings($, changes, removed, `model-mod: Codex account ${item.account} removed.${cleared.length ? ' Cleared: ' + cleared.join(', ') + '.' : ''}${note}`,
-    deleteDir ? { argv: pathArgs('remove-home'), timeoutMs: 60_000, failed: ' Directory deletion failed.' } : undefined)).text
+    deleteDir ? { argv: pathArgs('remove-home'), timeoutMs: 60_000, failed: ' Directory deletion failed.' } : undefined, loggedOutNote)).text
 }
 
 // The effort and model of the newest main-loop turn (turn.step carries the effort; nothing else exposes it). A reload
@@ -1787,9 +1797,18 @@ function codexMatches(c: Config, id: string): string[] {
 
 function addDoctorSettingsChecks(checks: Check[], c?: Config): void {
   const invalid = invalidCodexFields(pluginOptions)
-  if (invalid.length) checks.push({ mark: '!', what: 'Codex settings', cause: `Invalid ${invalid.join(', ')}.`, next: 'Correct these fields in plugin settings.' })
+  if (invalid.length) {
+    const advanced = invalid.filter(f => f === 'codexAccountsDir' || f === 'pythonBin')
+    const dialog = invalid.filter(f => f !== 'codexAccountsDir' && f !== 'pythonBin')
+    const next = dialog.length && advanced.length
+      ? `Correct ${dialog.join(', ')} in /plugin → model-mod configure, and ${advanced.join(', ')} ${IN_SETTINGS_FILE}.`
+      : advanced.length
+        ? `Correct these fields ${IN_SETTINGS_FILE}.`
+        : 'Correct these fields in /plugin → model-mod configure.'
+    checks.push({ mark: '!', what: 'Codex settings', cause: `Invalid ${invalid.join(', ')}.`, next })
+  }
   for (const [name, bad] of [['codexWebSearch', c?.codexWebSearchInvalid], ['codexKeepReasoning', c?.codexKeepReasoningInvalid], ['codexThreadReuse', c?.codexThreadReuseInvalid], ['codexServiceTier', c?.codexServiceTierInvalid], ['Codex Stop gate', stopGateSettings(pluginOptions).invalid]] as const) {
-    if (bad) checks.push({ mark: '!', what: name, cause: 'This setting is invalid; the default is in use.', next: 'Correct the setting in plugin settings.' })
+    if (bad) checks.push({ mark: '!', what: name, cause: 'This setting is invalid; the default is in use.', next: `Correct the setting ${IN_SETTINGS_FILE}.` })
   }
 }
 
@@ -1820,7 +1839,7 @@ async function doctorReport($: EngineInterface, c: Config | undefined, columns?:
       checks.push({ mark: '!', what: name, cause: matches.length > 1 ? `The model matches several Codex accounts: ${list}.` : 'The configured model was not accepted.', next: matches.length > 1 || (!id.includes('/') && c.codex?.size) ? 'Use <account>/<model>.' : 'Choose a model in the allowlist or a full Codex model ID.' })
     }
   }
-  if (c.codexDirectoryUnavailable?.size) checks.push({ mark: '!', what: 'Codex account directory', cause: 'The account directory could not be determined.', next: 'Configure an absolute codexAccountsDir and reload the plugin.' })
+  if (c.codexDirectoryUnavailable?.size) checks.push({ mark: '!', what: 'Codex account directory', cause: 'The account directory could not be determined.', next: `Configure an absolute codexAccountsDir ${IN_SETTINGS_FILE} and reload the plugin.` })
   try {
     const model = await $.session.model()
     if (c.codex?.has(model) || c.imageModel) {
@@ -1835,7 +1854,7 @@ async function doctorReport($: EngineInterface, c: Config | undefined, columns?:
   for (const r of readings) {
     const what = `Codex ${r.item.account}: login and quota`
     const quota = codexQuota(r)
-    if (r.pythonMissing) checks.push({ mark: '!', what, cause: 'Python could not be started.', next: 'Install Python 3.9 or newer or check pythonBin.' })
+    if (r.pythonMissing) checks.push({ mark: '!', what, cause: 'Python could not be started.', next: `Install Python 3.9 or newer or check pythonBin ${IN_SETTINGS_FILE}.` })
     else if (r.tooOld) checks.push({ mark: '!', what, cause: 'Codex is too old.', next: 'Upgrade Codex to 0.165.0 or newer.' })
     else if (r.checkExit === 66) checks.push({ mark: '!', what, cause: 'Codex could not be started or did not answer.', next: 'Install Codex or check codexBin.' })
     else if (r.login === 'missing') checks.push({ mark: '!', what, cause: 'The account is not logged in or its directory is missing.', next: 'Run /model-mod:setup and check the account directory.' })
@@ -2089,7 +2108,7 @@ export const register: Register = (on, options) => {
       if (!c) return answer('Web search is not configured.', true)
       const model = await bridgeModel($, e, c)
       if (model === undefined) return answer('web_search is only available while a local model is selected. With this model, use the built-in WebSearch tool instead.', true)
-      if (c.codex?.has(model)) return answer('Codex login uses native web search when WebSearch is permitted and codexWebSearch is on; check /model-mod:status and plugin settings.', true)
+      if (c.codex?.has(model)) return answer(`Codex login uses native web search when WebSearch is permitted and codexWebSearch is on; check /model-mod:status and codexWebSearch ${IN_SETTINGS_FILE}.`, true)
       const input = e as unknown as Record<string, unknown>
       const query = typeof input.query === 'string' ? input.query.trim() : ''
       if (!query || query.length > 500) return answer('query must be 1-500 characters.', true)
@@ -2620,7 +2639,7 @@ export const register: Register = (on, options) => {
     } catch (err) {
       const why = err instanceof Error ? scrub(c, `${err.name}: ${err.message}`).slice(0, 160) : 'unknown'
       return yield* failure(e, next.signal.aborted ? 'cancelled' : codex
-        ? `Codex login (${codex.account}): ${spawnFailed ? 'helper could not start; install Python 3.9 or newer and check pythonBin' : 'request could not complete; check Codex and try again'}`
+        ? `Codex login (${codex.account}): ${spawnFailed ? `helper could not start; install Python 3.9 or newer and check pythonBin ${IN_SETTINGS_FILE}` : 'request could not complete; check Codex and try again'}`
         : `local request failed (${why})`, parser.nextIndex)
     } finally {
       // The retry line is pinned until it is replaced or cleared; the turn is over, so it must not stay.

@@ -27,7 +27,7 @@ Codex login is the main path. Install Python 3.9+ and the official `codex` CLI, 
 
 After installation, a “Configure model-mod” form may open; Codex login needs none of it, so press Esc to skip, while the API route needs only `baseUrl` and `apiKey`.
 
-If `/model-mod:setup` does not respond or reports that hooks are not loaded, run `/reload-plugins` first. Then run:
+If `/model-mod:setup` does not respond or reports that hooks are not loaded, run `/reload-plugins` first (if it still fails, restart or update Claude Code; see [tested versions](docs/LIMITATIONS.md#tested-versions)). Then run:
 
 ```text
 /model-mod:setup
@@ -43,8 +43,8 @@ Alternatively, if you already have a [Messages-compatible API server](docs/CONFI
 First checks:
 
 - Hooks not loaded: run `/reload-plugins` or restart Claude Code.
-- Not logged in: rerun `/model-mod:setup` and complete device login, or follow the terminal login command in the error.
-- `codex` not on `PATH`: install the official CLI or configure `codexBin`, then retry setup.
+- Not logged in: rerun `/model-mod:setup` with the same account label and complete device login, or follow the terminal login command in the error.
+- `codex` not on `PATH`: install the official CLI or set `codexBin` in `/plugin configure model-mod@model-mod` (see [Codex login options](docs/CONFIGURATION.md#codex-login-options)), then retry setup.
 - `model-mod: Codex login: device code expired; run /model-mod:setup again to get a new code.`: rerun setup.
 - `model-mod: no local models. Run /model-mod:setup to add them.`: run setup and select models; use `/model-mod:status` to check activation.
 
@@ -104,7 +104,7 @@ claude plugin validate .
 claude plugin test .
 ```
 
-Tests use fake credentials and need Claude Code with mod support. See [development notes](docs/HOW-IT-WORKS.md#development) for trying a working copy.
+Tests use fake credentials and need Claude Code with plugin hooks (see [Requirements](#requirements)). See [development notes](docs/HOW-IT-WORKS.md#development) for trying a working copy.
 
 ## Issues and security
 

@@ -2,7 +2,7 @@
 
 [English](FEATURES.md) · [README](../README.zh-TW.md)
 
-- **串流與工具。** 文字與工具呼叫皆為串流。尚未收到任何輸出前，HTTP 429、502、503、504、529 與其他暫時性錯誤會在 2、6、15 秒後重試（最多三次）。整數 `Retry-After` 為 0–15 秒時，下一次等待至少採用該值；超過 15 秒則立即以 HTTP 狀態與要求的等待秒數結束回合。無效值與 HTTP 日期一律忽略。輸出開始後串流中斷，該回合直接結束，不會重播。
+- **串流與工具。** 文字與工具呼叫皆為串流。尚未收到任何輸出前，HTTP 429、502、503、504、529 與其他暫時性錯誤會在 2、6、15 秒後重試（最多三次）。整數 `Retry-After` 為 0–15 秒時，下一次等待至少採用該值；超過 15 秒則立即以失敗原因與要求的等待秒數結束回合。無效值與 HTTP 日期一律忽略。輸出開始後串流中斷，該回合直接結束，不會重播。
 - **內建工具、Skills 與 MCP。** 照常運作。設定 `toolsFile` 時使用其中的內建工具輸入 schema；否則使用開放物件 schema，由 Claude Code 自行驗證參數。
 - **子代理與 Workflow。** 在訂閱工作階段中，可用 `model-mod:local-worker` 代理類型把工作交給你的模型（需設定 `workerModel` 或 `fallbackModel`），或讓 Workflow agent 指定 `model: "<你的模型 ID>"`。用你的模型的工作階段仍可委派給訂閱模型，該請求走訂閱。
 - **網頁搜尋與擷取。** API 路徑的 `web_search` 經 API 上游執行；Codex 登入在 `codexWebSearch`（[進階選項](CONFIGURATION.zh-TW.md#進階選項)）開啟且工作階段提供 WebSearch 時使用原生搜尋。`web_fetch` 自行下載公開 HTTP(S) 頁面，每一跳都檢查所有 DNS 回答，拒絕迴路（loopback）、私網、link-local、共享位址空間（CGNAT）、多播、保留與未指定位址，以及主機名稱 localhost 與最後一段為 local 或 internal 的名稱；其他特殊用途範圍不在檢查內（最多五次重新導向）。`web_fetch`、`web_search` 與 `generate_image` 的權限提示提供「Yes, and do not ask again this session」：對 `web_fetch`，記住的是被詢問 URL 的主機（不含之後重新導向的主機），對網頁搜尋，記住的是該工具；對圖片生成，記住的是工具與路徑（Codex 登入或 API 上游）的組合，兩條路徑分開記，核准其中一條不會核准另一條。此答覆只保存在記憶體，不寫入磁碟，在插件載入期間有效。
@@ -10,7 +10,7 @@
 - **Codex 父 thread 重用。** 符合條件的請求可重用父 thread；見[隱私與清理](LIMITATIONS.zh-TW.md#父-thread-隱私與清理)。
 - **Codex 推理延續。** 工具迴圈期間可透過實驗性 app-server API 在記憶體保留不透明的 reasoning item；真實 Codex 回合的重放尚未驗證。fork 請求不保留 reasoning；若要保留，請將 `codexThreadReuse`（[進階選項](CONFIGURATION.zh-TW.md#進階選項)）設為 `off`。見[限制說明](LIMITATIONS.zh-TW.md#codex-登入的限制)。
 - **工具搜尋。** `tool_search` 用來找出 schema 被延後載入的 MCP 工具。
-- **status 與 setup 畫面。** `/model-mod:status` 輸出純文字報告：含版本與警告數的標題行；有警告時的 WARNINGS（本次工作階段最新的 Stop gate 警告也列在其中）；QUOTA（每個 Codex 帳號一個區塊，含 5 小時與每週的用量條、已用百分比與重置時間，分別以相對時間與本地時間表示，另有 credits 與方案）；CURRENT PATH（工作階段模型、路徑、帳號、effort、thread 重用）；以及 DIAGNOSTICS，分為 Picker、每個 Codex 帳號與 Codex settings；設定 API 上游時也顯示 Tools 與 Prompts。每個狀態也以文字寫出（`[OK]`、`[!]`、`[LIMIT]`、`[--]`），不只靠顏色；設定 `NO_COLOR` 或 `TERM=dumb` 時用量條改為 `#`／`-`。讀取額度時以 toast 提示，狀態列保持不動。額度查詢失敗時顯示 `無法取得` 與原因，API 上游顯示 `沒有額度資料`。setup 需要互動式工作階段（終端機輸入區或 bridge）；在 `-p` 下只會輸出 `model-mod setup is interactive. picker=…; models=…`，不更動設定。`/model-mod:setup` 的固定選單在同一個 pane 中顯示，並保持開啟到 setup 結束；按 Esc 會關閉並取消：之後不再提問，也不寫入任何設定，但已在進行的步驟（模型清單請求、帳號登出）會先跑完，其結果會被丟棄。文字輸入（端點網址、帳號名稱、模型 ID）、超過 12 項的選單，以及無法顯示 pane 的情況（bridge 工作階段、本體太小）仍使用對話框；對話框在輸入的答案不是列出的選項時會重新詢問。
+- **status 與 setup 畫面。** `/model-mod:status` 輸出純文字報告：含版本與警告數的標題行；有警告時的 WARNINGS（本次工作階段最新的 Stop gate 警告也列在其中）；QUOTA（每個 Codex 帳號一個區塊，含 5 小時與每週的用量條、已用百分比與重置時間，分別以相對時間與本地時間表示，另有 credits 與方案）；CURRENT PATH（工作階段模型、路徑、帳號、effort、thread 重用）；以及 DIAGNOSTICS，分為 Picker、每個 Codex 帳號與 Codex settings；設定 API 上游時也顯示 Tools 與 Prompts。每個狀態也以文字寫出（`[OK]`、`[!]`、`[LIMIT]`、`[--]`），不只靠顏色；設定 `NO_COLOR` 或 `TERM=dumb` 時用量條改為 `#`／`-`。讀取額度時以 toast 提示，狀態列保持不動。額度查詢失敗時顯示 `無法取得` 與原因，API 上游顯示 `沒有額度資料`。setup 需要互動式工作階段（終端機輸入區或 bridge）；在 `-p` 下只會輸出 `model-mod setup is interactive. picker=…; models=…`，不更動設定。`/model-mod:setup` 的固定選單在同一個 pane 中顯示，並保持開啟到 setup 結束；按 Esc 會關閉並取消：已在進行的步驟（模型清單請求、帳號登出）會先執行完畢，之後 setup 不再提問，也不寫入任何設定。文字輸入（端點網址、帳號名稱、模型 ID）、超過 12 項的選單，以及無法顯示 pane 的情況（bridge 工作階段、本體太小）仍使用對話框；對話框在輸入的答案不是列出的選項時會重新詢問。
 - **Effort。** Claude Code 的五級（`low`、`medium`、`high`、`xhigh`、`max`）以模型後綴（如 `model(high)`）送出。Codex 登入路徑會由 helper 將後綴轉為 app-server effort，包含 `max`；`effortMode` 僅適用 API 路徑。Ultracode 是獨立的 workflow 開關，不改變等級。
 - **壓縮。** `/compact` 與自動壓縮使用你的模型。摘要保留多少取決於模型，不是無損存檔。
 - **圖片與 PDF。** 圖片會轉交。單頁 PDF 以圖片方式讀取。
