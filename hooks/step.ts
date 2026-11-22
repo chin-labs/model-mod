@@ -2,9 +2,8 @@ import type { TrackedAgent } from '../types'
 
 export type Thinking = { type: 'thinking'; thinking: string; signature: string }
 export const API_SIGNATURE = /^gAAAA/
-export const CODEX_SIGNATURE = /^mmcx1:/
 
-export function buildStepMessages(history: readonly TrackedAgent['turns'][number][], codex: boolean, keepThinking: boolean, stash: ReadonlyMap<string, Thinking[]>) {
+export function buildStepMessages(history: readonly TrackedAgent['turns'][number][], keepThinking: boolean, stash: ReadonlyMap<string, Thinking[]>) {
   const messages = history.map(message => ({ ...message, content: message.content.filter(block => {
     const type = block.type
     return !['thinking', 'redacted_thinking', 'server_tool_use'].includes(type) && !type.endsWith('_tool_result')
@@ -16,7 +15,7 @@ export function buildStepMessages(history: readonly TrackedAgent['turns'][number
     withThinking = messages.map(message => {
       if (message.role !== 'assistant') return message
       const ids = message.content.filter(b => b.type === 'tool_use').map(b => String((b as { id?: unknown }).id))
-      const kept = ids.map(id => stash.get(id)?.filter(b => (codex ? CODEX_SIGNATURE : API_SIGNATURE).test(b.signature))).find(blocks => blocks?.length)
+      const kept = ids.map(id => stash.get(id)?.filter(b => API_SIGNATURE.test(b.signature))).find(blocks => blocks?.length)
       if (!kept) return message
       any = true
       return { ...message, content: [...kept, ...message.content] }
@@ -26,17 +25,16 @@ export function buildStepMessages(history: readonly TrackedAgent['turns'][number
   return { messages, withThinking }
 }
 
-type StderrState = { httpStatus: number; retryAfter: number | undefined; reasoningRebuilt: boolean }
-export function parseStepStderr(line: string, codex: boolean, state: StderrState): StderrState {
-  let { httpStatus, retryAfter, reasoningRebuilt } = state
-  if (codex && line.replace(/\r$/, '') === 'model-mod-note:Codex login: reasoning discarded; retrying once') reasoningRebuilt = true
+type StderrState = { httpStatus: number; retryAfter: number | undefined }
+export function parseStepStderr(line: string, state: StderrState): StderrState {
+  let { httpStatus, retryAfter } = state
   const status = /^model-mod-http:(\d{3})\r?$/.exec(line)
   if (status) httpStatus = Number(status[1])
   if (line.startsWith('model-mod-retry-after:')) {
     const seconds = /^model-mod-retry-after:[ \t]*(\d+)[ \t]*\r?$/.exec(line)
     retryAfter = seconds && Number.isSafeInteger(Number(seconds[1])) ? Number(seconds[1]) : undefined
   }
-  return { httpStatus, retryAfter, reasoningRebuilt }
+  return { httpStatus, retryAfter }
 }
 
 const RETRYABLE_HTTP_STATUS = [429, 502, 503, 504, 529]

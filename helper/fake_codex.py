@@ -26,7 +26,6 @@ def record(value):
 
 
 def event(method, params):
-    if method == 'rawResponseItem/completed' and forked: return
     send({'method': method, 'params': params})
 
 
@@ -96,9 +95,7 @@ for line in sys.stdin:
         if mode == 'delegate_layers_missing' or not params.get('includeLayers'): del result['layers']
         send({'id': ident, 'result': result})
     elif method == 'thread/start':
-        if mode == 'reasoning_start_error' and params.get('experimentalRawEvents'):
-            send({'id': ident, 'error': {'code': -32000, 'message': 'synthetic'}})
-        elif mode in ('rejected_request', 'rejected_params'):
+        if mode in ('rejected_request', 'rejected_params'):
             send({'id': ident, 'error': {'code': -32600 if mode == 'rejected_request' else -32602, 'message': 'untrusted details'}})
         elif mode in ('bad', 'rate'):
             print('synthetic app-server failure ' + 'A' * 80, file=sys.stderr, flush=True)
@@ -153,9 +150,7 @@ for line in sys.stdin:
                 send({'id': ident, 'error': {'code': -32600, 'message': 'thread not found: ' + params.get('threadId', '')}})
             else: send({'id': ident, 'result': {}})
     elif method == 'thread/inject_items':
-        if mode == 'reasoning_inject_error' and any(item.get('type') == 'reasoning' for item in params['items']):
-            send({'id': ident, 'error': {'code': -32602, 'message': 'synthetic'}})
-        else: send({'id': ident, 'result': {}})
+        send({'id': ident, 'result': {}})
     elif method == 'externalAgentConfig/detect':
         sessions = [{'path': config['session_path'], 'cwd': config['session_cwd'], 'title': None}]
         if mode == 'transfer_multiple': sessions.append(dict(sessions[0]))
@@ -193,37 +188,6 @@ for line in sys.stdin:
         if mode == 'delegate_filechange':
             event('item/started', {'item': {'type': 'fileChange'}})
             continue
-        if mode in ('reasoning_invalid_once', 'reasoning_invalid_always'):
-            count_file = os.path.join(os.environ['CODEX_HOME'], 'fake_turn_count')
-            try:
-                with open(count_file, encoding='utf-8') as f: count = int(f.read())
-            except (OSError, ValueError): count = 0
-            with open(count_file, 'w', encoding='utf-8') as f: f.write(str(count + 1))
-            if mode == 'reasoning_invalid_always' or count == 0:
-                event('turn/completed', {'turn': {'id': 'turn1', 'status': 'failed', 'error': {'message': 'invalid_encrypted_content', 'code': 400}}})
-                continue
-            if config.get('hang'):
-                def send_deltas():
-                    while not interrupted.is_set():
-                        event('item/agentMessage/delta', {'delta': 'hello'})
-                        time.sleep(0.05)
-                threading.Thread(target=send_deltas, daemon=True).start()
-                continue
-        if mode in ('reasoning_tool', 'reasoning_interleaved', 'reasoning_text_interleaved', 'reasoning_invalid_shape', 'reasoning_large', 'reasoning_many'):
-            reasoning = {'type': 'reasoning', 'id': 'reason1', 'summary': [], 'content': None,
-                         'encrypted_content': 'x' * (300000 if mode == 'reasoning_large' else 140000 if mode == 'reasoning_many' else 16)}
-            if mode == 'reasoning_invalid_shape': reasoning['unexpected'] = 'private'
-            event('rawResponseItem/completed', {'item': reasoning, 'threadId': '12345678-1234-4234-8234-123456789abc', 'turnId': 'turn1'})
-            if mode == 'search_after_tool':
-                event('item/completed', {'item': {'type': 'webSearch', 'id': 'late', 'query': 'late search'}})
-            if mode == 'reasoning_interleaved':
-                event('rawResponseItem/completed', {'item': {'type': 'message', 'role': 'assistant', 'content': [{'type': 'output_text', 'text': 'RAW-SECRET-message'}]}})
-                event('rawResponseItem/completed', {'item': dict(reasoning, id='reason2')})
-                event('rawResponseItem/completed', {'item': {'type': 'function_call_output', 'call_id': 'raw1', 'output': 'RAW-SECRET-output'}})
-                event('rawResponseItem/completed', {'item': {'type': 'function_call', 'call_id': 'raw1', 'name': 'one', 'arguments': 'RAW-SECRET-call'}})
-                event('rawResponseItem/completed', {'item': dict(reasoning, id='after-call')})
-            if mode == 'reasoning_many':
-                for n in range(2, 7): event('rawResponseItem/completed', {'item': dict(reasoning, id='reason' + str(n))})
         if mode in ('gate', 'gate_approval', 'gate_commentary'):
             text = config.get('gateText', json.dumps({'verdict': 'pass', 'findings': [], 'needsHuman': False}))
             if mode == 'gate_commentary':
@@ -236,8 +200,6 @@ for line in sys.stdin:
             text = '\x1b[31mhello\x1b[0m\x01' + 'x' * 65000 if mode == 'delegate_long' else 'hello'
         event('item/agentMessage/delta', {'delta': text})
         if mode == 'gate_commentary': event('item/completed', {'item': {'type': 'agentMessage', 'phase': 'final_answer', 'text': text}})
-        if mode == 'reasoning_text_interleaved':
-            event('rawResponseItem/completed', {'item': {'type': 'reasoning', 'id': 'after-text', 'summary': [], 'encrypted_content': 'opaque'}})
         if mode == 'wait_tool':
             event('item/started', {'item': {'type': 'sleep'}})
             event('item/tool/call', {'callId': 'call1', 'tool': 'one', 'arguments': {'n': 1}})
@@ -285,12 +247,10 @@ for line in sys.stdin:
             event('item/completed', {'item': {'type': 'contextCompaction'}})
             event('thread/tokenUsage/updated', {'tokenUsage': {'modelContextWindow': 475000, 'total': {'inputTokens': 10}}})
             event('turn/completed', {'turn': {'id': 'turn1', 'status': 'completed'}})
-        elif mode in ('tools', 'reasoning_tool', 'reasoning_interleaved', 'reasoning_text_interleaved', 'reasoning_invalid_shape', 'reasoning_large', 'reasoning_many', 'search_after_tool'):
+        elif mode in ('tools', 'search_after_tool'):
             event('item/tool/call', {'callId': 'call1', 'tool': 'one', 'arguments': {'n': 1}})
             if mode == 'search_after_tool':
                 event('item/completed', {'item': {'type': 'webSearch', 'id': 'late', 'query': 'late search'}})
-            if mode == 'reasoning_interleaved':
-                event('rawResponseItem/completed', {'item': {'type': 'reasoning', 'id': 'reason3', 'summary': [], 'encrypted_content': 'opaque'}})
             event('item/tool/call', {'callId': 'call2', 'tool': 'two', 'arguments': {'n': 2}})
         else:
             if mode == 'delegate_delay': time.sleep(1)

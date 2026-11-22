@@ -30,7 +30,6 @@ After `/model-mod:setup`:
 | Doctor reports 404 | The API base URL may include `/v1` or a wrong path prefix | Set the base URL without `/v1`. |
 | Doctor reports 429 or a 5xx error | The API is rate limited or has a server error | Wait and try again. |
 | `invalid codexThreadReuse; using on.` or a similar `invalid …; using …` warning | An option has an unsupported value | The default shown in the warning is used; see [Advanced options](CONFIGURATION.md#advanced-options) for accepted values. |
-| `no tool schemas; toolsFile could not be read.` | Tool schemas could not be loaded from `toolsFile`; no tool definitions are supplied by model-mod for the turn | Check that `toolsFile` points to an existing, readable JSON file with a `tools` array. |
 | Doctor reports an invalid or empty models list | The server did not return a valid, non-empty models list | Check that the server offers a `/v1/models` list, or set `models` explicitly. |
 | `model is not in the allowlist` | The ID is outside `models` | Choose an allowed ID or update the list. |
 | `No result is available.` for a background job | The job has not finished, or it failed or was cancelled; only a completed job has a result | Check its state with `/model-mod:jobs`. A failed, timed-out, cancelled or interrupted `--write` job may already have changed the working directory; check `git status` and `git diff`. |

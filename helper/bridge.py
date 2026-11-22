@@ -26,8 +26,7 @@ for stream in (sys.stdin, sys.stdout, sys.stderr):
     stream.reconfigure(encoding='utf-8')
 
 from cancellation import Cancelled
-from mapping import (InvalidRequest, classify, prepare, usage_delta, encode_reasoning,
-                     REASONING_RESPONSE_LIMIT)
+from mapping import InvalidRequest, classify, prepare, usage_delta
 
 # Last live-tested version: codex-cli 0.165.0.
 MIN_TESTED_VERSION = (0, 165, 0)
@@ -116,12 +115,6 @@ def verify_version(args):
         error.version = text
         raise error
     return text, 'tested' if version == MIN_TESTED_VERSION and not match.group(4) and not match.group(5) else 'untested'
-
-
-def invalid_encrypted_content(error):
-    if isinstance(error, dict): return any(invalid_encrypted_content(v) for v in error.values())
-    if isinstance(error, list): return any(invalid_encrypted_content(v) for v in error)
-    return isinstance(error, str) and 'invalid_encrypted_content' in error
 
 
 def retry_seconds(error):
@@ -311,8 +304,6 @@ class App:
             if is_response(obj, ident):
                 if 'error' in obj:
                     status, kind = classify(obj['error'])
-                    if invalid_encrypted_content(obj['error']):
-                        raise BridgeError('Codex login: app-server request failed', status, kind, code='invalid_encrypted_content')
                     if method == 'initialize': raise incompatible('experimentalApi')
                     message = obj['error'].get('message') if isinstance(obj['error'], dict) else None
                     if method == 'thread/delete' and isinstance(obj['error'], dict) and obj['error'].get('code') == -32600 and message == 'thread not found: ' + str(params.get('threadId')):
@@ -408,7 +399,6 @@ def messages(args, app, prepared, cwd):
     instructions = TOOL_INSTRUCTIONS
     if app.web_search == 'live': instructions = instructions.replace('Use only the provided function tools.', 'Use the provided function tools and native web search.')
     params = {'model': p['model'], 'cwd': cwd, 'sandbox': 'read-only', 'approvalPolicy': 'never', 'ephemeral': True, 'baseInstructions': p['system'], 'developerInstructions': instructions, 'dynamicTools': p['tools']}
-    if not args.no_keep_reasoning: params['experimentalRawEvents'] = True
     result = None
     reused = False
     if args.reuse_session and os.name == 'posix':
@@ -422,16 +412,8 @@ def messages(args, app, prepared, cwd):
     if result is None:
         if args.reuse_session and (app.reuse_broken or app.proc.poll() is not None):
             raise BridgeError('Codex login: retrying with a new thread', code='reuse_retry')
-        try:
-            result = app.request('thread/start', params)
-        except BridgeError:
-            if args.no_keep_reasoning: raise
-            note('Codex login: raw reasoning unavailable')
-            params.pop('experimentalRawEvents', None)
-            result = app.request('thread/start', params)
+        result = app.request('thread/start', params)
     parent_usage = result.pop('_parent_usage') if reused else {}
-    if parent_usage and not args.no_keep_reasoning:
-        note('Codex login: raw reasoning unavailable on reused threads')
     try:
         thread_id = result['thread']['id']
         if not isinstance(thread_id, str) or str(uuid.UUID(thread_id)) != thread_id.lower(): raise ValueError()
@@ -440,12 +422,7 @@ def messages(args, app, prepared, cwd):
     if result.get('approvalPolicy') != 'never' or not isinstance(result.get('sandbox'), dict) or result['sandbox'].get('type') != 'readOnly': raise incompatible('sandbox or approvalPolicy')
     app.thread_id = thread_id
     if p['history']:
-        try:
-            app.request('thread/inject_items', {'threadId': app.thread_id, 'items': p['history']})
-        except BridgeError as error:
-            if any(item.get('type') == 'reasoning' for item in p['history']) and error.code != 'invalid_encrypted_content':
-                raise BridgeError('Codex login: reasoning unavailable', code='reasoning_unavailable')
-            raise
+        app.request('thread/inject_items', {'threadId': app.thread_id, 'items': p['history']})
     turn = {'threadId': app.thread_id, 'model': p['model'], 'effort': p['effort'], 'input': p['input']}
     if args.service_tier == 'priority': turn['serviceTier'] = 'priority'
     result = app.request('turn/start', turn)
@@ -461,7 +438,6 @@ def messages(args, app, prepared, cwd):
             emit('message_start', {'type': 'message_start', 'message': message})
             stream_started = True
     content, opened, calls, latest = [], False, [], {}
-    reasoning_size, reasoning_dropped, content_seen = 0, 0, False
     batch_deadline, call_ids, search_ids = None, set(), set()
     if check_turn(result.get('turn'), app.web_search == 'live'):
         app.wait_interrupted = True
@@ -482,36 +458,13 @@ def messages(args, app, prepared, cwd):
             app.interrupt()
         if app.wait_interrupted and method not in ('turn/completed', 'thread/tokenUsage/updated') and not (method == 'item/tool/call' and params.get('tool') in p['reverse']):
             continue
-        if method == 'rawResponseItem/completed' and not args.no_keep_reasoning:
-            item = params.get('item') if isinstance(params, dict) else None
-            if isinstance(item, dict) and item.get('type') == 'function_call': content_seen = True
-            if not isinstance(item, dict) or item.get('type') != 'reasoning': continue
-            if content_seen:
-                reasoning_dropped += 1
-                continue
-            signature = encode_reasoning(item)
-            if signature is None or reasoning_size + len(signature) > REASONING_RESPONSE_LIMIT:
-                reasoning_dropped += 1
-                continue
-            if opened:
-                if p['stream']: emit('content_block_stop', {'type': 'content_block_stop', 'index': len(content)-1})
-                opened = False
-            reasoning_size += len(signature)
-            content.append({'type': 'thinking', 'thinking': '', 'signature': signature})
-            if p['stream']:
-                start_stream()
-                idx = len(content)-1
-                emit('content_block_start', {'type': 'content_block_start', 'index': idx, 'content_block': {'type': 'thinking', 'thinking': ''}})
-                emit('content_block_delta', {'type': 'content_block_delta', 'index': idx, 'delta': {'type': 'signature_delta', 'signature': signature}})
-                emit('content_block_stop', {'type': 'content_block_stop', 'index': idx})
-        elif method == 'item/agentMessage/delta':
+        if method == 'item/agentMessage/delta':
             if calls: continue
             start_stream()
             if not opened:
                 content.append({'type': 'text', 'text': ''}); opened = True
                 if p['stream']: emit('content_block_start', {'type': 'content_block_start', 'index': len(content)-1, 'content_block': {'type': 'text', 'text': ''}})
             text = params.get('delta', '')
-            if text: content_seen = True
             content[-1]['text'] += text
             if p['stream']: emit('content_block_delta', {'type': 'content_block_delta', 'index': len(content)-1, 'delta': {'type': 'text_delta', 'text': text}})
         elif method == 'item/completed' and isinstance(params.get('item'), dict) and params['item'].get('type') == 'webSearch':
@@ -525,7 +478,6 @@ def messages(args, app, prepared, cwd):
                 if p['stream']: emit('content_block_stop', {'type': 'content_block_stop', 'index': len(content)-1})
                 opened = False
             text = '\n' + web_search_summary(item) + '\n'
-            content_seen = True
             start_stream()
             content.append({'type': 'text', 'text': text})
             if p['stream']:
@@ -534,7 +486,6 @@ def messages(args, app, prepared, cwd):
                 emit('content_block_delta', {'type': 'content_block_delta', 'index': idx, 'delta': {'type': 'text_delta', 'text': text}})
                 emit('content_block_stop', {'type': 'content_block_stop', 'index': idx})
         elif method == 'item/tool/call':
-            content_seen = True
             name = p['reverse'].get(params.get('tool'))
             if name is None: raise BridgeError('Codex login: unknown dynamic tool')
             if opened:
@@ -562,7 +513,7 @@ def messages(args, app, prepared, cwd):
             if status != 'completed' and not ((calls or app.wait_interrupted) and status == 'interrupted'):
                 error = params['turn'].get('error')
                 code, kind = classify(error)
-                raise BridgeError('Codex login: app-server turn failed', code, kind, code='invalid_encrypted_content' if invalid_encrypted_content(error) else 'bridge_error')
+                raise BridgeError('Codex login: app-server turn failed', code, kind)
             app.turn_id = None
             app.interrupt_id = None
             break
@@ -570,11 +521,10 @@ def messages(args, app, prepared, cwd):
             error = params.get('error', params)
             if not params.get('willRetry', False):
                 status, kind = classify(error)
-                raise BridgeError('Codex login: app-server turn error', status, kind, retry_seconds(error), code='invalid_encrypted_content' if invalid_encrypted_content(error) else 'bridge_error')
+                raise BridgeError('Codex login: app-server turn error', status, kind, retry_seconds(error))
         elif method and 'id' in obj:
             app.send({'id': obj['id'], 'error': {'code': -32601, 'message': 'not permitted'}})
     if opened and p['stream']: emit('content_block_stop', {'type': 'content_block_stop', 'index': len(content)-1})
-    if reasoning_dropped: note('Codex login: discarded reasoning items: ' + str(reasoning_dropped))
     usage = usage_delta(parent_usage, latest)
     if not latest: note('Codex login: usage unavailable; zero is not an accurate count')
     reason = 'tool_use' if calls else 'end_turn'
@@ -727,7 +677,6 @@ def main():
             sub.add_argument('--cleanup-model', required=True)
         if name == 'messages':
             sub.add_argument('--web-search', action='store_true')
-            sub.add_argument('--no-keep-reasoning', action='store_true')
             sub.add_argument('--reuse-session')
             sub.add_argument('--service-tier', choices=('default', 'priority'), default='default')
             sub.add_argument('--model-map', action='append', default=[])
@@ -813,7 +762,7 @@ def main():
                 base = match.group(1)
                 if base not in model_map and client_model in model_map: model_map[base] = model_map[client_model]
                 body = dict(body, model=base)
-            prepared = prepare(body, model_map, not args.no_keep_reasoning)
+            prepared = prepare(body, model_map)
             prepared['client_model'] = client_model
             prepared['effort'] = effort
             prepared['explicit_effort'] = bool(match)
@@ -879,26 +828,15 @@ def main():
                                 original_emit(event, data)
                             globals()['emit'] = tracked
                         try:
-                            try:
-                                messages(args, app, prepared, cwd)
-                            except BridgeError as error:
-                                if error.code != 'reuse_retry': raise
-                                note('Codex login: thread reuse unavailable; using a new thread')
-                                app.close()
-                                install_cancel_handlers()
-                                app = App(args, cwd)
-                                app.initialize()
-                                args.reuse_session = None
-                                messages(args, app, prepared, cwd)
+                            messages(args, app, prepared, cwd)
                         except BridgeError as error:
-                            has_reasoning = any(item.get('type') == 'reasoning' for item in prepared['history'])
-                            if started or not has_reasoning or error.code not in ('invalid_encrypted_content', 'reasoning_unavailable'): raise
-                            note('Codex login: reasoning discarded; retrying once')
-                            prepared['history'] = [item for item in prepared['history'] if item.get('type') != 'reasoning']
+                            if error.code != 'reuse_retry': raise
+                            note('Codex login: thread reuse unavailable; using a new thread')
                             app.close()
                             install_cancel_handlers()
                             app = App(args, cwd)
                             app.initialize()
+                            args.reuse_session = None
                             messages(args, app, prepared, cwd)
                 finally:
                     watcher_stop.set()

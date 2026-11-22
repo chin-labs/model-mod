@@ -1,5 +1,4 @@
 import json
-import base64
 import argparse
 import contextlib
 import io
@@ -15,8 +14,7 @@ import time
 import unittest
 from pathlib import Path
 
-from mapping import (InvalidRequest, classify, names, prepare, usage_delta, encode_reasoning, decode_reasoning,
-                     REASONING_ITEM_LIMIT, REASONING_RESPONSE_LIMIT)
+from mapping import InvalidRequest, classify, names, prepare, usage_delta
 
 ROOT = Path(__file__).resolve().parent
 BRIDGE = ROOT / 'bridge.py'
@@ -26,111 +24,6 @@ TOOLS = [{'name': 'one', 'input_schema': {'type': 'object'}}, {'name': 'two', 'i
 
 
 class Contract(unittest.TestCase):
-    def test_reasoning_validation_and_order(self):
-        item = {'type': 'reasoning', 'id': 'id', 'summary': [{'type': 'summary_text', 'text': 'summary'}],
-                'content': None, 'encrypted_content': 'opaque'}
-        signature = encode_reasoning(item)
-        self.assertEqual(decode_reasoning(signature), item)
-        for invalid in ('gAAAAx', 'mmcx2:eyJ0eXBlIjoicmVhc29uaW5nIn0', 'mmcx1:!', 'mmcx1:e30',
-                        'mmcx1:' + 'A' * REASONING_ITEM_LIMIT, signature + '='):
-            self.assertIsNone(decode_reasoning(invalid))
-        def raw_signature(raw): return 'mmcx1:' + base64.urlsafe_b64encode(raw.encode()).decode().rstrip('=')
-        for raw in ('[]', '{"type":"reasoning","summary":[],"extra":1}',
-                    '{"type":"reasoning","type":"message","summary":[]}', '{"type":"message","summary":[]}'):
-            self.assertIsNone(decode_reasoning(raw_signature(raw)))
-        self.assertIsNone(decode_reasoning(raw_signature('{"type":"reasoning","summary":[],"id":"\\ud800"}')))
-        self.assertIsNone(encode_reasoning(dict(item, encrypted_content='\ud800')))
-        self.assertIsNone(encode_reasoning(dict(item, extra='no')))
-        self.assertIsNone(encode_reasoning(dict(item, summary=[{'type': 'bad', 'text': 'no'}])))
-        self.assertIsNone(encode_reasoning(dict(item, encrypted_content='x' * REASONING_ITEM_LIMIT)))
-        body = dict(BASE, messages=[{'role': 'user', 'content': 'hello'},
-            {'role': 'assistant', 'content': [{'type': 'thinking', 'thinking': '', 'signature': signature},
-                {'type': 'tool_use', 'id': 'call1', 'name': 'one', 'input': {}}]},
-            {'role': 'user', 'content': [{'type': 'tool_result', 'tool_use_id': 'call1', 'content': 'done'}]}])
-        history = prepare(body, {'test': 'model'})['history']
-        self.assertEqual([part['type'] for part in history], ['message', 'reasoning', 'function_call', 'function_call_output'])
-        self.assertEqual(history[1], item)
-        self.assertNotIn('reasoning', [part['type'] for part in prepare(body, {'test': 'model'}, False)['history']])
-        body['messages'][1]['content'][0]['signature'] = 'gAAAAx'
-        self.assertNotIn('reasoning', [part['type'] for part in prepare(body, {'test': 'model'})['history']])
-        large = encode_reasoning(dict(item, encrypted_content='x' * 140000))
-        count = REASONING_RESPONSE_LIMIT // len(large)
-        body['messages'][1]['content'] = [{'type': 'thinking', 'thinking': '', 'signature': large} for _ in range(count + 1)]
-        limited = prepare(body, {'test': 'model'})
-        self.assertEqual(sum(part['type'] == 'reasoning' for part in limited['history']), count)
-        self.assertEqual(limited['dropped'], 1)
-
-    def test_reasoning_stream_and_retry(self):
-        body = dict(BASE, stream=False, tools=TOOLS)
-        with tempfile.TemporaryDirectory() as tmp:
-            log = Path(tmp) / 'log'
-            result = self.run_bridge(body, mode='reasoning_tool', log=log)
-            self.assertEqual(result.returncode, 0, result.stderr)
-            content = json.loads(result.stdout)['content']
-            self.assertEqual(content[0]['type'], 'thinking')
-            self.assertEqual(content[2]['type'], 'tool_use')
-            self.assertEqual(decode_reasoning(content[0]['signature'])['encrypted_content'], 'x' * 16)
-            self.assertNotIn(content[0]['signature'], result.stderr)
-            self.assertNotIn('xxxxxxxxxxxxxxxx', result.stderr)
-            records = [json.loads(line) for line in log.read_text().splitlines()]
-            self.assertTrue(next(row for row in records if row.get('method') == 'thread/start')['params']['experimentalRawEvents'])
-            streamed = self.run_bridge(dict(body, stream=True), mode='reasoning_tool')
-            self.assertEqual(streamed.returncode, 0)
-            self.assertLess(streamed.stdout.index('signature_delta'), streamed.stdout.index('tool_use'))
-            self.assertNotIn('xxxxxxxxxxxxxxxx', streamed.stderr)
-            interleaved = self.run_bridge(body, mode='reasoning_interleaved')
-            self.assertEqual(interleaved.returncode, 0, interleaved.stderr)
-            blocks = json.loads(interleaved.stdout)['content']
-            kept = [decode_reasoning(block['signature'])['id'] for block in blocks if block['type'] == 'thinking']
-            self.assertEqual(kept, ['reason1', 'reason2'])
-            self.assertLess(max(i for i, block in enumerate(blocks) if block['type'] == 'thinking'),
-                            min(i for i, block in enumerate(blocks) if block['type'] == 'tool_use'))
-            self.assertIn('discarded reasoning items: 2', interleaved.stderr)
-            for leak in ('RAW-SECRET', 'after-call'):
-                self.assertNotIn(leak, interleaved.stdout + interleaved.stderr)
-            text_interleaved = self.run_bridge(body, mode='reasoning_text_interleaved')
-            self.assertEqual(text_interleaved.returncode, 0, text_interleaved.stderr)
-            blocks = json.loads(text_interleaved.stdout)['content']
-            self.assertEqual([decode_reasoning(b['signature'])['id'] for b in blocks if b['type'] == 'thinking'], ['reason1'])
-            self.assertIn('discarded reasoning items: 1', text_interleaved.stderr)
-            many = self.run_bridge(body, mode='reasoning_many')
-            self.assertEqual(many.returncode, 0, many.stderr)
-            signatures = [b['signature'] for b in json.loads(many.stdout)['content'] if b['type'] == 'thinking']
-            self.assertEqual(len(signatures), 5)
-            self.assertLessEqual(sum(map(len, signatures)), REASONING_RESPONSE_LIMIT)
-            self.assertIn('discarded reasoning items: 1', many.stderr)
-            self.assertNotIn('140000', many.stderr)
-            off = self.run_bridge(body, mode='reasoning_tool', extra=['--no-keep-reasoning'])
-            self.assertNotIn('thinking', [block['type'] for block in json.loads(off.stdout)['content']])
-            unavailable = self.run_bridge(body, mode='reasoning_start_error')
-            self.assertEqual(unavailable.returncode, 0)
-            self.assertIn('raw reasoning unavailable', unavailable.stderr)
-            for mode in ('reasoning_invalid_shape', 'reasoning_large'):
-                discarded = self.run_bridge(body, mode=mode)
-                self.assertEqual(discarded.returncode, 0)
-                self.assertNotIn('thinking', [block['type'] for block in json.loads(discarded.stdout)['content']])
-                self.assertIn('discarded reasoning items: 1', discarded.stderr)
-                self.assertNotIn('private', discarded.stderr)
-            signature = content[0]['signature']
-            replay = dict(body, messages=[{'role': 'user', 'content': 'hello'},
-                {'role': 'assistant', 'content': [content[0], {'type': 'tool_use', 'id': 'call1', 'name': 'one', 'input': {}}]},
-                {'role': 'user', 'content': [{'type': 'tool_result', 'tool_use_id': 'call1', 'content': 'done'}]}])
-            for mode, success in [('reasoning_invalid_once', True), ('reasoning_invalid_always', False), ('reasoning_inject_error', True)]:
-                path = Path(tmp) / (mode + '.log')
-                response = self.run_bridge(replay, mode=mode, log=path)
-                self.assertEqual(response.returncode == 0, success, response.stderr)
-                rows = [json.loads(line) for line in path.read_text().splitlines()]
-                injected = [row['params']['items'] for row in rows if row.get('method') == 'thread/inject_items']
-                self.assertEqual(len(injected), 2)
-                self.assertEqual([item['type'] for item in injected[0]], ['message', 'reasoning', 'function_call', 'function_call_output'])
-                self.assertNotIn('reasoning', [item['type'] for item in injected[1]])
-                self.assertEqual(response.stderr.count('reasoning discarded; retrying once'), 1)
-                self.assertNotIn(signature, response.stderr)
-            streaming_retry = self.run_bridge(dict(replay, stream=True), mode='reasoning_invalid_once')
-            self.assertEqual(streaming_retry.returncode, 0, streaming_retry.stderr)
-            self.assertEqual(streaming_retry.stdout.count('event: message_start'), 1)
-            self.assertEqual(streaming_retry.stderr.count('reasoning discarded; retrying once'), 1)
-
     def test_account_home_boundaries(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp, 'accounts')
@@ -306,22 +199,6 @@ class Contract(unittest.TestCase):
             self.assertEqual(off.returncode, 0, off.stderr)
             self.assertEqual(before, sorted((str(p), p.read_bytes()) for p in Path(tmp, 'state').rglob('*.json')))
 
-    def test_reuse_reasoning_and_usage(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            home = Path(tmp, 'home'); home.mkdir()
-            log = Path(tmp, 'log')
-            Path(home, 'fake_config.json').write_text(json.dumps({'mode': 'reasoning_tool', 'log': str(log)}))
-            env = dict(os.environ, XDG_STATE_HOME=str(Path(tmp, 'state')))
-            cmd = [sys.executable, str(BRIDGE), 'messages', '--codex-home', str(home), '--codex-bin', str(FAKE), '--model-map', 'test=model']
-            body = json.dumps(dict(BASE, stream=False, tools=TOOLS))
-            reuse = subprocess.run(cmd + ['--reuse-session', 'a'], input=body, text=True, capture_output=True, env=env, timeout=15)
-            self.assertEqual(reuse.returncode, 0, reuse.stderr)
-            self.assertNotIn('thinking', [b['type'] for b in json.loads(reuse.stdout)['content']])
-            self.assertIn('raw reasoning unavailable', reuse.stderr)
-            off = subprocess.run(cmd, input=body, text=True, capture_output=True, env=env, timeout=15)
-            self.assertEqual(off.returncode, 0, off.stderr)
-            self.assertIn('thinking', [b['type'] for b in json.loads(off.stdout)['content']])
-
     def test_reuse_usage_excludes_parent(self):
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp, 'home'); home.mkdir()
@@ -427,7 +304,7 @@ class Contract(unittest.TestCase):
             def next(self): return {'method': 'turn/completed', 'params': {'turn': {'id': 'synthetic', 'status': 'completed'}}}
         with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {'XDG_STATE_HOME': tmp}):
             app = Stub()
-            args = argparse.Namespace(codex_home='/account-a', no_keep_reasoning=False, service_tier='default', compact_window=128000, cleanup_model='model-a')
+            args = argparse.Namespace(codex_home='/account-a', service_tier='default', compact_window=128000, cleanup_model='model-a')
             params = {'model': 'model-a', 'cwd': '/empty', 'ephemeral': True, 'baseInstructions': 'private-one', 'developerInstructions': 'fixed', 'dynamicTools': [{'name': 'one'}]}
             def run(session='session-a', settings=None): return thread_reuse.fork(app, args, session, settings or params)
             self.assertIsNotNone(run())
@@ -772,29 +649,6 @@ class Contract(unittest.TestCase):
                 try: os.killpg(pid, signal.SIGKILL)
                 except ProcessLookupError: pass
                 p.stdout.close(); p.stderr.close()
-        # A rebuilt app-server must still be cancellable.
-        with tempfile.TemporaryDirectory() as tmp:
-            Path(tmp, 'fake_config.json').write_text(json.dumps({'mode': 'reasoning_invalid_once', 'hang': True}))
-            reasoning = {'type': 'thinking', 'thinking': '', 'signature': encode_reasoning({'type': 'reasoning', 'id': 'r', 'summary': [], 'content': None, 'encrypted_content': 'opaque'})}
-            replay = dict(BASE, tools=TOOLS, messages=[{'role': 'user', 'content': 'hello'},
-                {'role': 'assistant', 'content': [reasoning, {'type': 'tool_use', 'id': 'call1', 'name': 'one', 'input': {}}]},
-                {'role': 'user', 'content': [{'type': 'tool_result', 'tool_use_id': 'call1', 'content': 'done'}]}])
-            p = subprocess.Popen([sys.executable, str(BRIDGE), 'messages', '--codex-home', tmp, '--codex-bin', str(FAKE), '--model-map', 'test=gpt-6.1-terra', '--max-seconds', '30'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env)
-            try:
-                p.stdin.write(json.dumps(replay)); p.stdin.close()
-                while True:
-                    line = p.stdout.readline()
-                    if not line: self.fail('stream ended before the rebuilt turn')
-                    if line.startswith('event: content_block_delta'): break
-                p.send_signal(signal.SIGTERM)
-                p.wait(timeout=5)
-                stderr = p.stderr.read()
-                self.assertIn('reasoning discarded; retrying once', stderr)
-                self.assertIn('model-mod-http:499', stderr)
-            finally:
-                if p.poll() is None: p.kill(); p.wait()
-                p.stdout.close(); p.stderr.close()
-
     def test_timeout(self):
         for extra in (['--idle-seconds', '0.2'], ['--idle-seconds', '5', '--max-seconds', '0.2']):
             r = self.run_bridge(mode='abort', extra=extra)

@@ -24,8 +24,6 @@ model-mod 是 Claude Code 的插件。這是獨立專案，與 Anthropic 或 Ope
 
 API 路徑送往你的模型的請求，會把對話、系統指示、工具定義與結果、圖片送到你的上游及其背後的供應商。請求不帶訂閱驗證標頭，也沒有獨立的工作階段或使用者 metadata 欄位。對話文字本身可能含有 Claude Code 自行加入的帳號資訊，例如你登入帳號的電子郵件，以及工作目錄與 git 狀態，mod 不會移除；Codex 登入路徑上，同樣的文字會送往 OpenAI。Codex 登入路徑的對話內容經你自行登入的官方 `codex app-server` CLI 送往 OpenAI 服務。model-mod 不讀取、複製或轉送 Codex 登入憑證。Codex 圖片提示詞與生成圖片內容會送往 OpenAI。即使 sandbox 唯讀，app-server 仍會自行將圖片寫入 `CODEX_HOME/generated_images`；取得位元組後 model-mod 嘗試不跟隨符號連結刪除該字面路徑，失敗僅記內部 note，不使呼叫失敗。Codex 原生搜尋的查詢文字會送往 OpenAI。原生搜尋與 openPage 在 OpenAI 端執行，不受 Claude 權限的網域規則（allowed／blocked domains）限制；model-mod 不做 `allowed_domains` 的安全宣稱。API 路徑則使用獨立的 mod `web_search` 工具。Web fetch 連線到你指定的網站；API 路徑的圖片生成與搜尋使用你的上游。遇到重新導向時，同一次 Web fetch 呼叫可能會連線到另一台主機。
 
-Codex 工具往返期間，插件可能在記憶體保留 OpenAI 回傳的不透明 reasoning item，並隨對話歷史送回 OpenAI。它可能包含加密內容；此功能不會在插件重新載入或重啟後保留它，見[限制說明](LIMITATIONS.zh-TW.md#codex-登入的限制)。
-
 Transfer 會將目前對話以 Codex thread 匯入所選 Codex 帳號，供應商可能保留該 thread；刪除本機內容不會刪除供應商端的 thread。Transfer 需要互動確認，transcript 上限為 20 MiB。
 
 手動審查 gate 與選用 Stop gate 會將範圍內 diff 與未追蹤且未被忽略的檔案全文送往 OpenAI，findings 也在 OpenAI 產生及處理。Git 透過 `.gitignore`、`.git/info/exclude` 或生效的 `core.excludesFile` 或未設定 `core.excludesFile` 時的 Git 預設使用者忽略檔（位於 `XDG_CONFIG_HOME` 下，預設為 `~/.config`）排除的未追蹤檔案不會送出；已追蹤的檔案即使也符合忽略規則，其變更仍會出現在 diff 中。系統層級 Git 設定不會讀取，使用者層級 Git 設定只採用 `core.excludesFile` 的值：其他使用者層級設定（例如只在該處設定的 `core.ignoreCase`）不會套用。`HOME`、`XDG_CONFIG_HOME` 以外的 Git 環境變數同樣不會讀取，因此僅在這些位置定義的忽略規則不會套用。唯讀 sandbox 不限制讀取範圍；findings 可能包含 Codex 能讀到的內容，包括工作區以外的內容。Findings 是不可信資料，不是指令。Stop gate 預設關閉。

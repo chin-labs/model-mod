@@ -30,7 +30,6 @@
 | Doctor 回報 404 | API 基礎網址可能包含 `/v1` 或錯誤的路徑前綴 | 將基礎網址設為不含 `/v1` 的形式。 |
 | Doctor 回報 429 或 5xx | API 受限流或伺服器發生錯誤 | 稍後再試。 |
 | `invalid codexThreadReuse; using on.` 或類似的 `invalid …; using …` 警告 | 選項的值不在允許範圍內 | 系統改用警告所示的預設值；可在[進階選項](CONFIGURATION.zh-TW.md#進階選項)查到允許的值。 |
-| `no tool schemas; toolsFile could not be read.` | 無法從 `toolsFile` 載入工具 schema；模型回合不會收到由 model-mod 提供的工具定義 | 確認 `toolsFile` 指向存在且可讀的 JSON 檔，且內含 `tools` 陣列。 |
 | Doctor 回報模型清單無效或為空 | 伺服器未回傳有效且非空的模型清單 | 確認伺服器提供 `/v1/models` 清單，或明確設定 `models`。 |
 | `model is not in the allowlist` | 該 ID 不在 `models` 內 | 選擇允許的 ID，或更新清單。 |
 | 背景工作顯示 `No result is available.` | 工作尚未完成，或已失敗、被取消；只有完成的工作才有結果 | 用 `/model-mod:jobs` 檢查其狀態。失敗、逾時、取消或中斷的 `--write` 工作可能已變更工作目錄；請檢查 `git status` 與 `git diff`。 |

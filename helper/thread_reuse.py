@@ -120,7 +120,7 @@ def fork(app, args, session, params):
         settings = dict(params)
         settings.pop('cwd', None)  # Per-request empty temporary working directory.
         settings.pop('baseInstructions', None)
-        key = digest([session, account, settings, getattr(app, 'launch_args', []), app.web_search, args.no_keep_reasoning, args.service_tier, args.compact_window])
+        key = digest([session, account, settings, getattr(app, 'launch_args', []), app.web_search, args.service_tier, args.compact_window])
         path = os.path.join(root, group + '-' + key + '.json')
         now = time.time()
         candidates = []

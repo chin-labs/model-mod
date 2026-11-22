@@ -2,7 +2,7 @@ import type { EngineInterface, PluginOptions, Register, SessionMessage, TurnStep
 import { update } from 'claude-code'
 import type { EnvMemo, FallbackMemo, TrackedAgent } from '../types'
 import { MessagesStream } from './sse.ts'
-import { buildStepMessages, parseStepStderr, classifyStepFailure, API_SIGNATURE, CODEX_SIGNATURE, type Thinking } from './step.ts'
+import { buildStepMessages, parseStepStderr, classifyStepFailure, API_SIGNATURE, type Thinking } from './step.ts'
 import { htmlToText } from './text.ts'
 import { beginSetupPane, dismissSetupPane, menuInPane, openPane, registerPane, setupPaneClosed } from './pane.tsx'
 import { commitSettings, resumeCommit } from './commit.ts'
@@ -14,8 +14,6 @@ import type { Check, ModelResult } from './doctor.ts'
 import type { Group, QuotaBlock, QuotaWindow, Row, StatusView } from './status.ts'
 
 const statusText = (text: string) => text.replace(/^model-mod: /, '')
-// Read legacy rows only as an extra ownership source; this mod never writes them.
-const ROW_MARK = 'Local API via model-mod'
 const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:\/-]{0,99}$/
 const NOT_CHAT = /claude|anthropic|image|auto-review|embed|tts|whisper|moderation/i
 const OFFICIAL_ALIAS = /^(sonnet|opus|haiku|fable|best|default|opusplan)(\[1m\])?$/i
@@ -255,13 +253,12 @@ async function configurePicker($: EngineInterface, c: { baseUrl: string; key?: s
 }
 
 type CodexAccount = { account: string; model: string; directory: string; window?: number }
-type Config = { codex?: Map<string, CodexAccount>; pythonBin?: string; codexBin?: string; accountsDir?: string; apiInvalid?: boolean; prompts: Prompts; baseUrl: string; headerFile?: string; key?: string; models: string[]; toolsFile?: string; defaultWindow?: number; contextWindowExplicit?: boolean; explicitModels?: boolean; excluded?: Set<string>; codexDirectoryUnavailable?: Set<string>; imageAuto?: boolean; source?: 'options' | 'file'; maxTokens: number; effortMode: 'suffix' | 'none'; imageModel?: string; contextWindows?: Record<string, number>; sideModel?: string; keepThinking?: boolean; localTitle?: boolean; localContext?: boolean; toolSearch?: 'auto' | 'on' | 'off'; toolSearchPercent?: number; fallbackModel?: string; fallbackPercent?: number; workerModel?: string; codexServiceTier?: 'default' | 'priority'; codexServiceTierInvalid?: boolean; codexWebSearch?: 'on' | 'off'; codexWebSearchInvalid?: boolean; codexKeepReasoning?: 'on' | 'off'; codexKeepReasoningInvalid?: boolean; codexThreadReuse?: 'on' | 'off'; codexThreadReuseInvalid?: boolean }
+type Config = { codex?: Map<string, CodexAccount>; pythonBin?: string; codexBin?: string; accountsDir?: string; apiInvalid?: boolean; prompts: Prompts; baseUrl: string; headerFile?: string; key?: string; models: string[]; defaultWindow?: number; contextWindowExplicit?: boolean; explicitModels?: boolean; excluded?: Set<string>; codexDirectoryUnavailable?: Set<string>; imageAuto?: boolean; source?: 'options' | 'file'; maxTokens: number; effortMode: 'suffix' | 'none'; imageModel?: string; contextWindows?: Record<string, number>; sideModel?: string; keepThinking?: boolean; localTitle?: boolean; localContext?: boolean; toolSearch?: 'auto' | 'on' | 'off'; toolSearchPercent?: number; fallbackModel?: string; fallbackPercent?: number; workerModel?: string; codexServiceTier?: 'default' | 'priority'; codexServiceTierInvalid?: boolean; codexWebSearch?: 'on' | 'off'; codexWebSearchInvalid?: boolean; codexThreadReuse?: 'on' | 'off'; codexThreadReuseInvalid?: boolean }
 type Tool = { name: string; description: string; input_schema: Record<string, unknown> }
 
 const threadSessions = new Map<string, Map<string, CodexAccount>>()
 let config: Config | undefined
 let loaded = false
-let missingToolsHint = false
 let imageRetryAt: number | undefined
 let imageMissingNotified = false
 let imageRegisterError: string | undefined
@@ -345,11 +342,10 @@ function addModels(c: Pick<Config, 'models'>, ids: readonly unknown[], validateI
   }
 }
 
-// A model the bridge answers for even when the upstream cannot be asked now: the allowlist of the options, the list
-// the earlier fetches left in the store (every model the bridge has owned), and legacy picker rows this mod previously wrote
-// (a row the user chose must never fall through to the subscription endpoint because the upstream was down at start).
-// With an allowlist the allowlist alone decides; the cached and picker models outside it are only remembered, so that
-// choosing one is refused here instead of being sent to the subscription endpoint under a model name from this mod.
+// A model the bridge answers for even when the upstream cannot be asked now: the allowlist of the options and the
+// list the earlier fetches left in the store (every model the bridge has owned).
+// With an allowlist the allowlist alone decides; the cached models outside it are only remembered, so that choosing
+// one is refused here instead of being sent to the subscription endpoint under a model name from this mod.
 async function retiredModels($: EngineInterface): Promise<string[]> {
   try {
     const stored = await $.store.get('retiredModels')
@@ -366,13 +362,6 @@ async function seedModels($: EngineInterface, c: Config): Promise<void> {
     const image = await $.store.get('imageModel')
     if (c.imageAuto && c.imageModel === undefined && typeof image === 'string' && MODEL_ID.test(image) && !/claude|anthropic/i.test(image)) c.imageModel = image
   } catch { /* nothing cached */ }
-  try {
-    const picker = (await $.settings.read()).modelPicker as { options?: unknown } | undefined
-    if (Array.isArray(picker?.options)) {
-      known.push(...picker.options.filter((row): row is { model: string } => typeof row === 'object' && row !== null &&
-        (row as { description?: unknown }).description === ROW_MARK).map(row => row.model))
-    }
-  } catch { /* no picker rows */ }
   if (!c.explicitModels) {
     addModels(c, known.filter(id => typeof id !== 'string' || !retired.has(id)))
     c.excluded = new Set([...retired].filter(id => !c.models.includes(id)))
@@ -461,7 +450,6 @@ function optionsCandidate(o: PluginOptions): Record<string, unknown> | undefined
     keepThinking: !isOff(o.keepThinking), localTitle: !isOff(o.localTitle), localContext: !isOff(o.localContext),
     toolSearch: text('toolSearch') || 'auto', toolSearchPercent: number('toolSearchPercent', 10),
     codexWebSearch: ['off', 'false', '0'].includes(toggle('codexWebSearch')) ? 'off' : 'on', codexWebSearchInvalid: toggleInvalid('codexWebSearch'),
-    codexKeepReasoning: ['off', 'false', '0'].includes(toggle('codexKeepReasoning')) ? 'off' : 'on', codexKeepReasoningInvalid: toggleInvalid('codexKeepReasoning'),
     codexThreadReuse: isOff(o.codexThreadReuse) ? 'off' : 'on', codexThreadReuseInvalid: toggleInvalid('codexThreadReuse'),
     codexServiceTier: text('codexServiceTier') === 'priority' ? 'priority' : 'default', codexServiceTierInvalid: o.codexServiceTier !== undefined && (typeof o.codexServiceTier !== 'string' || !['default', 'priority', ''].includes(text('codexServiceTier'))), fallbackModel: text('fallbackModel'), fallbackPercent: quoted('fallbackPercent') ?? 100, workerModel: text('workerModel'), promptsDir: text('promptsDir') }
 }
@@ -493,7 +481,7 @@ async function loadNow($: EngineInterface) {
       candidate = JSON.parse(await $.fs.read(path))
     }
     if (typeof candidate.baseUrl !== 'string' || (!fromOptions && typeof candidate.headerFile !== 'string') ||
-        (candidate.toolsFile !== undefined && typeof candidate.toolsFile !== 'string') || !Array.isArray(candidate.models) ||
+        !Array.isArray(candidate.models) ||
         !candidate.models.every((m: unknown) => typeof m === 'string' && m.length > 0 && !/claude|anthropic/i.test(m)) ||
         !Number.isInteger(candidate.maxTokens) || candidate.maxTokens <= 0) return undefined
     const url = new URL(candidate.baseUrl)
@@ -512,7 +500,6 @@ async function loadNow($: EngineInterface) {
         (candidate.defaultWindow as number) <= 4_000_000 ? candidate.defaultWindow as number : undefined,
       key: fromOptions ? candidate.key as string : undefined,
       headerFile: fromOptions ? undefined : candidate.headerFile as string,
-      toolsFile: typeof candidate.toolsFile === 'string' ? candidate.toolsFile : undefined,
       effortMode: candidate.effortMode === 'suffix' ? 'suffix' : 'none',
       models: [],
       imageModel: typeof candidate.imageModel === 'string' && candidate.imageModel !== 'none' && /^[A-Za-z0-9._-]{1,64}$/.test(candidate.imageModel) &&
@@ -574,7 +561,6 @@ async function loadNow($: EngineInterface) {
     built.excluded ??= new Set()
     for (const id of retired) if (!built.codex?.has(id)) built.excluded.add(id)
     if (fromOptions && built.codexWebSearchInvalid) $.ui.status('invalid codexWebSearch; using on.')
-    if (fromOptions && built.codexKeepReasoningInvalid) $.ui.status('invalid codexKeepReasoning; using on.')
     if (fromOptions && built.codexThreadReuseInvalid) $.ui.status('invalid codexThreadReuse; using on.')
     if (fromOptions && built.codexServiceTierInvalid) $.ui.status('invalid codexServiceTier; using default.')
     if (built.apiInvalid) $.ui.status('API server apiKey contains invalid characters; configure a valid key.')
@@ -614,28 +600,6 @@ async function loadNow($: EngineInterface) {
   }
 }
 
-// The client's built-in tools with their input schemas: from the capture file (`toolsFile`) when one is configured;
-// otherwise the names and descriptions the engine lists now with an open object schema (the engine gives a plugin no
-// input schema, and none is shipped with this plugin; the tool's own validation names a wrong argument and the model
-// corrects itself).
-async function capturedTools($: EngineInterface, c: Config): Promise<Tool[] | undefined> {
-  if (c.toolsFile !== undefined) {
-    try {
-      const captured = JSON.parse(await $.fs.read(c.toolsFile)).tools
-      if (!Array.isArray(captured)) throw new Error('tools')
-      return captured
-    } catch {
-      if (!missingToolsHint) {
-        missingToolsHint = true
-        $.ui.status('no tool schemas; toolsFile could not be read.')
-      }
-      return undefined
-    }
-  }
-  return (await $.tool.list()).filter(tool => !tool.mcp).map(tool => ({
-    name: tool.name, description: tool.description, input_schema: { type: 'object', additionalProperties: true } }))
-}
-
 // Tool names a conversation has loaded through tool_search (the result's first line names them) or already called.
 // Read from the history itself, so a reload, a compaction or another agent's own history needs no extra state.
 function loadedFrom(history: readonly Turn[]): Set<string> {
@@ -660,8 +624,6 @@ function loadedFrom(history: readonly Turn[]): Set<string> {
 
 // The window input_tokens of a tool list is measured against when deciding to defer MCP tools: the model's own.
 async function tools($: EngineInterface, c: Config, model: string, history: readonly Turn[]): Promise<Tool[]> {
-  const captured = await capturedTools($, c)
-  if (!captured) return []
   const live = await $.tool.list()
   const enabled = new Set(live.map(tool => tool.name))
   if ((c.codex?.has(model) || c.imageModel) && !enabled.has(IMAGE_TOOL)) {
@@ -678,14 +640,15 @@ async function tools($: EngineInterface, c: Config, model: string, history: read
       }
     }
   }
+  // The engine gives a plugin no input schema for built-in or MCP tools, and none is shipped with this plugin; tools
+  // are listed with an open object schema and their own validation names a wrong argument so the model corrects itself.
   // The built-in WebSearch/WebFetch run a side request that names the session model; for a local model it
   // would go to the subscription endpoint, so the bridge's own two tools replace them.
   // The bridge provides its own tool loading, so the client's built-in ToolSearch is unnecessary.
-  const offered: Tool[] = captured.filter(tool => enabled.has(tool.name) && tool.name !== 'WebSearch' && tool.name !== 'WebFetch' && tool.name !== 'ToolSearch' &&
-    !(c.codex?.has(model) && (tool.name === IMAGE_TOOL || tool.name === WEB_SEARCH_TOOL))).map(({ name, description, input_schema }) =>
-    ({ name, description, input_schema }))
-  // The engine gives a plugin no input schema for an MCP tool; one in the capture file is used, any other is
-  // offered with its description and an open object schema (the server's own validation names the arguments).
+  const offered: Tool[] = live.filter(tool => !tool.mcp && tool.name !== 'WebSearch' && tool.name !== 'WebFetch' && tool.name !== 'ToolSearch' &&
+    !(c.codex?.has(model) && (tool.name === IMAGE_TOOL || tool.name === WEB_SEARCH_TOOL))).map(({ name, description }) =>
+    ({ name, description, input_schema: { type: 'object', additionalProperties: true } }))
+  // MCP tools are offered with their description and an open object schema (the server's own validation names the arguments).
   const have = new Set(offered.map(tool => tool.name))
   if ((c.codex?.has(model) || c.imageModel) && enabled.has(IMAGE_TOOL)) {
     offered.push({ name: IMAGE_TOOL, description: IMAGE_SPEC.description, input_schema: IMAGE_SPEC.inputSchema })
@@ -861,10 +824,10 @@ const RETRY_DELAYS = [2000, 6000, 15000]
 const WRITE_OUT_GRACE_MS = 2000
 // The engine's transcript does not keep the signed reasoning a bridge response carries (a mod cannot record a thinking
 // block), so it is remembered here by the first tool call it came with and handed back inside the tool loop.
-// The API and Codex bridge use distinct signatures and never replay one another's data.
+// Only API-path signatures are cached and replayed (never on Codex login).
 const thinkingStash = new Map<string, Thinking[]>()
-function stashThinking(toolId: string | undefined, blocks: Thinking[], codex: boolean): void {
-  const usable = blocks.filter(b => (codex ? CODEX_SIGNATURE : API_SIGNATURE).test(b.signature))
+function stashThinking(toolId: string | undefined, blocks: Thinking[]): void {
+  const usable = blocks.filter(b => API_SIGNATURE.test(b.signature))
   if (toolId === undefined || usable.length === 0) return
   if (thinkingStash.size >= 300) thinkingStash.delete(thinkingStash.keys().next().value as string)
   thinkingStash.set(toolId, usable)
@@ -1076,7 +1039,6 @@ function helperArgs($: EngineInterface, c: Config, command: string, home: string
   const script = root.replace(/[\\/]+$/, '') + sep + 'helper' + sep + 'bridge.py'
   const args = [c.pythonBin ?? 'python3', '-E', '-s', script, command, '--codex-home', home, '--codex-bin', c.codexBin ?? 'codex']
   if (command === 'messages') {
-    if (c.codexKeepReasoning === 'off') args.push('--no-keep-reasoning')
     if (c.codexServiceTier === 'priority') args.push('--service-tier', 'priority')
     args.push('--model-map', `${wire ?? model}=${model}`, '--idle-seconds', '300', '--max-seconds', '900')
     const item = [...(c.codex?.entries() ?? [])].find(([, value]) => value.directory === home && value.model === model)
@@ -1697,12 +1659,6 @@ let lastStep: { model: string; effort?: string } | undefined
 // or failing account fills only its own block), and a toast says that the reading is under way. The status line is not
 // touched: a plugin has one line, and a warning another module put there (the Stop gate's) must stay on it.
 async function statusReport($: EngineInterface, e: { presentation?: { columns?: number } }, c: Config): Promise<string> {
-  const captured = await capturedTools($, c)
-  let open = 0
-  if (captured && c.toolsFile !== undefined) {
-    const known = new Set(captured.map(tool => tool.name))
-    open = (await $.tool.list()).filter(tool => tool.mcp && !tool.name.startsWith('mcp__model-mod__') && !known.has(tool.name)).length
-  }
   const accounts = codexAccountList(c)
   let search: Awaited<ReturnType<typeof codexWebSearchState>> = 'on'
   let readings: CodexReading[] = []
@@ -1758,9 +1714,8 @@ async function statusReport($: EngineInterface, e: { presentation?: { columns?: 
     ...(url ? [{ label: 'host', value: loopback ? url.hostname : 'remote' }, { label: 'config', value: String(c.source) }] : [])] })
   if (hasApi) {
     groups.push({ title: 'Tools', rows: [
-      { label: 'tools', value: captured ? (c.toolsFile ? 'captured' : 'listed') : 'missing', warn: !captured },
-      { label: 'tool search', value: c.toolSearch ?? 'auto' },
-      { label: 'MCP without schema', value: `${open}`, warn: open > 0 }] })
+      { label: 'tools', value: 'listed' },
+      { label: 'tool search', value: c.toolSearch ?? 'auto' }] })
     const files = PROMPT_NAMES.filter(name => c.prompts.files.includes(name)), missing = PROMPT_NAMES.filter(name => !c.prompts.files.includes(name))
     groups.push({ title: 'Prompts', rows: [{ label: 'files', value: files.join(', ') || 'none' }, { label: 'missing', value: missing.join(', ') || 'none', warn: missing.length > 0 }] })
   }
@@ -1773,11 +1728,10 @@ async function statusReport($: EngineInterface, e: { presentation?: { columns?: 
       ...(r.ordinaryUsageAllowed === undefined ? [] : [{ label: 'ordinary usage', value: codexQuota(r).allowedButFull ? 'allowed by upstream, but a window is full (requests may fail)' : r.ordinaryUsageAllowed ? 'allowed' : 'not allowed', warn: !r.ordinaryUsageAllowed || codexQuota(r).allowedButFull }])] })
   }
   const note = (invalid: boolean | undefined, fallback: string) => invalid ? ` (invalid setting; using ${fallback})` : ''
-  const keep = c.codexKeepReasoning ?? 'on', reuse = c.codexThreadReuse ?? 'on'
+  const reuse = c.codexThreadReuse ?? 'on'
   groups.push({ title: 'Codex settings', rows: [
     ...(accounts.length ? [
       { label: 'webSearch', value: search + note(c.codexWebSearchInvalid, 'on'), warn: search === 'blocked-by-permissions' },
-      { label: 'keepReasoning', value: keep + (keep === 'on' && reuse === 'on' ? ' (not kept on reused threads)' : '') + note(c.codexKeepReasoningInvalid, 'on') },
       { label: 'threadReuse', value: reuse + note(c.codexThreadReuseInvalid, 'on') },
       { label: 'serviceTier', value: (c.codexServiceTier ?? 'default') + note(c.codexServiceTierInvalid, 'default') }] : []),
     { label: 'Stop gate', value: `${gate.enabled ? 'on' : 'off'}; maximum blocks ${gate.blocks}` }] })
@@ -1806,7 +1760,7 @@ function addDoctorSettingsChecks(checks: Check[], c?: Config): void {
         : 'Correct these fields in /plugin → model-mod configure.'
     checks.push({ mark: '!', what: 'Codex settings', cause: `Invalid ${invalid.join(', ')}.`, next })
   }
-  for (const [name, bad] of [['codexWebSearch', c?.codexWebSearchInvalid], ['codexKeepReasoning', c?.codexKeepReasoningInvalid], ['codexThreadReuse', c?.codexThreadReuseInvalid], ['codexServiceTier', c?.codexServiceTierInvalid], ['Codex Stop gate', stopGateSettings(pluginOptions).invalid]] as const) {
+  for (const [name, bad] of [['codexWebSearch', c?.codexWebSearchInvalid], ['codexThreadReuse', c?.codexThreadReuseInvalid], ['codexServiceTier', c?.codexServiceTierInvalid], ['Codex Stop gate', stopGateSettings(pluginOptions).invalid]] as const) {
     if (bad) checks.push({ mark: '!', what: name, cause: 'This setting is invalid; the default is in use.', next: `Correct the setting ${IN_SETTINGS_FILE}.` })
   }
 }
@@ -2066,12 +2020,10 @@ export const register: Register = (on, options) => {
       const query = typeof input.query === 'string' ? input.query.trim() : ''
       if (!query || query.length > 500) return answer('query must be 1-500 characters.', true)
       const max = Number.isInteger(input.max_results) ? Math.min(20, Math.max(1, input.max_results as number)) : 5
-      const schemas = new Map((await capturedTools($, c) ?? []).map(tool => [tool.name, tool]))
       const pool = new Map<string, Tool>()
       for (const tool of await $.tool.list()) {
         if (!tool.mcp || tool.name.startsWith('mcp__model-mod__') || !/^[A-Za-z0-9_-]{1,64}$/.test(tool.name)) continue
-        pool.set(tool.name, schemas.get(tool.name) ??
-          { name: tool.name, description: tool.description, input_schema: { type: 'object', additionalProperties: true } })
+        pool.set(tool.name, { name: tool.name, description: tool.description, input_schema: { type: 'object', additionalProperties: true } })
       }
       let found: Tool[]
       const missing: string[] = []
@@ -2506,7 +2458,7 @@ export const register: Register = (on, options) => {
         if (!Array.isArray(read)) throw new Error(`messages_unavailable ${JSON.stringify(read).slice(0, 100)}`)
         history = read as unknown as Turn[]
       }
-      const { messages, withThinking } = buildStepMessages(history, !!codex, codex ? c.codexKeepReasoning !== 'off' : c.keepThinking !== false, thinkingStash)
+      const { messages, withThinking } = buildStepMessages(history, !codex && c.keepThinking !== false, thinkingStash)
       if (!messages.length) throw new Error(`messages_unavailable history=${history.length} agent=${String(e.agentId)} count=${e.messageCount}`)
       const offered = await tools($, c, e.model, history)
       // PromptComposeArgs has no agentId: compose the session system for this model.
@@ -2545,7 +2497,6 @@ export const register: Register = (on, options) => {
         let finished = false
         let rawError = ''
         let statusTail = ''
-        let reasoningRebuilt = false
         let httpStatus = 0
         let retryAfter: number | undefined
         let streamed = false
@@ -2564,7 +2515,7 @@ export const register: Register = (on, options) => {
             if (piece.stream !== 'stdout') {
               const lines = (statusTail + piece.text).split('\n')
               statusTail = lines.pop()!.slice(-4096)
-              for (const line of lines) ({ httpStatus, retryAfter, reasoningRebuilt } = parseStepStderr(line, !!codex, { httpStatus, retryAfter, reasoningRebuilt }))
+              for (const line of lines) ({ httpStatus, retryAfter } = parseStepStderr(line, { httpStatus, retryAfter }))
               continue
             }
             if (parser.error) continue
@@ -2611,12 +2562,7 @@ export const register: Register = (on, options) => {
             if (codex && decision.limitFailed) codexLimitFailed.add(codex.directory)
             return yield* failure(e, decision.reason, parser.nextIndex, !codex || decision.limitFailed || decision.reason.includes('rate limited') || decision.reason.includes('app-server timed out') || decision.reason.includes('app-server request failed'))
           }
-          if (codex && reasoningRebuilt) {
-            for (const message of messages) for (const block of message.content) {
-              if (block.type === 'tool_use') thinkingStash.delete(String((block as { id?: unknown }).id))
-            }
-          }
-          if (codex ? c.codexKeepReasoning !== 'off' : c.keepThinking !== false) stashThinking(parser.firstToolId(), parser.thinkingBlocks(), !!codex)
+          if (!codex && c.keepThinking !== false) stashThinking(parser.firstToolId(), parser.thinkingBlocks())
           if (own) {
             own.turns.push({ role: 'assistant', content: parser.blocks() })
             own.pending = parser.blocks().filter(b => b.type === 'tool_use').map(b => String(b.id))

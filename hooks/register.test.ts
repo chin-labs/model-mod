@@ -10,7 +10,7 @@ const CONFIG_PATH = '/cfg/model-mod.json'
 const LOCAL = 'gpt-6-sol'
 const PROMPTS_DIR = '/cfg/default-prompts'
 const baseConfig = {
-  baseUrl: 'http://127.0.0.1:9999', headerFile: '/cfg/headers', toolsFile: '/cfg/tools.json',
+  baseUrl: 'http://127.0.0.1:9999', headerFile: '/cfg/headers',
   models: [LOCAL], maxTokens: 32000, effortMode: 'none', promptsDir: PROMPTS_DIR,
 }
 
@@ -20,7 +20,7 @@ type RunReply = { exitCode: number; stdout: string; stderr?: string; isStdoutTru
 type SpawnReply = { stdout: string | readonly string[]; stderr?: string | readonly string[]; code: number; wait?: number; hang?: boolean }
 type World = { paneSeat?: boolean; openPanes: Set<string> /* what $.ui.panes() lists */; fetchDelay?: number /* mock-clock ms the model list request takes */; listDelay?: number /* the same for config.list */; opened: string[]; closed: string[]; messages?: unknown[]; runDelay?: number; rateStarted?: boolean; system: string; killed: number; toolsList?: string[]; toolListFailsAfter?: number; toolListCalls: number /* tool.list throws from the call after this many have succeeded */; spawned: { argv: readonly string[]; input?: string; env?: Record<string, string> }[]; ran: (readonly string[])[]
   ranEnv: (Record<string, string> | undefined)[]; reached: string[]; envSet: [string, string | undefined][]; messagesRead: number; failEnvSets: number; failEnvName?: string
-  // The upstream's model list (null: unreachable), what the store holds, the picker rows of the settings, the requests
+  // The upstream's model list (null: unreachable), what the store holds, the requests
   // `$.http.fetch` made (the authorization header is reduced to its first 6 characters).
   chooseUpstream?: boolean; autoContinue?: boolean; deviceAnswerDelay?: number; answers: (string | null)[]; questions: { question: string; header: string; labels: string[]; multiSelect: boolean; fetchedCount: number }[];
   scopes: Record<string, Record<string, unknown>>; files: Record<string, string>; writes: string[]; saved: { key: string; value: unknown }[]; registered: string[]; configValues: Record<string, string>;
@@ -28,7 +28,7 @@ type World = { paneSeat?: boolean; openPanes: Set<string> /* what $.ui.panes() l
   // What a write that changes an option does (the plugin is reloaded): 'alive' starts the plugin's session.start and the module that wrote stays usable (a hook of it is
   // still running), 'dead' unloads it (the test then calls session.start itself), unset changes nothing. `starts`: the session.start runs of 'alive'.
   onList?: () => void; onSet?: () => void /* run at the start of config.list / config.set; one may throw */; reload?: 'alive' | 'dead' | 'none'; restart?: () => Promise<unknown>; starts: Promise<unknown>[]; switchEnv: (string | undefined)[];
-  models: string[] | null; store: Record<string, unknown>; picker: unknown[]; fetched: { url: string; auth?: string; matchesKey: boolean }[]
+  models: string[] | null; store: Record<string, unknown>; fetched: { url: string; auth?: string; matchesKey: boolean }[]
   // The session's current model (`/model` runs change it), the `/model` arguments run, the rate-limit windows the last
   // response reported and the clock.
   usage?: Record<string, unknown>; agents: { name: string; model?: string }[]; current: string; modelRuns: string[]; limits: { kind: string; percentUsed: number; resetsAt?: string }[]; clock: ReturnType<typeof mock.clock> }
@@ -75,10 +75,6 @@ function installUi(on: On, w: World): void {
 function installStore(on: On, w: World): void {
   on('store.get', async (_$, e) => ({ value: w.store[e.key] }))
   on('store.set', async (_$, e) => { w.store[e.key] = e.value; return { value: undefined } })
-  on('settings.read', async (_$, e) => {
-    if (!e.source) return { value: w.picker.length ? { modelPicker: { options: w.picker } } : {} }
-    return { value: w.scopes[e.source] ?? {} }
-  })
 }
 function installFiles(on: On, w: World): void {
   on('session.cwd', async () => ({ value: '/work' }))
@@ -123,12 +119,11 @@ function installAskUserQuestion(on: On, w: World): void {
     return { result: { questions: e.questions, answers: { [q.question]: answer } } }
   })
 }
-// The config file and the tools file are read from the test's config; any other path goes down the chain.
+// The config file is read from the test's config; any other path goes down the chain.
 function installFileRead(on: On, w: World, config: Record<string, unknown> | null): void {
   on('fs.read', async (_$, e, next) => {
     if (e.path in w.files) return { value: w.files[e.path]! }
     if (config && e.path === CONFIG_PATH) return { value: JSON.stringify(config) }
-    if (e.path === baseConfig.toolsFile) return { value: JSON.stringify({ tools: [] }) }
     return next(e)
   })
 }
@@ -197,7 +192,7 @@ function installRegistrations(on: On, w: World): void {
 function world(on: On, config: Record<string, unknown> | null, model: string, spawn: SpawnReply | SpawnReply[],
   run?: RunReply | ((argv: readonly string[], stdin?: string) => RunReply), env: Record<string, string> = {}): World {
   const w: World = { starts: [], openPanes: new Set(), opened: [], closed: [], system: 'Linux', killed: 0, spawned: [], ran: [], ranEnv: [], reached: [], envSet: [], messagesRead: 0, toolListCalls: 0, failEnvSets: 0,
-    switchEnv: [], toolDescriptions: {}, answers: ['Keep (recommended)', 'All (recommended)'], questions: [], scopes: {}, files: {}, writes: [], saved: [], registered: [], configValues: {}, models: null, store: {}, picker: [], fetched: [], current: model, agents: [], modelRuns: [], limits: [], clock: undefined as never }
+    switchEnv: [], toolDescriptions: {}, answers: ['Keep (recommended)', 'All (recommended)'], questions: [], scopes: {}, files: {}, writes: [], saved: [], registered: [], configValues: {}, models: null, store: {}, fetched: [], current: model, agents: [], modelRuns: [], limits: [], clock: undefined as never }
   // The test engine has no plugin.root; supply prompt files explicitly instead of built-in text.
   for (const name of ['compact', 'title', 'subagent-note', 'worker']) w.files[PROMPTS_DIR + '/' + name + '.md'] = 'TEST ' + name + ' prompt\n'
   w.clock = mock.clock(on)
@@ -365,7 +360,6 @@ test('generate_image: argument rules, permission verdicts and pipeline results k
 test('a bridge model is answered by the upstream and never reaches the chain', async ($, on) => {
   const w = world(on, baseConfig, LOCAL, { stdout: SSE_OK, code: 0 })
   w.toolsList = ['ToolSearch', 'Read']
-  w.files[baseConfig.toolsFile] = JSON.stringify({ tools: ['ToolSearch', 'Read'].map(name => ({ name, description: name, input_schema: { type: 'object' } })) })
   const { chunks, result } = await drain($.turn.step(STEP(LOCAL)))
   expect(result.answer).toBe('local answer')
   expect(chunks.map(c => c.kind)).toEqual(['text', 'stop'])
@@ -570,12 +564,14 @@ test('SSE errors after output never retry even when content and error arrive in 
 })
 
 test('status hides remote hosts, warns about plain HTTP and reports a missing header file', async ($, on) => {
-  const w = world(on, { ...baseConfig, baseUrl: 'http://upstream.example:9999' }, LOCAL, { stdout: '', code: 0 })
+  const w = world(on, { ...baseConfig, baseUrl: 'http://upstream.example:9999', toolsFile: '/missing/tools.json', codexKeepReasoning: 'off' }, LOCAL, { stdout: '', code: 0 })
   const status = () => $.command.run({ command: 'model-mod:status', args: '', origin: { kind: 'composer' } } as never)
   const missing = await status()
   expect(missing.text).toContain('model-mod 0.2.7: picker=active; 2 warnings')
   expect(missing.text).toContain('[!] headerFile not found')
   expect(statusRow(missing.text, 'host')).toBe('remote')
+  expect(statusRow(missing.text, 'tools')).toBe('listed')
+  expect(missing.text).not.toContain('MCP without schema')
   expect(missing.text).not.toContain('upstream.example')
   expect(missing.text).toContain('[!] plain http to a non-loopback host sends the API key unencrypted')
   w.files[baseConfig.headerFile] = ''
@@ -845,17 +841,13 @@ for (const [value, expectedOn] of [
   })
 }
 
-test('options: with the upstream down the cached list and the picker rows still keep their turns off the chain', { options: OPTIONS }, async ($, on) => {
+test('options: with the upstream down the cached list still keeps its turns off the chain', { options: OPTIONS }, async ($, on) => {
   const w = world(on, null, 'gpt-cached', { stdout: SSE_OK, code: 0 })
-  w.store.models = ['gpt-cached']
-  w.picker = [{ model: 'gpt-row', description: 'Local API via model-mod' }, { model: 'claude-x', description: 'Local API via model-mod' },
-    { model: 'gpt-foreign', description: 'something else' }]
-  for (const model of ['gpt-cached', 'gpt-row']) {
-    const { result } = await drain($.turn.step(STEP(model)))
-    expect(result.answer).toBe('local answer')
-  }
+  w.store.models = ['gpt-cached', 'claude-x']
+  const { result } = await drain($.turn.step(STEP('gpt-cached')))
+  expect(result.answer).toBe('local answer')
   expect(w.reached).toEqual([])
-  // rows that are not this mod's, and Claude IDs, are not owned
+  // models not cached by this mod, and Claude IDs, are not owned
   for (const model of ['gpt-foreign', 'claude-x']) await drain($.turn.step(STEP(model)))
   expect(w.reached).toEqual(['turn.step', 'turn.step'])
 })
@@ -890,11 +882,8 @@ test('options: an unusable key does not fall back to the configuration file', { 
 test('options: with an allowlist only the allowlist is answered and the other known models are refused here', { options: { ...OPTIONS, models: 'gpt-a' } }, async ($, on) => {
   const w = world(on, null, 'gpt-a', { stdout: SSE_OK, code: 0 })
   w.store.models = ['gpt-b', 'gpt-a']
-  w.picker = [{ model: 'gpt-c', description: 'Local API via model-mod' }]
   expect((await drain($.turn.step(STEP('gpt-a')))).result.answer).toBe('local answer')
-  for (const model of ['gpt-b', 'gpt-c']) {
-    expect((await drain($.turn.step(STEP(model)))).result.answer).toContain('not in the allowlist')
-  }
+  expect((await drain($.turn.step(STEP('gpt-b')))).result.answer).toContain('not in the allowlist')
   expect(w.reached).toEqual([])
   expect(w.spawned.length).toBe(1)
 })
@@ -1023,9 +1012,8 @@ test('fallback: a model chosen by hand is left alone, before and after the switc
   expect(w.current).toBe('claude-haiku-5-5')
 })
 
-test('fallback: no picker row is needed and env is set before switching', { options: FALLBACK_OPTIONS }, async ($, on) => {
+test('fallback: env is set before switching', { options: FALLBACK_OPTIONS }, async ($, on) => {
   const w = fbWorld(on)
-  w.picker = []
   await $.turn.complete(END)
   expect(w.modelRuns).toEqual(['gpt-fb'])
   expect(w.switchEnv).toEqual(['gpt-fb'])
@@ -1033,7 +1021,6 @@ test('fallback: no picker row is needed and env is set before switching', { opti
 
 test('fallback: a Claude ID is ignored', { options: { ...OPTIONS, fallbackModel: 'claude-opus-5-5' } }, async ($, on) => {
   const w = fbWorld(on)
-  w.picker = [{ model: 'claude-opus-5-5', description: 'Local API via model-mod' }]
   await $.turn.complete(END)
   expect(w.modelRuns).toEqual([])
 })
@@ -1722,12 +1709,11 @@ test('setup: official alias collisions are skipped and absent from local pages',
   expect(w.envSet).toEqual([])
 })
 
-test('/model: aliases in allowlist, cache, legacy rows and worker options stay official', { options: {
+test('/model: aliases in allowlist, cache and worker options stay official', { options: {
   ...OPTIONS, models: [...ALIASES, 'gpt-a'].join(','), fallbackModel: 'sonnet', workerModel: 'opus',
 } }, async ($, on) => {
   const w = world(on, null, 'claude-sonnet-5-5', { stdout: '', code: 0 })
   w.store.models = ALIASES
-  w.picker = ALIASES.map(model => ({ model, description: 'Local API via model-mod' }))
   await $.session.start({ cwd: '/work' } as never)
   expect(w.agents).toEqual([])
   for (const id of ALIASES) {
@@ -2187,24 +2173,6 @@ test('Codex protocol and missing home failures preserve their mappings', { optio
   }
 })
 
-test('Codex reasoning discard note clears previously stashed reasoning', { options: CODEX_OPTIONS }, async ($, on) => {
-  const sse = [
-    ['content_block_start', { index: 0, content_block: { type: 'thinking', thinking: '', signature: 'mmcx1:YWJj' } }],
-    ['content_block_stop', { index: 0 }],
-    ['content_block_start', { index: 1, content_block: { type: 'tool_use', id: 'discard-call', name: 'Read', input: {} } }],
-    ['content_block_stop', { index: 1 }], ['message_delta', { delta: { stop_reason: 'tool_use' } }], ['message_stop', {}],
-  ].map(([event, data]) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`).join('')
-  const w = world(on, null, CODEX_MODEL, [{ stdout: sse, code: 0 },
-    { stdout: SSE_OK, stderr: ['model-mod-note:Codex login: reasoning discarded; ', 'retrying once\n'], code: 0 }, { stdout: SSE_OK, code: 0 }])
-  await drain($.turn.step(STEP(CODEX_MODEL)))
-  w.messages = [{ role: 'user', content: [{ type: 'text', text: 'hi' }] },
-    { role: 'assistant', content: [{ type: 'tool_use', id: 'discard-call', name: 'Read', input: {} }] }]
-  await drain($.turn.step(STEP(CODEX_MODEL)))
-  await drain($.turn.step(STEP(CODEX_MODEL)))
-  expect(JSON.parse(w.spawned[1]!.input!).messages[1].content[0].type).toBe('thinking')
-  expect(JSON.parse(w.spawned[2]!.input!).messages[1].content[0].type).toBe('tool_use')
-})
-
 test('Codex login: missing image tool is registered once for the next prompt', { options: CODEX_OPTIONS }, async ($, on) => {
   const w = world(on, null, CODEX_MODEL, { stdout: SSE_OK, code: 0 })
   const notes = quotaLine(on)
@@ -2272,62 +2240,12 @@ for (const setting of ['on', 'OFF', 'invalid', 'false', 0, false, true, 1] as co
     expect(w.spawned[0]!.argv.includes('--reuse-session')).toBe(!['OFF', 'false', 0, false].includes(setting as never))
     const status = await $.command.run({ command: 'model-mod:status', args: '', origin: { kind: 'composer' } } as never)
     expect(statusRow(status.text, 'threadReuse')).toMatch(new RegExp('^' + (['OFF', 'false', 0, false].includes(setting as never) ? 'off' : 'on')))
-    expect(status.text.includes('not kept on reused threads')).toBe(!['OFF', 'false', 0, false].includes(setting as never))
     if (setting === 'invalid') expect(status.text).toContain('invalid setting; using on')
     else expect(status.text).not.toContain('invalid setting')
     await $.session.end({ sessionId: 'test-session', reason: 'other' } as never)
     expect(w.ran.some(argv => argv.includes('cleanup-threads'))).toBe(!['OFF', 'false', 0, false].includes(setting as never))
   })
 }
-
-for (const setting of ['on', 'off', 'invalid'] as const) {
-  test(`Codex reasoning: ${setting} and provider isolation`, { options: { ...OPTIONS, ...CODEX_OPTIONS, models: LOCAL, codexKeepReasoning: setting } }, async ($, on) => {
-    quotaLine(on)
-    const makeSse = (signature: string) => [
-      ['message_start', { message: { usage: {} } }],
-      ['content_block_start', { index: 0, content_block: { type: 'thinking', thinking: '' } }],
-      ['content_block_delta', { index: 0, delta: { type: 'signature_delta', signature } }],
-      ['content_block_stop', { index: 0 }],
-      ['content_block_start', { index: 1, content_block: { type: 'tool_use', id: 'reason-call', name: 'Read', input: {} } }],
-      ['content_block_stop', { index: 1 }],
-      ['message_delta', { delta: { stop_reason: 'tool_use' } }], ['message_stop', {}],
-    ].map(([event, data]) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`).join('')
-    const w = world(on, null, CODEX_MODEL, [{ stdout: makeSse('mmcx1:YWJj'), code: 0 },
-      { stdout: SSE_OK, code: 0 }, { stdout: SSE_OK, code: 0 }])
-    await drain($.turn.step(STEP(CODEX_MODEL)))
-    w.messages = [{ role: 'user', content: [{ type: 'text', text: 'hi' }] },
-      { role: 'assistant', content: [{ type: 'tool_use', id: 'reason-call', name: 'Read', input: {} }] },
-      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'reason-call', content: 'ok' }] }]
-    await drain($.turn.step(STEP(CODEX_MODEL)))
-    const codexBody = JSON.parse(w.spawned[1]!.input!)
-    expect(codexBody.messages[1].content[0].type).toBe(setting === 'off' ? 'tool_use' : 'thinking')
-    expect(w.spawned[1]!.argv.includes('--no-keep-reasoning')).toBe(setting === 'off')
-    await drain($.turn.step(STEP(LOCAL)))
-    const apiBody = JSON.parse(w.spawned[2]!.input!)
-    expect(apiBody.messages[1].content[0].type).toBe('tool_use')
-    const status = await $.command.run({ command: 'model-mod:status', args: '', origin: { kind: 'composer' } } as never)
-    expect(statusRow(status.text, 'keepReasoning')).toMatch(new RegExp('^' + (setting === 'off' ? 'off' : 'on')))
-    if (setting === 'invalid') expect(status.text.replace(/\s+/g, ' ')).toContain('invalid setting; using on')
-  })
-}
-
-test('Codex helper owns the single reasoning retry', { options: CODEX_OPTIONS }, async ($, on) => {
-  const sse = [
-    ['content_block_start', { index: 0, content_block: { type: 'thinking', thinking: '', signature: 'mmcx1:YWJj' } }],
-    ['content_block_stop', { index: 0 }],
-    ['content_block_start', { index: 1, content_block: { type: 'tool_use', id: 'retry-call', name: 'Read', input: {} } }],
-    ['content_block_stop', { index: 1 }], ['message_delta', { delta: { stop_reason: 'tool_use' } }], ['message_stop', {}],
-  ].map(([event, data]) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`).join('')
-  const error = JSON.stringify({ type: 'error', error: { type: 'invalid_request_error', code: 'invalid_encrypted_content' } })
-  const w = world(on, null, CODEX_MODEL, [{ stdout: sse, code: 0 }, { stdout: error, stderr: 'model-mod-http:400\n', code: 1 }])
-  await drain($.turn.step(STEP(CODEX_MODEL)))
-  w.messages = [{ role: 'user', content: [{ type: 'text', text: 'hi' }] },
-    { role: 'assistant', content: [{ type: 'tool_use', id: 'retry-call', name: 'Read', input: {} }] },
-    { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'retry-call', content: 'ok' }] }]
-  await drain($.turn.step(STEP(CODEX_MODEL)))
-  expect(w.spawned.length).toBe(2)
-  expect(JSON.parse(w.spawned[1]!.input!).messages[1].content[0].type).toBe('thinking')
-})
 
 test('API reasoning is never replayed to Codex', { options: { ...OPTIONS, ...CODEX_OPTIONS, models: LOCAL } }, async ($, on) => {
   const sse = [
@@ -2346,16 +2264,39 @@ test('API reasoning is never replayed to Codex', { options: { ...OPTIONS, ...COD
   expect(body.messages[1].content[0].type).toBe('tool_use')
 })
 
+test('options: leftover toolsFile and codexKeepReasoning keys are ignored silently', { options: { ...OPTIONS, ...CODEX_OPTIONS, models: LOCAL, toolsFile: '/missing/tools.json', codexKeepReasoning: 'invalid' } }, async ($, on) => {
+  const notes = quotaLine(on)
+  const w = world(on, null, CODEX_MODEL, { stdout: SSE_OK, code: 0 }, argv => {
+    if (argv.includes('account-info')) return { exitCode: 0, stdout: JSON.stringify({ planType: 'plus' }) }
+    if (argv.includes('rate-limits')) return { exitCode: 0, stdout: JSON.stringify({ primary: { remainingPercent: 80, windowDurationMins: 300, resetsAt: 1800000000 }, ordinaryUsageAllowed: true }) }
+    if (argv.includes('windows')) return { exitCode: 0, stdout: '{}' }
+    return { exitCode: 0, stdout: JSON.stringify({ pythonVersion: '3.12.0', codexVersion: '0.166.0', versionStatus: 'ok', loggedIn: true }) }
+  })
+  w.models = [LOCAL]
+  w.toolsList = ['WebSearch', 'mcp__model-mod__generate_image']
+  expect((await drain($.turn.step(STEP(CODEX_MODEL)))).result.answer).toBe('local answer')
+  expect(w.spawned[0]!.argv).not.toContain('--no-keep-reasoning')
+  const status = await $.command.run({ command: 'model-mod:status', args: '', origin: { kind: 'composer' } } as never)
+  expect(statusRow(status.text, 'tools')).toBe('listed')
+  expect(status.text).not.toContain('MCP without schema')
+  expect(status.text).not.toContain('keepReasoning')
+  expect(status.text).not.toContain('invalid setting')
+  const doctor = await $.command.run({ command: 'model-mod:doctor', args: '', origin: { kind: 'composer' } } as never)
+  expect(doctor.text).toContain('no problems found')
+  expect(doctor.text).not.toContain('codexKeepReasoning')
+  expect(notes.statuses).toEqual([])
+})
+
 test('Codex native search stays off when the tool list cannot be read', { options: CODEX_OPTIONS }, async ($, on) => {
   quotaLine(on)
   const w = world(on, null, CODEX_MODEL, { stdout: SSE_OK, code: 0 })
   w.toolsList = ['WebSearch']
-  // The step reads the list twice for the tools it offers; the permission check is the third read.
-  w.toolListFailsAfter = 2
+  // The step reads the list once for the tools it offers; the permission check is the second read.
+  w.toolListFailsAfter = 1
   await drain($.turn.step(STEP(CODEX_MODEL)))
   expect(w.spawned[0]!.argv.includes('--web-search')).toBe(false)
-  // Status reads it once for the captured tools; the permission check is the second read.
-  w.toolListFailsAfter = 1
+  // Status reads the tool list only for the permission check.
+  w.toolListFailsAfter = 0
   w.toolListCalls = 0
   const result = await $.command.run({ command: 'model-mod:status', args: '', origin: { kind: 'composer' } } as never)
   expect(statusRow(result.text, 'webSearch')).toBe('blocked-by-permissions')

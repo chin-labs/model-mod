@@ -85,7 +85,6 @@ Numbers are written as JSON numbers. For `maxTokens`, `contextWindow` and `fallb
 | `codexAccountsDir` | Absolute directory; each account has a separate subdirectory. | `~/.config/model-mod/accounts`, or `%APPDATA%\model-mod\accounts` on Windows (unverified) |
 | `pythonBin` | Executable name or absolute path. On Windows use `python` (unverified). | `python3` |
 | `codexThreadReuse` | `on`, `true`, `1` or `off`, `false`, `0` (case-insensitive for text); invalid values use `on` and appear in status. Off uses ephemeral threads and does not access the parent registry; see [privacy and cleanup](LIMITATIONS.md#parent-thread-privacy-and-cleanup). | `on` |
-| `codexKeepReasoning` | `on`, `true`, `1` or `off`, `false`, `0` (case-insensitive for text); invalid values use `on` and appear in status. Uses experimental APIs; real Codex replay is unverified. Reasoning is not retained on forked requests with thread reuse; set `codexThreadReuse` to `off` to allow retention. | `on` |
 | `codexServiceTier` | `default` or `priority`; actual service tier and billing are unverified. | `default` |
 | `codexWebSearch` | `on`, `true`, `1` or `off`, `false`, `0` (case-insensitive for text); invalid values use `on` and appear in status. Search is disabled when WebSearch is absent from the session tool list. | `on` |
 | `codexStopGate` | `off` or `on`, case-insensitive; invalid values use `off` and appear in status. On may start a read-only Codex review after a main-session turn, send the diff and full contents of untracked, non-ignored files to OpenAI and block ending (untracked files that Git ignores are not sent, with the exceptions described in [Delegation and data flow](FEATURES.md#delegation-and-data-flow)). | `off` |
@@ -117,7 +116,6 @@ Instead of `apiKey`, the file names a `headerFile`: a file of HTTP header lines 
 | `headerFile` (required) | Absolute path of the header file described above. |
 | `models` (required) | Array of model IDs the mod answers for. `[]`: no models from the file; only models remembered from earlier sessions are answered, and file mode never fetches the upstream's list. |
 | `maxTokens` (required) | Positive integer sent as `max_tokens`. |
-| `toolsFile` | JSON file `{"tools": [{"name", "description", "input_schema"}]}` with Claude Code's built-in tools and their input schemas. Without it, the mod lists the tools with an open object schema. |
 | `effortMode`, `imageModel`, `sideModel`, `keepThinking`, `localTitle`, `localContext`, `toolSearch`, `toolSearchPercent`, `promptsDir` | Same as the options of the same name. The defaults differ in the file: `effortMode` is `none` unless set to `suffix`, `imageModel` has no automatic choice (the API image path is off without it) and `sideModel` has no default. |
 | `contextWindows` | Object mapping a model ID from `models` to its context window in tokens (32000 to 4000000). |
 
