@@ -7,7 +7,7 @@ import { htmlToText } from './text.ts'
 import { beginSetupPane, dismissSetupPane, menuInPane, openPane, registerPane, setupPaneClosed } from './pane.tsx'
 import { commitSettings, resumeCommit } from './commit.ts'
 import type { Committed, Plan } from './commit.ts'
-import { delegate, backgroundCommand, transfer, runStopGate, stopGateSettings, stopGateWarning, noteStopGateWarning } from './delegate.ts'
+import { delegate, backgroundCommand, transfer } from './delegate.ts'
 import { renderStatus } from './status.ts'
 import { classifyModel, networkCategory, renderDoctor } from './doctor.ts'
 import type { Check, ModelResult } from './doctor.ts'
@@ -1657,7 +1657,7 @@ let lastStep: { model: string; effort?: string } | undefined
 
 // Everything /model-mod:status prints, read side by side where it can be: the Codex accounts answer in parallel (a slow
 // or failing account fills only its own block), and a toast says that the reading is under way. The status line is not
-// touched: a plugin has one line, and a warning another module put there (the Stop gate's) must stay on it.
+// touched: a plugin has one line, and any warning already on it must stay on it.
 async function statusReport($: EngineInterface, e: { presentation?: { columns?: number } }, c: Config): Promise<string> {
   const accounts = codexAccountList(c)
   let search: Awaited<ReturnType<typeof codexWebSearchState>> = 'on'
@@ -1676,11 +1676,6 @@ async function statusReport($: EngineInterface, e: { presentation?: { columns?: 
   if (url && !loopback && url.protocol === 'http:') warnings.push('plain http to a non-loopback host sends the API key unencrypted')
   const invalidCodex = invalidCodexFields(pluginOptions)
   if (invalidCodex.length) warnings.push(`Codex login: invalid ${invalidCodex.join(', ')}; configure these fields.`)
-  const gate = stopGateSettings(pluginOptions)
-  if (gate.invalid) warnings.push('Codex Stop gate: invalid gate setting; using off or the default.')
-  // The gate's own warning sits on the status line, one line shared by every message; the report keeps the newest one too.
-  const gateWarning = stopGateWarning()
-  if (gate.enabled && gateWarning) warnings.push(gateWarning)
   for (const r of readings) {
     for (const w of r.warnings) warnings.push(`Codex ${r.item.account}: ${w}`)
     if (r.tooOld) warnings.push(`Codex ${r.item.account}: codex too old; upgrade to 0.165.0 or newer`)
@@ -1727,14 +1722,14 @@ async function statusReport($: EngineInterface, e: { presentation?: { columns?: 
       { label: 'dir', value: r.item.directory },
       ...(r.ordinaryUsageAllowed === undefined ? [] : [{ label: 'ordinary usage', value: codexQuota(r).allowedButFull ? 'allowed by upstream, but a window is full (requests may fail)' : r.ordinaryUsageAllowed ? 'allowed' : 'not allowed', warn: !r.ordinaryUsageAllowed || codexQuota(r).allowedButFull }])] })
   }
-  const note = (invalid: boolean | undefined, fallback: string) => invalid ? ` (invalid setting; using ${fallback})` : ''
-  const reuse = c.codexThreadReuse ?? 'on'
-  groups.push({ title: 'Codex settings', rows: [
-    ...(accounts.length ? [
+  if (accounts.length) {
+    const note = (invalid: boolean | undefined, fallback: string) => invalid ? ` (invalid setting; using ${fallback})` : ''
+    const reuse = c.codexThreadReuse ?? 'on'
+    groups.push({ title: 'Codex settings', rows: [
       { label: 'webSearch', value: search + note(c.codexWebSearchInvalid, 'on'), warn: search === 'blocked-by-permissions' },
       { label: 'threadReuse', value: reuse + note(c.codexThreadReuseInvalid, 'on') },
-      { label: 'serviceTier', value: (c.codexServiceTier ?? 'default') + note(c.codexServiceTierInvalid, 'default') }] : []),
-    { label: 'Stop gate', value: `${gate.enabled ? 'on' : 'off'}; maximum blocks ${gate.blocks}` }] })
+      { label: 'serviceTier', value: (c.codexServiceTier ?? 'default') + note(c.codexServiceTierInvalid, 'default') }] })
+  }
 
   const noColor = Boolean(await $.env.get('NO_COLOR')) || await $.env.get('TERM') === 'dumb'
   const view: StatusView = {
@@ -1760,7 +1755,7 @@ function addDoctorSettingsChecks(checks: Check[], c?: Config): void {
         : 'Correct these fields in /plugin → model-mod configure.'
     checks.push({ mark: '!', what: 'Codex settings', cause: `Invalid ${invalid.join(', ')}.`, next })
   }
-  for (const [name, bad] of [['codexWebSearch', c?.codexWebSearchInvalid], ['codexThreadReuse', c?.codexThreadReuseInvalid], ['codexServiceTier', c?.codexServiceTierInvalid], ['Codex Stop gate', stopGateSettings(pluginOptions).invalid]] as const) {
+  for (const [name, bad] of [['codexWebSearch', c?.codexWebSearchInvalid], ['codexThreadReuse', c?.codexThreadReuseInvalid], ['codexServiceTier', c?.codexServiceTierInvalid]] as const) {
     if (bad) checks.push({ mark: '!', what: name, cause: 'This setting is invalid; the default is in use.', next: `Correct the setting ${IN_SETTINGS_FILE}.` })
   }
 }
@@ -1824,9 +1819,7 @@ async function doctorReport($: EngineInterface, c: Config | undefined, columns?:
 async function admin($: EngineInterface, e: { origin: { kind: string }; presentation?: { columns?: number } }, arg: 'setup' | 'status' | 'doctor') {
   const c = await load($)
   const invalidCodex = invalidCodexFields(pluginOptions)
-  const gateSettings = stopGateSettings(pluginOptions)
-  const gateStatus = `\nCodex Stop gate: ${gateSettings.enabled ? 'on' : 'off'}; maximum blocks: ${gateSettings.blocks}.${gateSettings.invalid ? ' Invalid gate setting; using off or the default.' : ''}`
-  const codexWarning = (invalidCodex.length ? `\nCodex login: invalid ${invalidCodex.join(', ')}; configure these fields.` : '') + gateStatus
+  const codexWarning = invalidCodex.length ? `\nCodex login: invalid ${invalidCodex.join(', ')}; configure these fields.` : ''
   if (arg === 'setup') {
     const interactive = e.origin.kind === 'composer' || e.origin.kind === 'bridge'
     const status = `picker=${c ? 'active' : 'inactive'}; models=${c?.models.length ?? 0}`
@@ -1942,25 +1935,8 @@ async function imageToolCall($: EngineInterface, e: { tool: string; agentId?: st
 export const register: Register = (on, options) => {
   registerPane(on)
   let transcript: string | undefined
-  let turnFailed = false
   on('classic.SessionStart', async ($, e, next) => { transcript = e.transcript_path; return next(e) })
-  on('classic.Stop', async ($, e, next) => {
-    if (!e.agent_id) transcript = e.transcript_path
-    let downstream: ReturnType<typeof next> | undefined
-    const forward = () => downstream ??= next(e)
-    return runStopGate($, e, forward, pluginOptions, () => load($), next.signal, turnFailed).catch(() => {
-      if (stopGateSettings(pluginOptions).enabled) {
-        const notice = 'Codex gate not verified; human review required. Run /model-mod:review --gate.'
-        noteStopGateWarning(notice)
-        $.ui.status(notice)
-      }
-      return forward()
-    })
-  })
-  on('turn.start', async ($, e, next) => {
-    if (e.agentId === undefined) turnFailed = false
-    return next(e)
-  })
+  on('classic.Stop', async (_$, e, next) => { if (!e.agent_id) transcript = e.transcript_path; return next(e) })
   pluginOptions = options ?? {}
   on('session.end', async ($, e, next) => {
     const used = threadSessions.get(e.sessionId)
@@ -2374,7 +2350,6 @@ export const register: Register = (on, options) => {
   on('turn.complete', async ($, e, next) => {
     const result = await next(e)
     if (e.agentId !== undefined) return result
-    turnFailed = e.reason === 'aborted' || e.reason === 'error'
     try {
       const c = await load($)
       if (c) {

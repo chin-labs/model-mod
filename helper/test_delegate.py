@@ -445,16 +445,6 @@ class DelegateTest(unittest.TestCase):
             (default / 'escape').symlink_to(outside)
             for path in (str(default / 'escape'), str(default / '..' / '..' / 'outside')):
                 with self.assertRaises(delegate.Failure): delegate.transcript_path(path)
-        sub = self.repo / 'sub'
-        sub.mkdir()
-        self.assertFalse(delegate.snapshot_unavailable(str(sub)))
-        broken = self.root / 'broken'
-        broken.mkdir()
-        (broken / '.git').write_text('gitdir: /nonexistent/model-mod-test\n')
-        self.assertFalse(delegate.snapshot_unavailable(str(broken)))
-        plain = self.root / 'plain'
-        plain.mkdir()
-        self.assertTrue(delegate.snapshot_unavailable(str(plain)))
 
     def test_transfer(self):
         projects = self.root / '.claude' / 'projects'

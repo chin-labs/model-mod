@@ -24,7 +24,7 @@ Codex 額度用完不輪流換帳號，可設備援模型（不同帳號或上�
 
 ## 已測試版本
 
-Codex 登入與 API 上游已在 **Claude Code 2.1.314** 測試。API 上游也曾在 2.1.299 至 2.1.310 測試；在 2.1.310 檢查了插件載入、單元測試、回合與更新路徑。另在一台 Mac 上以 Claude Code 2.1.316 搭配 Codex 0.166.0 做過手動端到端檢查（見[尚未驗證](#尚未驗證)）。Claude Code 2.1.319 的紀錄僅涵蓋下述 GitHub marketplace 安裝。0.2.5 在隔離設定下，以 Claude Code 2.1.325 和 Codex CLI 0.167.2 透過 Codex 登入檢查了 review gate、Stop gate、未重述專案文件中暗號的回合，以及第二個帳號的一次 Read 工具回合（見 [0.2.5 變更紀錄](../CHANGELOG.md)）。請勿將結果推及其他版本或路徑。這些檢查使用測試用設定，而非一般的機密選項流程，因此無法說明你的金鑰如何儲存（見[尚未驗證](#尚未驗證)）。
+Codex 登入與 API 上游已在 **Claude Code 2.1.314** 測試。API 上游也曾在 2.1.299 至 2.1.310 測試；在 2.1.310 檢查了插件載入、單元測試、回合與更新路徑。另在一台 Mac 上以 Claude Code 2.1.316 搭配 Codex 0.166.0 做過手動端到端檢查（見[尚未驗證](#尚未驗證)）。Claude Code 2.1.319 的紀錄僅涵蓋下述 GitHub marketplace 安裝。0.2.5 在隔離設定下，以 Claude Code 2.1.325 和 Codex CLI 0.167.2 透過 Codex 登入檢查了 review gate、未重述專案文件中暗號的回合，以及第二個帳號的一次 Read 工具回合（見 [0.2.5 變更紀錄](../CHANGELOG.md)）。請勿將結果推及其他版本或路徑。這些檢查使用測試用設定，而非一般的機密選項流程，因此無法說明你的金鑰如何儲存（見[尚未驗證](#尚未驗證)）。
 
 Marketplace 安裝已用本機 clone 與使用標準 HTTP 協定的 Git 伺服器測試過。客戶端不支援從單純（dumb）HTTP 的 Git 伺服器安裝，且解除安裝後會留下插件快取。
 
@@ -34,7 +34,7 @@ Marketplace 安裝已用本機 clone 與使用標準 HTTP 協定的 Git 伺服�
 
 ## Codex 登入的限制
 
-- 已檢查的最新 Codex CLI 版本為 **0.169.0**，且僅限圖片生成與手動 live 契約測試的五項檢查，這些是直接呼叫 bridge helper 執行的（未經 Claude Code 工作階段）。審查 gate、單次工具回合與 Stop gate 以真實登入在 **0.167.2** 檢查過，手動端到端檢查（Claude Code 2.1.316）則使用 **0.166.0**。最低版本為 **0.165.0**，更舊的版本會被拒絕。較新版本會照常執行，但未逐版驗證。更新已測版本紀錄前，應對新版本執行手動 live 契約測試；0.169.0 已執行過。
+- 已檢查的最新 Codex CLI 版本為 **0.169.0**，且僅限圖片生成與手動 live 契約測試的五項檢查，這些是直接呼叫 bridge helper 執行的（未經 Claude Code 工作階段）。審查 gate 與單次工具回合以真實登入在 **0.167.2** 檢查過，手動端到端檢查（Claude Code 2.1.316）則使用 **0.166.0**。最低版本為 **0.165.0**，更舊的版本會被拒絕。較新版本會照常執行，但未逐版驗證。更新已測版本紀錄前，應對新版本執行手動 live 契約測試；0.169.0 已執行過。
 - 這是**軟隔離，不是嚴格的工具白名單**。helper 使用專用家目錄、唯讀 sandbox、不允許核准並關閉部分功能，但兩個 MCP 資源清單工具仍可能執行。執行期項目檢查在中斷回合之前、或與等待項目同批到達時遇到不允許或未知的項目，會終止回合並顯示 `Codex used a built-in tool that model-mod does not support (<type>); try again, and report it if it keeps happening` 訊息。若停用功能後仍出現 `sleep` 或 `collabAgentToolCall` 項目，helper 會中斷並正常結束回合，其後的非工具項目會被丟棄，已識別的動態工具呼叫則會保留。開始 thread 前，`config/read` 會檢查有效設定；新版若改變設定或協定，helper 會採保守拒絕。協定不相容時會顯示 `incompatible app-server protocol; update or check Codex`。重試前請檢查設定與 Codex 相容性。
 - Codex 內建 shell、網路與瀏覽器工具、sleep、子代理、apps、plugins 和 goals 均已停用。patch 與檔案操作會被唯讀 sandbox 與項目白名單阻擋；項目處理方式如上述檢查所示。動態工具來自客戶端，另有上述 MCP 資源清單例外。模型會收到簡短的 developer instructions，要求只使用提供的函式工具、不使用內建 sleep、等待、協作及子代理工具，等待背景工作時結束回合；唯讀隔離的細節不會告知模型。
 - Codex 保留 `mcp__` 開頭的名稱並限制工具名稱。bridge 以 `bridge_` 加雜湊作為受影響名稱的別名，回傳時還原原名。
@@ -77,9 +77,9 @@ SDK 與 `-p` 的呼叫端必須檢查結果文字是否以 `model-mod:` 開頭�
 - setup pane 與 status 版面只在一台 Mac 的終端機客戶端（Claude Code 2.1.316）檢查過。Remote Control、桌面 app 與 VS Code 尚未驗證，pane 內以方向鍵選取也未用自動化終端機操作過（驗證的是 Tab、Enter 與 Esc）。Esc 無法中止已在進行的步驟（模型清單請求、帳號登出）：該步驟會跑完，之後 setup 不再提問，也不寫入任何設定。
 - hook 時間預算、重載行為及 `$.store` 權限尚未驗證。
 - 真實的圖片生成與原生搜尋在單一帳號上各檢查過一次。
-- 真實 review 是否嚴格遵守 Stop gate 所依賴的 `outputSchema` 尚未驗證；真實 Codex 的 pass、block、unknown 結果各觀察到一次。
-- commentary 事件順序，以及 `classic.Stop` 與官方外掛 hook 的真實順序尚未驗證。
-- 與官方 `openai/codex-plugin-cc` 的並存只做了對上游 commit `db52e28f4d9d` 的靜態比對，兩者未實際同時執行。請使用完整指令名稱（`/codex:review`、`/model-mod:review`），並且最多開啟一個 Stop 審查 gate。兩者預設的 Codex home 各自獨立，但若刻意把兩者指向同一個 `CODEX_HOME`，帳號設定與信任紀錄可能互相影響。
+- 真實 review 是否嚴格遵守 `/model-mod:review --gate` 所依賴的 `outputSchema` 尚未驗證；真實 Codex 的 pass、block、unknown 結果各觀察到一次。
+- commentary 事件順序尚未驗證。
+- 與官方 `openai/codex-plugin-cc` 的並存只做了對上游 commit `db52e28f4d9d` 的靜態比對，兩者未實際同時執行。請使用完整指令名稱（`/codex:review`、`/model-mod:review`）。兩者預設的 Codex home 各自獨立，但若刻意把兩者指向同一個 `CODEX_HOME`，帳號設定與信任紀錄可能互相影響。
 - Codex 額度耗盡時的切換，以及 `priority` 計費與 `codexServiceTier` 實際服務層級尚未驗證；使用 `priority` 的真實回合已被接受。
 - 以 `codex resume` 續跑 transfer 後的工作階段尚未驗證；匯入本身，以及使用 `apply_patch` 的多檔 workspace-write rescue 各檢查過一次。
 - Linux 只做了離線驗證：helper 測試、假 Codex 流程與 socket 路徑長度限制在 Linux arm64 容器（Python 3.12、Git 2.34、無網路）內通過；hook 測試、真實帳號回合、`/proc` 後備路徑與 Git 2.54 的 configured-hook 檢查未在其上執行。exFAT 尚未驗證。
@@ -112,7 +112,7 @@ SDK 與 `-p` 的呼叫端必須檢查結果文字是否以 `model-mod:` 開頭�
 
 ## 審查關卡限制
 
-Stop gate 預設關閉。結構化裁定的品質、漏判情況，以及真實 Codex 是否遵守 `outputSchema` 均未驗證；此功能不是安全或合規保證。與官方 Codex gate 並存時的順序尚未驗證。因阻擋而繼續的回合不會再次審查：狀態會顯示變更未經重新審查，因此上限設為 2 次並不代表修正會被第二次審查。在自動 gate 審查中按 Esc 會立即停止等待、向已啟動的 helper 送出 SIGTERM，並以未驗證警告放行。手動審查按 Esc 也會停止等待並向已啟動的 helper 送出 SIGTERM，但會取消工具呼叫，不會產生 gate 警告。Pass 只在記憶體中對相符的工作階段與指紋有效；模組重新載入會清除 pass 快取與 gate 阻擋計數。目前目錄及其祖先均無 `.git` 時，自動 gate 會靜默跳過；儲存庫尚無 HEAD 或 Git 發生錯誤時會顯示未驗證警告。自動 gate 沒有 base ref，若回合內已提交變更，可能靜默跳過。二進位或無法讀取的未追蹤檔案、有未提交變更的 submodule，以及過大的 diff，無法由此 gate 審查。工作區變更後需重新審查；快照檢查後仍可能發生並行變更。Unknown、錯誤與逾時會放行並提示人工審查；阻擋達設定的 1 或 2 次後，再次 block 也會在未通過下放行。
+結構化裁定的品質、漏判情況，以及真實 Codex 是否遵守 `outputSchema` 均未驗證；此功能不是安全或合規保證。在 gate 審查中按 Esc 會停止等待並向已啟動的 helper 送出 SIGTERM，審查會在未驗證下結束。二進位或無法讀取的未追蹤檔案、有未提交變更的 submodule，以及過大的 diff，無法由此 gate 審查。工作區變更後需重新審查；快照檢查後仍可能發生並行變更。`unknown`、錯誤與逾時都會回報未驗證的結果，需人工審查。
 
 Transfer 僅支援預設 Claude 設定目錄（`~/.claude`）；離線實測 Codex 0.166 的匯入偵測只搜尋 `HOME/.claude`，不搜尋自訂 `CLAUDE_CONFIG_DIR`。
 

@@ -51,7 +51,7 @@ The mod activates with either a valid `apiKey` or a valid combination of `codexA
 
 Codex effort is clamped to levels declared by the model: `max` selects the highest supported level; an unsupported explicit level selects the highest supported level at or below it, or the lowest if none is lower. `minimal` is never sent. If no explicit level is given, the supported model default is used when needed.
 
-`/model-mod:review --adversarial` supports focus text and effort; `--gate` requests a structured verdict. The Stop gate is configured independently through `codexStopGate` and `codexStopGateBlocks`; see [review gate](FEATURES.md#codex-review-gate).
+`/model-mod:review --adversarial` supports focus text and effort; `--gate` requests a structured verdict (see [review gate](FEATURES.md#codex-review-gate)).
 
 Native search and openPage run at OpenAI and are not constrained by Claude permission domain rules (allowed or blocked domains); model-mod makes no `allowed_domains` security claim. Queries are sent to OpenAI.
 
@@ -74,7 +74,7 @@ These options are not shown in the dialog. Set them in the plugin's `options` ob
 }
 ```
 
-Numbers are written as JSON numbers. For `maxTokens`, `contextWindow` and `fallbackPercent`, a number in quotes (`"80"`) is read as that number too; `codexStopGateBlocks` also accepts `"1"` or `"2"`. Any other text in a number option is ignored (`codexStopGateBlocks` reports it as invalid). The other advanced options take the text shown.
+Numbers are written as JSON numbers. For `maxTokens`, `contextWindow` and `fallbackPercent`, a number in quotes (`"80"`) is read as that number too. Any other text in a number option is ignored. The other advanced options take the text shown.
 
 | Advanced option | What it does | Default |
 |---|---|---|
@@ -87,8 +87,6 @@ Numbers are written as JSON numbers. For `maxTokens`, `contextWindow` and `fallb
 | `codexThreadReuse` | `on`, `true`, `1` or `off`, `false`, `0` (case-insensitive for text); invalid values use `on` and appear in status. Off uses ephemeral threads and does not access the parent registry; see [privacy and cleanup](LIMITATIONS.md#parent-thread-privacy-and-cleanup). | `on` |
 | `codexServiceTier` | `default` or `priority`; actual service tier and billing are unverified. | `default` |
 | `codexWebSearch` | `on`, `true`, `1` or `off`, `false`, `0` (case-insensitive for text); invalid values use `on` and appear in status. Search is disabled when WebSearch is absent from the session tool list. | `on` |
-| `codexStopGate` | `off` or `on`, case-insensitive; invalid values use `off` and appear in status. On may start a read-only Codex review after a main-session turn, send the diff and full contents of untracked, non-ignored files to OpenAI and block ending (untracked files that Git ignores are not sent, with the exceptions described in [Delegation and data flow](FEATURES.md#delegation-and-data-flow)). | `off` |
-| `codexStopGateBlocks` | Maximum blocks per session: `1` or `2`; other invalid values use `1` and appear in status. Once the limit is reached, an unpassed result allows ending with a human-review warning. | `1` |
 | `maxTokens` | Sent as `max_tokens`. A value that is not a positive whole number (`0`, a negative number or a fraction) is ignored and the default is used. | `32000` |
 | `effortMode` | API path only: `suffix` sends `model(level)` for the effort level in use; `none` sends the plain model ID, for an upstream that rejects the suffix. | `suffix` |
 | `sideModel` | Official model for Claude Code's own side requests while one of your models is selected. `none` leaves it alone; a value already in your environment wins. | `claude-haiku-5-5` |

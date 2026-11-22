@@ -137,16 +137,6 @@ def diff_for(cwd, base):
     return safe_diff(cwd, ['diff', '--binary', '--no-ext-diff', '--no-textconv', '--submodule=short', '--ignore-submodules=dirty', target, '--'])
 
 
-def snapshot_unavailable(cwd):
-    if not os.path.isdir(cwd): return False
-    path = os.path.realpath(cwd)
-    while True:
-        if os.path.lexists(os.path.join(path, '.git')): return False
-        parent = os.path.dirname(path)
-        if parent == path: return True
-        path = parent
-
-
 def global_excludes(cwd):
     # Resolve the effective ignore file in the repository context, including conditional config includes.
     # Git already reads repository config for ls-files; the resulting path names a pattern file, not executable code.
@@ -638,13 +628,6 @@ def main():
     if hasattr(signal, 'SIGHUP'): signal.signal(signal.SIGHUP, cancel)
     try:
         request = json.load(sys.stdin)
-        if request.get('kind') == 'snapshot':
-            if snapshot_unavailable(request['cwd']):
-                print(json.dumps({'skip': True}), flush=True)
-                return
-            snapshot = gate_snapshot(request['cwd'], request.get('base'), request.get('sessionId'))
-            print(json.dumps({'fingerprint': snapshot['fingerprint'], 'changed': snapshot['changed']}), flush=True)
-            return
         text = transfer(request) if request.get('kind') == 'transfer' else execute(request)
     except Cancelled:
         failed = True

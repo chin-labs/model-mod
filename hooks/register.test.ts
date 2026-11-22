@@ -37,7 +37,7 @@ type World = { paneSeat?: boolean; openPanes: Set<string> /* what $.ui.panes() l
 // which stand for the engine (the subscription path).
 // /model-mod:status shows a toast while it reads the Codex quota and never touches the status line (the test engine
 // needs a handler for every $.ui call): it records both so a test can check the loading toast and that the status line,
-// which holds other messages such as the Stop gate's warning, is left as it was.
+// which holds other messages, is left as it was.
 function quotaLine(on: On): { statuses: (string | undefined)[]; toasts: string[] } {
   const notes = { statuses: [] as (string | undefined)[], toasts: [] as string[] }
   on('ui.status', async (_$, e) => { notes.statuses.push(e.text); return { value: undefined } })
@@ -234,21 +234,6 @@ const SSE_OK = [
   ['message_delta', { delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 2 } }],
   ['message_stop', {}],
 ].map(([event, data]) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`).join('')
-
-test('Stop gate preserves the downstream block and forwards active Stop', { options: { codexStopGate: 'on' } }, async ($, on) => {
-  const w = world(on, baseConfig, LOCAL, { stdout: '', code: 0 })
-  let reached = 0, blocked = true
-  on('classic.Stop', async () => { reached++; return blocked ? { block: 'downstream block' } : {} })
-  const stop = { session_id: 'stop-test', cwd: '/work', transcript_path: '/transcript', stop_hook_active: false } as never
-  expect((await $.classic.Stop(stop)).block).toBe('downstream block')
-  expect((await $.classic.Stop({ ...stop as object, stop_hook_active: true } as never)).block).toBe('downstream block')
-  expect(reached).toBe(2); expect(w.ran.length).toBe(0)
-  blocked = false
-  await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't', reason: 'error' } as never)
-  w.ran.length = 0
-  await $.classic.Stop(stop)
-  expect(reached).toBe(3); expect(w.ran.length).toBe(0)
-})
 
 test('a model the bridge does not own goes down the chain and nothing is spawned', async ($, on) => {
   const w = world(on, { ...baseConfig, imageModel: 'gpt-image-2' }, 'claude-sonnet-5-5', { stdout: SSE_OK, code: 0 })
@@ -1815,12 +1800,11 @@ test('doctor: ambiguous bare Codex model lists candidates', { options: { ...CODE
   expect(text).toContain('Use <account>/<model>.')
 })
 
-test('doctor: inactive Codex settings name the invalid model and Stop gate', { options: { ...CODEX_OPTIONS, codexModels: 'claude', codexStopGate: 'bad' } }, async ($, on) => {
+test('doctor: inactive Codex settings name the invalid model', { options: { ...CODEX_OPTIONS, codexModels: 'claude' } }, async ($, on) => {
   fbWorld(on)
   const text = (await $.command.run({ command: 'model-mod:doctor', args: '', origin: { kind: 'composer' } } as never)).text
   expect(text).toContain('The picker is inactive.')
   expect(text).toContain('Invalid codexModels.')
-  expect(text).toContain('Codex Stop gate')
 })
 
 test('status and doctor: reserved API model entry is explained without exposing the key', { options: { ...OPTIONS, models: 'claude-sonnet-5-5' } }, async ($, on) => {
@@ -1980,22 +1964,6 @@ test('Codex status: an account that cannot be read does not hide the others; a l
   expect(lines[other + 1]).toContain('無法取得: rate-limit request failed (exit 1)')
   expect(Math.max(...lines.map(l => [...l].length))).toBeLessThanOrEqual(80)
   expect(notes.toasts).toEqual(['Reading Codex quota…']); expect(notes.statuses).toEqual([])
-})
-
-// The status line has one entry per plugin: reading the quota must neither clear it nor replace it, so the Stop gate's
-// warning stays on it. The report lists that warning too, since the line is all the gate has.
-test('status: the Stop gate warning stays on the status line and is listed in WARNINGS', { options: { ...TWO_ACCOUNTS, codexStopGate: 'on' } }, async ($, on) => {
-  const notes = quotaLine(on)
-  world(on, null, CODEX_MODEL, { stdout: SSE_OK, code: 0 }, twoAccountRuns)
-  on('classic.Stop', async () => ({}))
-  const run = () => $.command.run({ command: 'model-mod:status', args: '', origin: { kind: 'composer' }, presentation: { columns: 80, isFullscreen: false } } as never)
-  expect((await run()).text).not.toContain('Codex gate')
-  // The test engine has no plugin root, so the gate cannot run its helper and warns that it did not verify.
-  await $.classic.Stop({ session_id: 'gate-warning', cwd: '/work', transcript_path: '/transcript', stop_hook_active: false } as never)
-  expect(notes.statuses).toHaveLength(1); expect(notes.statuses[0]).toContain('Codex gate not passed or not verified')
-  const text = (await run()).text
-  expect(notes.statuses).toHaveLength(1)
-  expect(text).toMatch(/WARNINGS[\s\S]*Codex gate not passed or not verified/)
 })
 
 test('Codex status: the three helper reads of an account start together', { options: CODEX_OPTIONS }, async ($, on) => {
@@ -2264,7 +2232,7 @@ test('API reasoning is never replayed to Codex', { options: { ...OPTIONS, ...COD
   expect(body.messages[1].content[0].type).toBe('tool_use')
 })
 
-test('options: leftover toolsFile and codexKeepReasoning keys are ignored silently', { options: { ...OPTIONS, ...CODEX_OPTIONS, models: LOCAL, toolsFile: '/missing/tools.json', codexKeepReasoning: 'invalid' } }, async ($, on) => {
+test('options: leftover toolsFile, codexKeepReasoning and codexStopGate keys are ignored silently', { options: { ...OPTIONS, ...CODEX_OPTIONS, models: LOCAL, toolsFile: '/missing/tools.json', codexKeepReasoning: 'invalid', codexStopGate: 'on', codexStopGateBlocks: '2' } }, async ($, on) => {
   const notes = quotaLine(on)
   const w = world(on, null, CODEX_MODEL, { stdout: SSE_OK, code: 0 }, argv => {
     if (argv.includes('account-info')) return { exitCode: 0, stdout: JSON.stringify({ planType: 'plus' }) }
@@ -2272,18 +2240,23 @@ test('options: leftover toolsFile and codexKeepReasoning keys are ignored silent
     if (argv.includes('windows')) return { exitCode: 0, stdout: '{}' }
     return { exitCode: 0, stdout: JSON.stringify({ pythonVersion: '3.12.0', codexVersion: '0.166.0', versionStatus: 'ok', loggedIn: true }) }
   })
+  on('classic.Stop', async () => ({}))
   w.models = [LOCAL]
   w.toolsList = ['WebSearch', 'mcp__model-mod__generate_image']
   expect((await drain($.turn.step(STEP(CODEX_MODEL)))).result.answer).toBe('local answer')
   expect(w.spawned[0]!.argv).not.toContain('--no-keep-reasoning')
+  expect(await $.classic.Stop({ session_id: 'leftover-stop', cwd: '/work', transcript_path: '/main.jsonl', stop_hook_active: false } as never)).toEqual({})
   const status = await $.command.run({ command: 'model-mod:status', args: '', origin: { kind: 'composer' } } as never)
   expect(statusRow(status.text, 'tools')).toBe('listed')
   expect(status.text).not.toContain('MCP without schema')
   expect(status.text).not.toContain('keepReasoning')
+  expect(status.text).not.toContain('Stop gate')
+  expect(status.text).not.toContain('Codex gate')
   expect(status.text).not.toContain('invalid setting')
   const doctor = await $.command.run({ command: 'model-mod:doctor', args: '', origin: { kind: 'composer' } } as never)
   expect(doctor.text).toContain('no problems found')
   expect(doctor.text).not.toContain('codexKeepReasoning')
+  expect(doctor.text).not.toContain('Stop gate')
   expect(notes.statuses).toEqual([])
 })
 

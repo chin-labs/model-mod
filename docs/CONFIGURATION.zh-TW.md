@@ -51,7 +51,7 @@ API 伺服器路徑會把工作階段送往接受 Messages 風格串流請求（
 
 Codex effort 依模型宣告的等級夾值：`max` 取支援的最高等級；不支援的明設等級取不高於它的最高支援等級，若沒有較低等級則取最低。絕不送出 `minimal`。未明設時，需要調整會採用模型支援的預設值。
 
-`/model-mod:review --adversarial` 支援焦點文字與 effort；`--gate` 要求結構化裁定。Stop gate 由 `codexStopGate` 與 `codexStopGateBlocks` 獨立設定；見[審查關卡](FEATURES.zh-TW.md#codex-審查關卡)。
+`/model-mod:review --adversarial` 支援焦點文字與 effort；`--gate` 要求結構化裁定（見[審查關卡](FEATURES.zh-TW.md#codex-審查關卡)）。
 
 原生搜尋與 openPage 在 OpenAI 端執行，不受 Claude 權限的網域規則（allowed／blocked domains）限制；model-mod 不做 `allowed_domains` 的安全宣稱。查詢文字會送往 OpenAI。
 
@@ -74,7 +74,7 @@ Codex effort 依模型宣告的等級夾值：`max` 取支援的最高等級；�
 }
 ```
 
-數字請寫成 JSON 數字。`maxTokens`、`contextWindow` 與 `fallbackPercent` 寫成加引號的數字（`"80"`）時也會當作該數字讀取；`codexStopGateBlocks` 也接受 `"1"` 或 `"2"`。數字選項裡的其他文字會被忽略（`codexStopGateBlocks` 會顯示為無效）。其餘進階選項使用表中所列的文字值。
+數字請寫成 JSON 數字。`maxTokens`、`contextWindow` 與 `fallbackPercent` 寫成加引號的數字（`"80"`）時也會當作該數字讀取。數字選項裡的其他文字會被忽略。其餘進階選項使用表中所列的文字值。
 
 | 進階選項 | 用途 | 預設值 |
 |---|---|---|
@@ -87,8 +87,6 @@ Codex effort 依模型宣告的等級夾值：`max` 取支援的最高等級；�
 | `codexThreadReuse` | `on`、`true`、`1` 或 `off`、`false`、`0`（文字不分大小寫）；無效值視為 `on` 並顯示於 status。關閉時使用 ephemeral thread，不存取父 thread 登錄；見[隱私與清理](LIMITATIONS.zh-TW.md#父-thread-隱私與清理)。 | `on` |
 | `codexServiceTier` | `default` 或 `priority`；實際服務層級與計費尚未驗證。 | `default` |
 | `codexWebSearch` | `on`、`true`、`1` 或 `off`、`false`、`0`（文字不分大小寫）；無效值視為 `on` 並顯示於 status。工作階段工具清單沒有 WebSearch 時會停用搜尋。 | `on` |
-| `codexStopGate` | `off` 或 `on`，不分大小寫；無效值視為 `off` 並顯示於 status。開啟後可能在主工作階段回合結束時啟動唯讀 Codex 審查、把 diff 與未追蹤且未被忽略的檔案全文送往 OpenAI 並阻擋結束（Git 忽略的未追蹤檔案不會送出，例外見[委派與資料流](FEATURES.zh-TW.md#委派與資料流)）。 | `off` |
-| `codexStopGateBlocks` | 每個工作階段最多阻擋 `1` 次或 `2` 次；其他無效值視為 `1` 並顯示於 status。達上限後未通過的結果會放行並提示人工審查。 | `1` |
 | `maxTokens` | 以 `max_tokens` 送出。若不是正整數（`0`、負數或小數）會被忽略並使用預設值。 | `32000` |
 | `effortMode` | 僅適用 API 路徑：`suffix` 依目前 effort 等級送出 `model(level)`；`none` 送純模型 ID，適用於拒絕後綴的上游。 | `suffix` |
 | `sideModel` | 選了你的模型時，Claude Code 自己的側請求所用的官方模型。`none` 不設定；環境中已有的值優先。 | `claude-haiku-5-5` |
