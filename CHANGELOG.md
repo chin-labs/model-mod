@@ -2,6 +2,23 @@
 
 All notable changes to this project are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Every release that changes plugin code or manifest files raises the `version` in `.claude-plugin/plugin.json`; installed clients only pick up a release whose version differs from the one they have.
 
+## 0.2.9 - 2026-11-24
+
+### Changed
+- Codex errors with `codexErrorInfo` `contextWindowExceeded`, `bioPolicy`, `tooManyDenials` and `inferenceHookDenied` are now reported as invalid requests (HTTP 400, `invalid_request_error`) and are no longer retried; before, they were mapped to a server error (HTTP 500) and retried up to three times. `unauthorized` is unchanged.
+- Documentation: the newest Codex CLI version checked in Limitations is now 0.171.0 (English and Traditional Chinese, matching the 0.2.8 check); the system tools list in Configuration now names `sleep` (retry waits), `wc` (API image generation) and `git` (review gate).
+- Internal: removed a stale tested-version comment from `helper/bridge.py` and added unit test assertions for the four error mappings.
+
+### Not verified
+- Codex CLI 0.171.0 through a full Claude Code session and on Windows.
+- Models other than the ones the 0.2.8 checks used.
+- The four new error mappings were checked by the unit tests only; they were not provoked on a real Codex login.
+- Other Codex login paths beyond the 0.2.8 checks (the tests use a fake `codex`).
+- Ignore handling for the review gate with Git versions other than the one used in testing, with ignore files that are not regular files, in linked worktrees and submodules, and on Windows.
+- The 8-option install form, the cleared retry status line and the unprefixed command results in Remote Control, desktop and VS Code sessions and on Windows.
+- Whether a session started while the automatic fallback is active switches back after the reset.
+- The text values `off`, `false` and `0` for `keepThinking`, `localTitle` and `localContext` in a configuration file are not covered by the tests. In a terminal session against a local test upstream, `keepThinking` and `localContext` behaved as off for these values and for the JSON number `0`, and no local title request was sent for `localTitle`; the title request to the official side was not observed.
+
 ## 0.2.8 - 2026-11-22
 
 ### Removed
