@@ -28,7 +28,6 @@ for stream in (sys.stdin, sys.stdout, sys.stderr):
 from cancellation import Cancelled
 from mapping import InvalidRequest, classify, prepare, usage_delta
 
-# Last live-tested version: codex-cli 0.165.0.
 MIN_TESTED_VERSION = (0, 165, 0)
 # These item types were observed in the live contract test; MCP is restricted separately.
 ALLOWED_ITEMS = frozenset(('userMessage', 'agentMessage', 'reasoning', 'dynamicToolCall', 'contextCompaction'))

@@ -34,7 +34,7 @@ Marketplace 安裝已用本機 clone 與使用標準 HTTP 協定的 Git 伺服�
 
 ## Codex 登入的限制
 
-- 已檢查的最新 Codex CLI 版本為 **0.169.0**，且僅限圖片生成與手動 live 契約測試的五項檢查，這些是直接呼叫 bridge helper 執行的（未經 Claude Code 工作階段）。審查 gate 與單次工具回合以真實登入在 **0.167.2** 檢查過，手動端到端檢查（Claude Code 2.1.316）則使用 **0.166.0**。最低版本為 **0.165.0**，更舊的版本會被拒絕。較新版本會照常執行，但未逐版驗證。更新已測版本紀錄前，應對新版本執行手動 live 契約測試；0.169.0 已執行過。
+- 已檢查的最新 Codex CLI 版本為 **0.171.0**，且僅限圖片生成與手動 live 契約測試的五項檢查，這些是直接呼叫 bridge helper 執行的（未經 Claude Code 工作階段）。審查 gate 與單次工具回合以真實登入在 **0.167.2** 檢查過，手動端到端檢查（Claude Code 2.1.316）則使用 **0.166.0**。最低版本為 **0.165.0**，更舊的版本會被拒絕。較新版本會照常執行，但未逐版驗證。更新已測版本紀錄前，應對新版本執行手動 live 契約測試；0.171.0 已執行過。
 - 這是**軟隔離，不是嚴格的工具白名單**。helper 使用專用家目錄、唯讀 sandbox、不允許核准並關閉部分功能，但兩個 MCP 資源清單工具仍可能執行。執行期項目檢查在中斷回合之前、或與等待項目同批到達時遇到不允許或未知的項目，會終止回合並顯示 `Codex used a built-in tool that model-mod does not support (<type>); try again, and report it if it keeps happening` 訊息。若停用功能後仍出現 `sleep` 或 `collabAgentToolCall` 項目，helper 會中斷並正常結束回合，其後的非工具項目會被丟棄，已識別的動態工具呼叫則會保留。開始 thread 前，`config/read` 會檢查有效設定；新版若改變設定或協定，helper 會採保守拒絕。協定不相容時會顯示 `incompatible app-server protocol; update or check Codex`。重試前請檢查設定與 Codex 相容性。
 - Codex 內建 shell、網路與瀏覽器工具、sleep、子代理、apps、plugins 和 goals 均已停用。patch 與檔案操作會被唯讀 sandbox 與項目白名單阻擋；項目處理方式如上述檢查所示。動態工具來自客戶端，另有上述 MCP 資源清單例外。模型會收到簡短的 developer instructions，要求只使用提供的函式工具、不使用內建 sleep、等待、協作及子代理工具，等待背景工作時結束回合；唯讀隔離的細節不會告知模型。
 - Codex 保留 `mcp__` 開頭的名稱並限制工具名稱。bridge 以 `bridge_` 加雜湊作為受影響名稱的別名，回傳時還原原名。

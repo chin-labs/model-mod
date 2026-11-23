@@ -147,6 +147,6 @@ def classify(error):
     status = details.get('httpStatusCode') if isinstance(details, dict) else None
     if code == 429 or status == 429 or kind in ('rateLimit', 'usageLimit', 'rateLimitExceeded', 'usageLimitExceeded', 'sessionBudgetExceeded') or message == 'rate limit':
         return 429, 'rate_limit_error'
-    if code == 400 or status == 400 or kind in ('badRequest', 'modelNotFound', 'cyberPolicy', 'misalignmentPolicyViolation') or message == 'invalid request':
+    if code == 400 or status == 400 or kind in ('badRequest', 'modelNotFound', 'cyberPolicy', 'misalignmentPolicyViolation', 'contextWindowExceeded', 'bioPolicy', 'tooManyDenials', 'inferenceHookDenied') or message == 'invalid request':
         return 400, 'invalid_request_error'
     return 500, 'api_error'

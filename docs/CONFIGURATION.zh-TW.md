@@ -25,7 +25,7 @@ API 伺服器路徑會把工作階段送往接受 Messages 風格串流請求（
 
 ## 系統工具
 
-需要 `curl` 與 `bash`。網頁擷取另需 `uname` 與系統 resolver（Linux 用 `getent`，macOS 用 `dscacheutil`）；API 圖片生成另需 `sed`、`grep`、`tr`、`mktemp`、`ln`、`base64`；Codex 圖片生成使用 Python 與官方 Codex CLI。
+需要 `curl` 與 `bash`，重試等待另需 `sleep`。網頁擷取另需 `uname` 與系統 resolver（Linux 用 `getent`，macOS 用 `dscacheutil`）；API 圖片生成另需 `sed`、`grep`、`tr`、`mktemp`、`ln`、`base64` 與 `wc`；Codex 圖片生成使用 Python 與官方 Codex CLI，審查關卡另需 `git`。
 
 ## 插件選項
 

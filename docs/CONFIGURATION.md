@@ -25,7 +25,7 @@ For the API-server path, model-mod sends a session to a server that accepts Mess
 
 ## System tools
 
-`curl` and `bash` are required. Web fetch also needs `uname` and a system resolver (`getent` on Linux, `dscacheutil` on macOS); API image generation also needs `sed`, `grep`, `tr`, `mktemp`, `ln` and `base64`. Codex image generation uses Python and the official Codex CLI.
+`curl` and `bash` are required, and retry waits need `sleep`. Web fetch also needs `uname` and a system resolver (`getent` on Linux, `dscacheutil` on macOS); API image generation also needs `sed`, `grep`, `tr`, `mktemp`, `ln`, `base64` and `wc`. Codex image generation uses Python and the official Codex CLI, and the review gate needs `git`.
 
 ## Plugin options
 

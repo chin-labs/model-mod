@@ -580,6 +580,10 @@ class Contract(unittest.TestCase):
         self.assertEqual(classify({'message': 'not a rate limit; 429 in user input'}), (500, 'api_error'))
         self.assertEqual(classify({'codexErrorInfo': 'rateLimitExceeded'}), (429, 'rate_limit_error'))
         self.assertEqual(classify({'codexErrorInfo': 'usageLimitExceeded'}), (429, 'rate_limit_error'))
+        self.assertEqual(classify({'codexErrorInfo': 'contextWindowExceeded'}), (400, 'invalid_request_error'))
+        self.assertEqual(classify({'codexErrorInfo': 'bioPolicy'}), (400, 'invalid_request_error'))
+        self.assertEqual(classify({'codexErrorInfo': 'tooManyDenials'}), (400, 'invalid_request_error'))
+        self.assertEqual(classify({'codexErrorInfo': 'inferenceHookDenied'}), (400, 'invalid_request_error'))
         for status, expected in ((429, (429, 'rate_limit_error')), (400, (400, 'invalid_request_error')), (503, (500, 'api_error'))):
             self.assertEqual(classify({'codexErrorInfo': {'httpConnectionFailed': {'httpStatusCode': status}}}), expected)
         self.assertEqual(classify({'code': -32602}), (500, 'api_error'))
