@@ -392,9 +392,6 @@ async function refreshModels($: EngineInterface, c: Config): Promise<void> {
   } catch { /* leave existing models unchanged */ }
 }
 
-// The configuration the plugin's `userConfig` fields give (set through `claude plugin install --config`, `claude plugin
-// configure` or the configuration dialog), plus advanced fields from the settings file. Returns an object for a valid
-// API key or Codex login; null means an unusable key without a valid Codex login, and undefined means no configuration.
 function invalidCodexFields(o: PluginOptions): string[] {
   const text = (name: string) => typeof o[name] === 'string' ? (o[name] as string).trim() : ''
   const accounts = text('codexAccounts').split(',').map(s => s.trim()).filter(Boolean)
@@ -411,6 +408,9 @@ function invalidCodexFields(o: PluginOptions): string[] {
   return fields
 }
 const isOff = (v: unknown) => v === false || v === 0 || (typeof v === 'string' && ['off', 'false', '0'].includes(v.trim().toLowerCase()))
+// The configuration the plugin's `userConfig` fields give (set through `claude plugin install --config`, `claude plugin
+// configure` or the configuration dialog), plus advanced fields from the settings file. Returns an object for a valid
+// API key or Codex login; null means an unusable key without a valid Codex login, and undefined means no configuration.
 function optionsCandidate(o: PluginOptions): Record<string, unknown> | undefined | null {
   const text = (name: string) => typeof o[name] === 'string' ? (o[name] as string).trim() : ''
   const toggle = (name: string) => typeof o[name] === 'boolean' || typeof o[name] === 'number' ? String(o[name]).trim().toLowerCase() : text(name).toLowerCase()
@@ -816,9 +816,6 @@ function fetchResponse(stdout: string): { status: number; location?: string; bod
   }
 }
 
-// A tool a hook answers never reaches the engine's permission prompt (the prompt belongs to the core step after the
-// hooks), so the replacements for WebSearch/WebFetch and generate_image ask here with the engine's own verdict: an allow
-// rule or bypass mode lets the call through, a deny rule refuses, anything else asks the person. `-p` has nobody to ask.
 const RETRY_DELAYS = [2000, 6000, 15000]
 // How long curl may take to print its write-out (status, Retry-After) after an SSE error event, before it is closed.
 const WRITE_OUT_GRACE_MS = 2000
@@ -833,6 +830,9 @@ function stashThinking(toolId: string | undefined, blocks: Thinking[]): void {
   thinkingStash.set(toolId, usable)
 }
 const approvedTools = new Set<string>()
+// A tool a hook answers never reaches the engine's permission prompt (the prompt belongs to the core step after the
+// hooks), so the replacements for WebSearch/WebFetch and generate_image ask here with the engine's own verdict: an allow
+// rule or bypass mode lets the call through, a deny rule refuses, anything else asks the person. `-p` has nobody to ask.
 async function permitted($: EngineInterface, e: { tool: string }, tool: string, what: string, approvalKey = tool): Promise<string | undefined> {
   const { tool: _name, tool_use_id: _id, agentId: _agent, ...input } = e as unknown as Record<string, unknown>
   let verdict: { decision: string; reason?: string } = { decision: 'ask' }
@@ -1297,6 +1297,12 @@ function commandText<T extends { text?: string }>(reply: T): T {
   return reply.text === undefined ? reply : { ...reply, text: reply.text.replace(/^model-mod(?:: ?| )/, '') }
 }
 
+function excludedModelReason(c: Config, model: string, plain = 'model is not in the allowlist'): string {
+  return c.codexDirectoryUnavailable?.has(model)
+    ? `model is not in the allowlist; set codexAccountsDir ${IN_SETTINGS_FILE}`
+    : plain
+}
+
 const DEVICE_SETUP_TIMEOUT = 17 * 60_000 // Leave the helper a minute to finish and report expiry.
 const DEVICE_WAIT_INTERVAL = 60_000
 
@@ -1475,7 +1481,7 @@ async function readCodexAccount($: EngineInterface, c: Config, item: CodexAccoun
         if (typeof check.pythonVersion === 'string' && /^\d+\.\d+\.\d+/.test(check.pythonVersion)) reading.python = check.pythonVersion
         if (typeof check.codexVersion === 'string') reading.codex = /\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?/.exec(check.codexVersion)?.[0]
         if (check.versionStatus === 'too_old' || result.exitCode === 67) reading.tooOld = true
-        if (result.exitCode === 0) reading.login = check.loggedIn === true ? 'ok' : 'missing'
+        if (result.exitCode === 0) reading.login = 'ok'
         else if (result.exitCode === 68 || result.exitCode === 69) reading.login = 'missing'
         if (Array.isArray(check.warnings)) for (const warning of check.warnings) {
           if (typeof warning === 'string' && /^Codex login: inspect account home file (AGENTS\.md|AGENTS\.override\.md|config\.toml|\.mcp\.json|mcp\.json) for instructions or MCP settings$/.test(warning)) reading.warnings.push(warning)
@@ -2170,7 +2176,7 @@ export const register: Register = (on, options) => {
       const model = await $.session.model()
       if (!c?.models.includes(model) && (await retiredModels($)).includes(model)) return commandText({ text: 'model-mod: model is not in the allowlist; use /model to choose another model or run /model-mod:setup' })
       if (!c) return next(e)
-      if (c.excluded?.has(model)) return commandText({ text: 'model-mod: model is not in the allowlist' })
+      if (c.excluded?.has(model)) return commandText({ text: `model-mod: ${excludedModelReason(c, model)}` })
       if (!c.models.includes(model)) return next(e)
       const question = e.args.trim()
       if (!question) return commandText({ text: 'model-mod: /btw needs a side question.' })
@@ -2243,7 +2249,7 @@ export const register: Register = (on, options) => {
     const c = await load($)
     if (!c?.models.includes(args) && (await retiredModels($)).includes(args)) return commandText({ text: 'model-mod: model is not in the allowlist; use /model to choose another model or run /model-mod:setup.' })
     if (!c) return next(e)
-    if (c.excluded?.has(args)) return commandText({ text: c.codexDirectoryUnavailable?.has(args) ? `model-mod: model is not in the allowlist; set codexAccountsDir ${IN_SETTINGS_FILE}` : `model-mod: ${args} is not in the allowlist; run /model-mod:setup.` })
+    if (c.excluded?.has(args)) return commandText({ text: `model-mod: ${excludedModelReason(c, args, `${args} is not in the allowlist; run /model-mod:setup.`)}` })
     if (!c.models.includes(args)) return next(e)
     try { await $.env.set('ANTHROPIC_CUSTOM_MODEL_OPTION', args) } catch {
       return commandText({ text: 'model-mod: could not prepare the local model; model not changed.' })
@@ -2256,7 +2262,7 @@ export const register: Register = (on, options) => {
   on('command.run', { command: 'model-mod:model' }, async ($, e) => {
     const c = await load($)
     if (!c) return commandText({ text: `model-mod: inactive; models=0. ${await configHint($)}` })
-    if (c.codexDirectoryUnavailable?.has(e.args.trim())) return commandText({ text: `model-mod: model is not in the allowlist; set codexAccountsDir ${IN_SETTINGS_FILE}` })
+    if (c.codexDirectoryUnavailable?.has(e.args.trim())) return commandText({ text: `model-mod: ${excludedModelReason(c, e.args.trim())}` })
     if (e.origin.kind !== 'composer' && e.origin.kind !== 'bridge') return commandText({ text: 'model-mod: /model-mod:model needs an interactive session.' })
     if (!c.models.length) return commandText({ text: 'model-mod: no local models. Run /model-mod:setup to add them.' })
     let current = ''
@@ -2374,7 +2380,7 @@ export const register: Register = (on, options) => {
     }
     if (model !== undefined && !c?.models.includes(model) && (await retiredModels($)).includes(model)) return { skip: 'model-mod: model is not in the allowlist; use /model to choose another model or run /model-mod:setup' }
     if (!c) return next(e)
-    if (model !== undefined && c.excluded?.has(model)) return { skip: 'model-mod: model is not in the allowlist' }
+    if (model !== undefined && c.excluded?.has(model)) return { skip: `model-mod: ${excludedModelReason(c, model)}` }
     if (model === undefined || !c.models.includes(model)) return next(e)
     // From here on never fall back to next(e): that would send the bridge model ID to the subscription endpoint.
     if (c.prompts.text.compact === undefined) return { skip: 'model-mod: compaction prompt file missing' }
@@ -2416,7 +2422,7 @@ export const register: Register = (on, options) => {
       lastStep = { model: e.model, ...(typeof e.effort === 'string' ? { effort: e.effort } : {}) }
       try { await applyWindow($, c, e.model) } catch { /* window stays as it was */ }
     }
-    if (c.excluded?.has(e.model)) return yield* failure(e, c.codexDirectoryUnavailable?.has(e.model) ? `model is not in the allowlist; set codexAccountsDir ${IN_SETTINGS_FILE}` : 'model is not in the allowlist')
+    if (c.excluded?.has(e.model)) return yield* failure(e, excludedModelReason(c, e.model))
     if (!c.models.includes(e.model)) return yield* next(e)
     const codex = c.codex?.get(e.model)
     let parser = new MessagesStream(e.model)

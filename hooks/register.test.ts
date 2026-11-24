@@ -549,7 +549,7 @@ test('SSE errors after output never retry even when content and error arrive in 
 })
 
 test('status hides remote hosts, warns about plain HTTP and reports a missing header file', async ($, on) => {
-  const w = world(on, { ...baseConfig, baseUrl: 'http://upstream.example:9999', toolsFile: '/missing/tools.json', codexKeepReasoning: 'off' }, LOCAL, { stdout: '', code: 0 })
+  const w = world(on, { ...baseConfig, baseUrl: 'http://upstream.example:9999' }, LOCAL, { stdout: '', code: 0 })
   const status = () => $.command.run({ command: 'model-mod:status', args: '', origin: { kind: 'composer' } } as never)
   const missing = await status()
   expect(missing.text).toContain('model-mod 0.2.9: picker=active; 2 warnings')
@@ -2034,6 +2034,10 @@ test('Codex login: missing account directory leaves the API active and refuses C
   expect((await drain($.turn.step(STEP(CODEX_MODEL)))).result.answer).toContain('not in the allowlist; set codexAccountsDir in the settings file')
   expect((await $.command.run({ ...MODEL, args: CODEX_MODEL })).text).toContain('model is not in the allowlist; set codexAccountsDir in the settings file')
   expect((await $.command.run({ ...PICK, args: CODEX_MODEL })).text).toContain('model is not in the allowlist; set codexAccountsDir in the settings file')
+  w.current = CODEX_MODEL
+  expect((await $.command.run({ command: 'btw', args: 'What was said?', origin: { kind: 'composer' }, presentation: { layout: 'main', columns: 80 } } as never)).text).toContain('model is not in the allowlist; set codexAccountsDir in the settings file')
+  const compact = await $.session.compact({ trigger: 'manual', messages: [{ role: 'user', text: 'hi', toolUses: [] }] } as never)
+  expect('skip' in compact ? compact.skip : undefined).toContain('model-mod: model is not in the allowlist; set codexAccountsDir in the settings file')
   expect(w.reached).toEqual([])
 })
 
