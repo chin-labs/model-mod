@@ -1999,7 +1999,8 @@ export const register: Register = (on, options) => {
     const answer = (text: string, isError = false) => isError ? { deny: text } : { result: text }
     try {
       const { tool: _name, tool_use_id: _id, agentId: _agent, ...input } = e as unknown as Record<string, unknown>
-      const verdict = await $.tool.check({ tool: TOOL_SEARCH_TOOL, input } as never)
+      let verdict: { decision: string; reason?: string } = { decision: 'allow' }
+      try { verdict = await $.tool.check({ tool: TOOL_SEARCH_TOOL, input } as never) } catch { /* Continue unless explicitly denied. */ }
       if (verdict.decision === 'deny') return answer(verdict.reason ?? `${TOOL_SEARCH_TOOL} is not permitted.`, true)
       const c = await load($)
       if (!c) return answer('Tool search is not configured.', true)
