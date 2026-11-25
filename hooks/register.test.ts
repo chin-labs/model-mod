@@ -1072,10 +1072,10 @@ const fetchOutcome = ($: Engine, url: string) => $.tool.call({ tool: 'mcp__model
   value => JSON.stringify(value), error => String(error instanceof Error ? error.message : error))
 const PRIVATE_FETCH = 'web_fetch does not fetch local or private addresses; use Bash for those.'
 const PUBLIC_IP = '93.184.216.34'
-test('web_fetch: private IP literals (including URL-normalised forms) and option-shaped hosts are refused directly', async ($, on) => {
+test('web_fetch: private hosts and IP literals (including URL-normalised forms) and option-shaped hosts are refused directly', async ($, on) => {
   const w = world(on, baseConfig, LOCAL, { stdout: '', code: 0 })
   on('tool.check', async () => ({ decision: 'allow' as const }))
-  for (const host of ['0x7f.1', '2130706433', '100.64.0.1', '224.0.0.1', '[::1]', '[::ffff:192.168.1.2]']) {
+  for (const host of ['0x7f.1', '2130706433', '100.64.0.1', '224.0.0.1', '[::1]', '[::ffff:192.168.1.2]', 'localhost.', 'x.local.', 'x.localhost']) {
     expect(await fetchOutcome($, `http://${host}/`)).toContain(PRIVATE_FETCH)
   }
   expect(await fetchOutcome($, 'http://-flushcache/')).toContain('The host could not be resolved.')
@@ -2856,12 +2856,24 @@ test('setup: a menu with more than four rows is asked page by page and Back stay
 })
 
 
-test('tool search excludes invalid MCP names', { options: { ...OPTIONS, models: LOCAL } }, async ($, on) => {
+test('tool search honors deny rules without prompting and excludes invalid MCP names', { options: { ...OPTIONS, models: LOCAL } }, async ($, on) => {
   const w = world(on, null, LOCAL, { stdout: SSE_OK, code: 0 })
   w.toolsList = ['mcp__sample__valid', 'mcp__sample__bad.name']
+  w.toolListFailsAfter = Infinity
+  const tool = 'mcp__model-mod__tool_search'
+  let verdict: { decision: 'allow' | 'ask' | 'deny'; reason?: string } = { decision: 'allow' }
+  on('tool.check', { tool }, async () => verdict)
+  const call = (query: string) => $.tool.call({ tool, query } as never)
   for (const query of ['sample', 'select:mcp__sample__valid,mcp__sample__bad.name']) {
-    const result = JSON.stringify(await $.tool.call({ tool: 'mcp__model-mod__tool_search', query } as never))
+    const result = JSON.stringify(await call(query))
     expect(result).toContain('mcp__sample__valid')
     expect(result).not.toContain('name\\":\\"mcp__sample__bad.name')
   }
+  verdict = { decision: 'ask' }
+  expect(JSON.stringify(await call('sample'))).toContain('mcp__sample__valid')
+  verdict = { decision: 'deny', reason: 'Tool lookup is disabled.' }
+  const listCalls = w.toolListCalls
+  expect(await call('sample')).toEqual({ deny: verdict.reason })
+  expect(w.toolListCalls).toBe(listCalls)
+  expect(w.questions).toEqual([])
 })

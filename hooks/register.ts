@@ -740,7 +740,7 @@ const WEB_FETCH_SPEC = {
   } },
   isDeferred: false,
 }
-const PRIVATE_HOST = /^(localhost|.*\.local|.*\.internal|127\..*|10\..*|192\.168\..*|172\.(1[6-9]|2\d|3[01])\..*|169\.254\..*|0\..*|\[.*\])$/i
+const PRIVATE_HOST = /^(localhost|.*\.localhost|.*\.local|.*\.internal|127\..*|10\..*|192\.168\..*|172\.(1[6-9]|2\d|3[01])\..*|169\.254\..*|0\..*|\[.*\])\.?$/i
 const PRIVATE_FETCH = 'web_fetch does not fetch local or private addresses; use Bash for those.'
 const IPV4_ADDRESS = /^(?:0|[1-9]\d{0,2})(?:\.(?:0|[1-9]\d{0,2})){3}$/
 
@@ -1990,15 +1990,20 @@ export const register: Register = (on, options) => {
   on('tool.call', { tool: IMAGE_TOOL }, imageToolCall)
 
   // Looks up schemas the bridge already holds; nothing leaves the machine, so no permission prompt.
-  on('tool.check', { tool: TOOL_SEARCH_TOOL }, () => ({ decision: 'allow', reason: 'model-mod tool lookup' }))
+  on('tool.check', { tool: TOOL_SEARCH_TOOL }, async ($, e, next) => {
+    const verdict = await next(e)
+    return verdict.decision === 'deny' ? verdict : { decision: 'allow', reason: 'model-mod tool lookup' }
+  })
 
   on('tool.call', { tool: TOOL_SEARCH_TOOL }, async ($, e, next) => {
     const answer = (text: string, isError = false) => isError ? { deny: text } : { result: text }
     try {
+      const { tool: _name, tool_use_id: _id, agentId: _agent, ...input } = e as unknown as Record<string, unknown>
+      const verdict = await $.tool.check({ tool: TOOL_SEARCH_TOOL, input } as never)
+      if (verdict.decision === 'deny') return answer(verdict.reason ?? `${TOOL_SEARCH_TOOL} is not permitted.`, true)
       const c = await load($)
       if (!c) return answer('Tool search is not configured.', true)
       if (await bridgeModel($, e, c) === undefined) return answer('tool_search is only available while a local model is selected. Select a local model to use this tool.', true)
-      const input = e as unknown as Record<string, unknown>
       const query = typeof input.query === 'string' ? input.query.trim() : ''
       if (!query || query.length > 500) return answer('query must be 1-500 characters.', true)
       const max = Number.isInteger(input.max_results) ? Math.min(20, Math.max(1, input.max_results as number)) : 5

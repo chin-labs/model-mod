@@ -5,7 +5,7 @@
 - **串流與工具。** 文字與工具呼叫皆為串流。尚未收到任何輸出前，HTTP 429、502、503、504、529 與其他暫時性錯誤會在 2、6、15 秒後重試（最多三次）。整數 `Retry-After` 為 0–15 秒時，下一次等待至少採用該值；超過 15 秒則立即以失敗原因與要求的等待秒數結束回合。無效值與 HTTP 日期一律忽略。輸出開始後串流中斷，該回合直接結束，不會重播。
 - **內建工具、Skills 與 MCP。** 照常運作。工具使用開放物件 schema，由 Claude Code 自行驗證參數。
 - **子代理與 Workflow。** 在訂閱工作階段中，可用 `model-mod:local-worker` 代理類型把工作交給你的模型（需設定 `workerModel` 或 `fallbackModel`），或讓 Workflow agent 指定 `model: "<你的模型 ID>"`。用你的模型的工作階段仍可委派給訂閱模型，該請求走訂閱。
-- **網頁搜尋與擷取。** API 路徑的 `web_search` 經 API 上游執行；Codex 登入在 `codexWebSearch`（[進階選項](CONFIGURATION.zh-TW.md#進階選項)）開啟且工作階段提供 WebSearch 時使用原生搜尋。`web_fetch` 自行下載公開 HTTP(S) 頁面，每一跳都檢查所有 DNS 回答，拒絕迴路（loopback）、私網、link-local、共享位址空間（CGNAT）、多播、保留與未指定位址，以及主機名稱 localhost 與最後一段為 local 或 internal 的名稱；其他特殊用途範圍不在檢查內（最多五次重新導向）。`web_fetch`、`web_search` 與 `generate_image` 的權限提示提供「Yes, and do not ask again this session」：對 `web_fetch`，記住的是被詢問 URL 的主機（不含之後重新導向的主機），對網頁搜尋，記住的是該工具；對圖片生成，記住的是工具與路徑（Codex 登入或 API 上游）的組合，兩條路徑分開記，核准其中一條不會核准另一條。此答覆只保存在記憶體，不寫入磁碟，在插件載入期間有效。
+- **網頁搜尋與擷取。** API 路徑的 `web_search` 經 API 上游執行；Codex 登入在 `codexWebSearch`（[進階選項](CONFIGURATION.zh-TW.md#進階選項)）開啟且工作階段提供 WebSearch 時使用原生搜尋。`web_fetch` 自行下載公開 HTTP(S) 頁面，每一跳都檢查所有 DNS 回答，拒絕迴路（loopback）、私網、link-local、共享位址空間（CGNAT）、多播、保留與未指定位址，以及主機名稱 localhost 與最後一段為 localhost、local 或 internal 的名稱；其他特殊用途範圍不在檢查內（最多五次重新導向）。`web_fetch`、`web_search` 與 `generate_image` 的權限提示提供「Yes, and do not ask again this session」：對 `web_fetch`，記住的是被詢問 URL 的主機（不含之後重新導向的主機），對網頁搜尋，記住的是該工具；對圖片生成，記住的是工具與路徑（Codex 登入或 API 上游）的組合，兩條路徑分開記，核准其中一條不會核准另一條。此答覆只保存在記憶體，不寫入磁碟，在插件載入期間有效。
 - **圖片生成。** `generate_image` 把 PNG 存到工作目錄，預設在 `generated-images/` 下。在 Git 倉庫內，該檔案是未追蹤的二進位檔，因此審查 gate 的結果是 `unknown`（helper 的原因為 "An untracked file is binary; review was not performed."），直到該檔案被刪除，或被[委派與資料流](#委派與資料流)所列的忽略規則排除。API 路徑使用 `/v1/images/generations` 與設定的圖片模型；Codex 登入使用內建圖片生成，不需設定 `imageModel`，僅支援 POSIX。Codex 可能先讀取帳號目錄中內建的圖片生成技能檔，因此可能多出一次讀取權限提示。
 - **Codex 父 thread 重用。** 符合條件的請求可重用父 thread；見[隱私與清理](LIMITATIONS.zh-TW.md#父-thread-隱私與清理)。
 - **工具搜尋。** `tool_search` 用來找出 schema 被延後載入的 MCP 工具。
@@ -20,7 +20,7 @@ Codex 登入的官方 `rateLimits` 達設定門檻且已知未來重置時間時
 
 Codex 模型的工具清單不包含 mod 的 `web_search`；原生搜尋無法顯示為內建「已搜尋」區塊，改以每次搜尋一行助手文字呈現（該行僅在一台 Mac 的真實客戶端看過一次）；但仍可使用 `generate_image`、`web_fetch` 與 `tool_search`。Codex 自動壓縮項目不受支援；見[限制說明](LIMITATIONS.zh-TW.md#codex-登入的限制)。
 
-`web_search`、`web_fetch`、`generate_image`、`tool_search` 在 model-mod 啟用期間註冊（`generate_image` 需設定 API 圖片模型或 Codex 帳號，關閉工具搜尋時不註冊 `tool_search`），最多讓訂閱模型的請求多約 3 KB 的工具定義；訂閱模型呼叫時會被拒絕，請改用 Claude Code 內建工具。它們遵循 Claude Code 的權限規則。模型的實際表現取決於模型本身；本插件不會讓它等同訂閱模型。
+`web_search`、`web_fetch`、`generate_image`、`tool_search` 在 model-mod 啟用期間註冊（`generate_image` 需設定 API 圖片模型或 Codex 帳號，關閉工具搜尋時不註冊 `tool_search`），最多讓訂閱模型的請求多約 3 KB 的工具定義；訂閱模型呼叫時會被拒絕，請改用 Claude Code 內建工具。它們遵循 Claude Code 的權限規則；`tool_search` 遵守拒絕規則，但不提示核准。模型的實際表現取決於模型本身；本插件不會讓它等同訂閱模型。
 
 ## 委派與資料流
 

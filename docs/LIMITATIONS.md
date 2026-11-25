@@ -110,7 +110,7 @@ Not triggered or inconclusive when checked, so treat them as unverified: tool-us
 
 ## Review gate limitations
 
-Structured verdict quality, missed findings and whether a real Codex honors `outputSchema` are unverified; the gate is not a security or compliance guarantee. Pressing Esc during a gate review stops waiting and sends SIGTERM to the helper if started; the review ends unverified. Binary or unavailable untracked files, dirty submodules and oversized diffs cannot be reviewed by this gate. A changed workspace needs a fresh review, and concurrent changes can occur after the snapshot check. Unknown verdicts, errors and timeouts report an unverified result that requires human review.
+Structured verdict quality and missed findings are unverified; the gate is not a security or compliance guarantee. Pressing Esc during a gate review stops waiting and sends SIGTERM to the helper if started; the review ends unverified. Binary or unavailable untracked files, dirty submodules and oversized diffs cannot be reviewed by this gate. A changed workspace needs a fresh review, and concurrent changes can occur after the snapshot check. Unknown verdicts, errors and timeouts report an unverified result that requires human review.
 
 Transfer supports only the default Claude configuration directory (`~/.claude`); offline tests with Codex 0.166 found that its import detection searches `HOME/.claude`, not a custom `CLAUDE_CONFIG_DIR`.
 
