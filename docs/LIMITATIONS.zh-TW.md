@@ -20,7 +20,7 @@ Codex 額度用完不輪流換帳號，可設備援模型（不同帳號或上�
 
 ## 父 thread 隱私與清理
 
-`codexThreadReuse` 開啟時，符合條件的請求從短期父 thread 建立 ephemeral fork，並重放完整歷史。一台 Mac 上的小樣本測試觀察到快取重用改善，但不保證命中。`codexThreadReuse` 開啟時，帳號目錄中的父 rollout 含固定合成回合，以及工具名稱、描述與輸入 schema（這些可能含專案或使用者特有的文字，例如 MCP 工具描述），不含對話與系統提示；另含依網頁搜尋設定選定的固定 developer instructions。2026 年 11 月 1 日在一台 Mac 檢查帳號目錄內的 rollout、SQLite 與 log 檔，未發現對話、歷史或覆寫的 instructions；這不保證本機一定不留痕跡。內容仍會送到 OpenAI，與關閉此功能時相同。帳號目錄為私密目錄（0700）。每個工作階段的每個父 thread 都多一個短合成回合；切換設定可能建立另一個。登錄只含雜湊、thread ID、時間與數字形式的父 thread 用量，不含對話內容。不同工具清單可各有父 thread；每個工作階段與帳號最多保留四個 active 父 thread，超過時先刪除最久未使用者。閒置六小時的 TTL 由後續請求順手檢查；換父及工作階段結束時也會嘗試 `thread/delete`。這不是精確定時，也不保證刪除：失敗會在該帳號後續請求重試，已移除的帳號無法自動清理。不支援的平台或重用失敗時，bridge 會改用新的 ephemeral thread。將 `codexThreadReuse` 設為 `off` 可只使用 ephemeral thread 並避免存取登錄。
+`codexThreadReuse` 開啟時，符合條件的請求從短期父 thread 建立 ephemeral fork，並重放完整歷史。一台 Mac 上的小樣本測試觀察到快取重用改善，但不保證命中。`codexThreadReuse` 開啟時，帳號目錄中的父 rollout 含固定合成回合，以及工具名稱、描述與輸入 schema（這些可能含專案或使用者特有的文字，例如 MCP 工具描述），不含對話與系統提示；另含依網頁搜尋設定選定的固定 developer instructions。2026 年 11 月 1 日在一台 Mac 檢查帳號目錄內的 rollout、SQLite 與 log 檔，未發現對話、歷史或覆寫的 instructions；這不保證本機一定不留痕跡。內容仍會送到 OpenAI，與關閉此功能時相同。帳號目錄不存在時，model-mod 以 0700 權限建立；已存在的目錄（例如以手動登入指令建立者）保留原權限。每個工作階段的每個父 thread 都多一個短合成回合；切換設定可能建立另一個。登錄只含雜湊、thread ID、時間與數字形式的父 thread 用量，不含對話內容。不同工具清單可各有父 thread；每個工作階段與帳號最多保留四個 active 父 thread，超過時先刪除最久未使用者。閒置六小時的 TTL 由後續請求順手檢查；換父及工作階段結束時也會嘗試 `thread/delete`。這不是精確定時，也不保證刪除：失敗會在該帳號後續請求重試，已移除的帳號無法自動清理。不支援的平台或重用失敗時，bridge 會改用新的 ephemeral thread。將 `codexThreadReuse` 設為 `off` 可只使用 ephemeral thread 並避免存取登錄。
 
 ## 已測試版本
 

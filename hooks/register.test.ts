@@ -1079,6 +1079,11 @@ test('web_fetch: private hosts and IP literals (including URL-normalised forms) 
     expect(await fetchOutcome($, `http://${host}/`)).toContain(PRIVATE_FETCH)
   }
   expect(await fetchOutcome($, 'http://-flushcache/')).toContain('The host could not be resolved.')
+  expect(w.ran).toEqual([])
+  // A public name that merely contains "localhost" passes the private-host check and reaches the (mocked, failing) resolver.
+  expect(await fetchOutcome($, 'http://notlocalhost.example/')).toContain('The host could not be resolved.')
+  expect(w.ran).toEqual([['uname', '-s'], ['getent', 'ahosts', 'notlocalhost.example']])
+  w.ran.length = 0
   w.current = 'claude-opus-5-5'
   expect(await fetchOutcome($, 'https://example.com/page')).toContain(
     'web_fetch is only available while a local model is selected. With this model, use the built-in WebFetch tool instead.')
@@ -2874,6 +2879,8 @@ test('tool search honors deny rules without prompting and excludes invalid MCP n
   verdict = { decision: 'deny', reason: 'Tool lookup is disabled.' }
   const listCalls = w.toolListCalls
   expect(await call('sample')).toEqual({ deny: verdict.reason })
+  verdict = { decision: 'deny' }
+  expect(await call('sample')).toEqual({ deny: 'mcp__model-mod__tool_search is not permitted.' })
   expect(w.toolListCalls).toBe(listCalls)
   expect(w.questions).toEqual([])
 })
