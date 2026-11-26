@@ -120,6 +120,8 @@ class DelegateTest(unittest.TestCase):
         records = self.records()
         argv = next(r['argv'] for r in records if 'argv' in r)
         self.assertIn(['--enable', 'image_generation'], [argv[i:i+2] for i in range(len(argv)-1)])
+        for setting in ('include_permissions_instructions=false', 'include_environment_context=false', 'project_doc_max_bytes=0'):
+            self.assertIn(['-c', setting], [argv[i:i+2] for i in range(len(argv)-1)])
         for feature in ('shell_tool', 'unified_exec', 'view_image', 'apps', 'multi_agent', 'browser_use', 'in_app_browser', 'goals', 'memories', 'sleep_tool', 'computer_use', 'tool_suggest', 'skill_search', 'plugins', 'remote_plugin', 'hooks', 'guardian_approval', 'incremental_tools', 'browser_annotation_api', 'browser_use_external', 'browser_use_full_cdp_access', 'plugin_sharing', 'skill_mcp_dependency_install'):
             self.assertIn(['--disable', feature], [argv[i:i+2] for i in range(len(argv)-1)])
         thread = next(r['params'] for r in records if r.get('method') == 'thread/start')

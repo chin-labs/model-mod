@@ -232,7 +232,8 @@ class App:
         self.interrupted = False
         args = [request['codexBin'], 'app-server', '-c', 'web_search="disabled"', '-c', 'mcp_servers={}']
         for feature in features: args.extend(['--disable', feature])
-        if enable_image: args.extend(['--enable', 'image_generation'])
+        if enable_image:
+            args.extend(['-c', 'include_permissions_instructions=false', '-c', 'include_environment_context=false', '-c', 'project_doc_max_bytes=0', '--enable', 'image_generation'])
         self.proc = subprocess.Popen(args, cwd=request['cwd'], env=env(request['directory']), stdin=subprocess.PIPE,
                                      stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1,
                                      start_new_session=(os.name == 'posix' and own_group))

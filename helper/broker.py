@@ -108,7 +108,7 @@ def ensure():
                 credentials = {'token': secrets.token_hex(32), 'generation': secrets.token_hex(16)}
                 jobs.atomic_write(tokenpath, json.dumps(credentials).encode())
                 child_env = dict(minimal_env(), MODEL_MOD_BROKER_LOCK_FD=str(instance))
-                proc = subprocess.Popen([sys.executable, HELPER, 'broker'], stdin=subprocess.DEVNULL,
+                proc = subprocess.Popen([sys.executable, '-E', '-s', HELPER, 'broker'], stdin=subprocess.DEVNULL,
                                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                         env=child_env, start_new_session=True, close_fds=True, pass_fds=(instance,))
                 jobs.atomic_write(pidpath, str(proc.pid).encode())
@@ -217,7 +217,7 @@ class Server(socketserver.ThreadingUnixStreamServer):
                     self.pending.pop(ident, None)
                     continue
                 try:
-                    proc = subprocess.Popen([sys.executable, HELPER, 'runner', ident, str(os.getpid())], stdin=subprocess.PIPE,
+                    proc = subprocess.Popen([sys.executable, '-E', '-s', HELPER, 'runner', ident, str(os.getpid())], stdin=subprocess.PIPE,
                                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                                             env=minimal_env(), start_new_session=True, close_fds=True)
                     self.children[ident] = {'proc': proc, 'account': request['account'], 'cancel': False}
