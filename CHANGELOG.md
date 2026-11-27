@@ -2,6 +2,31 @@
 
 All notable changes to this project are listed here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Every release that changes plugin code or manifest files raises the `version` in `.claude-plugin/plugin.json`; installed clients only pick up a release whose version differs from the one they have.
 
+## 0.2.10 - 2026-11-27
+
+### Changed
+- `tool_search` honors Claude Code deny rules for `mcp__model-mod__tool_search` and reports the rule's reason. It still never prompts; allow rules, bypass mode and `-p` work as before. If the permission check throws, lookup continues.
+- Image generation through a Codex login now omits workspace context, permission instructions and project instruction files such as `AGENTS.md`, matching chat requests (`include_environment_context=false`, `include_permissions_instructions=false`, `project_doc_max_bytes=0`).
+- `web_fetch` now refuses `*.localhost` and local host names written with a trailing dot (for example `localhost.`) before DNS lookup.
+- The SessionStart hook and the background broker's child processes now start Python with `-E -s`, like other helper launches, so variables such as `PYTHONPATH` and user site-packages do not affect them.
+- When a model is excluded because the Codex accounts directory is unavailable, `/btw` and compaction now report: `model is not in the allowlist; set codexAccountsDir in the settings file`.
+- Documentation: Limitations clarifies that model-mod creates a missing account directory with mode 0700 and leaves existing permissions unchanged, and removes a stale caveat about real-Codex `outputSchema` verification. Features documents the `*.localhost` block and that `tool_search` honors deny rules without prompting. Both documents were updated in English and Traditional Chinese.
+- Internal: moved comments, removed a stale test fixture and an unreachable branch, and extended tests. No behavior change is intended for those edits.
+
+### Verified against a real Codex login
+Checked on 2026-11-27 on commit `763f243` with Codex CLI 0.172.0, by calling the image helper directly (not through a Claude Code session, and not on Windows): image generation with the new settings returned a PNG and the helper reported success. The release commit changes only the version and this file.
+
+### Not verified
+- Codex CLI 0.172.0 through a full Claude Code session and on Windows.
+- Models other than the ones the 0.2.8 checks used.
+- The `tool_search` deny handling was checked by the plugin tests only; it was not run against a real Claude Code permission rule.
+- Chat requests through a Codex login were not re-run for this release (no chat code changed since 0.2.8's checks).
+- Other Codex login paths beyond the 0.2.8 checks (the tests use a fake `codex`).
+- Ignore handling for the review gate with Git versions other than the one used in testing, with ignore files that are not regular files, in linked worktrees and submodules, and on Windows.
+- The 8-option install form, the cleared retry status line and the unprefixed command results in Remote Control, desktop and VS Code sessions and on Windows.
+- Whether a session started while the automatic fallback is active switches back after the reset.
+- The text values `off`, `false` and `0` for `keepThinking`, `localTitle` and `localContext` in a configuration file are not covered by the tests. In a terminal session against a local test upstream, `keepThinking` and `localContext` behaved as off for these values and for the JSON number `0`, and no local title request was sent for `localTitle`; the title request to the official side was not observed.
+
 ## 0.2.9 - 2026-11-24
 
 ### Changed

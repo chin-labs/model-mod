@@ -1739,7 +1739,7 @@ async function statusReport($: EngineInterface, e: { presentation?: { columns?: 
 
   const noColor = Boolean(await $.env.get('NO_COLOR')) || await $.env.get('TERM') === 'dumb'
   const view: StatusView = {
-    title: `model-mod 0.2.9: picker=active${warnings.length ? `; ${warnings.length} warning${warnings.length > 1 ? 's' : ''}` : ''}`,
+    title: `model-mod 0.2.10: picker=active${warnings.length ? `; ${warnings.length} warning${warnings.length > 1 ? 's' : ''}` : ''}`,
     warnings, quota, path, groups }
   const columns = e.presentation?.columns
   return scrub(c, renderStatus(view, { columns: typeof columns === 'number' ? columns : 80, ascii: noColor, now: Math.floor(await $.clock.now() / 1000) }), false)
